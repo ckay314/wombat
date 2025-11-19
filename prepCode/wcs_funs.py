@@ -1,10 +1,23 @@
+"""
+Module for WCS (World Coordinate System) routines. Astropy
+does have some WCS routines but these are exact ports of the
+IDL versions. The proj routines convert from intermed coords 
+relative to ref pix into the given projection. The inv proj
+go from given proj into the intermed coords.
+
+"""
 import numpy as np
 import scipy
-#from astropy import wcs
 
+#|----------------------------------|
+#|--- Global for unit conversion ---|
+#|----------------------------------|
 c = np.pi / 180.
 cunit2rad = {'arcmin': c / 60.,   'arcsec': c / 3600.,  'mas': c / 3600.e3,  'rad':  1., 'deg':c}
 
+#|-----------------------------------|
+#|--- Convert IDL save to WCS hdr ---|
+#|-----------------------------------|
 def idlsav2wcs(pathIn):
     idlwcso = scipy.io.readsav(pathIn)['wcso']
     awcs = {}
@@ -40,6 +53,9 @@ def idlsav2wcs(pathIn):
 
     return awcs 
 
+#|-----------------------------------|
+#|--- Convert fits hdr to WCS hdr ---|
+#|-----------------------------------|
 def fitshead2wcs(hdr,system=''):
     # port of IDL version bc astropy is different somehow
     # -> mostly seems that this has ability to pull the A tags
@@ -197,6 +213,9 @@ def fitshead2wcs(hdr,system=''):
 
     return wcs
                        
+#|--------------------------------|
+#|--- Get Sun center in pixels ---|
+#|--------------------------------|
 def get_Suncent(my_wcs):
     # this is simple version of wcs_get_coord with coord [0,0]
     # shouldn't use for non TAN projection
@@ -211,6 +230,9 @@ def get_Suncent(my_wcs):
     
     return [scx, scy]
     
+#|----------------------------|
+#|--- Proj intermed to TAN ---|
+#|----------------------------|
 def wcs_proj_tan(my_wcs, coord, doQuick=False, force_proj=False):
     # Check shape of input array
     singlePt = False
@@ -299,6 +321,9 @@ def wcs_proj_tan(my_wcs, coord, doQuick=False, force_proj=False):
     
     return coord
 
+#|----------------------------|
+#|--- Proj TAN to intermed ---|
+#|----------------------------|
 def wcs_inv_proj_tan(my_wcs, coord, doQuick=False, force_proj=False):
     # Check shape of input array
     singlePt = False
@@ -396,6 +421,9 @@ def wcs_inv_proj_tan(my_wcs, coord, doQuick=False, force_proj=False):
     
     return coord
     
+#|----------------------------|
+#|--- Proj intermed to AZP ---|
+#|----------------------------|
 def wcs_proj_azp(my_wcs, coord):
     dtor = np.pi / 180.
     halfpi = np.pi / 2
@@ -492,6 +520,9 @@ def wcs_proj_azp(my_wcs, coord):
     coord[1,:] = delta / cy
     return coord
 
+#|----------------------------|
+#|--- Proj AZP to intermed ---|
+#|----------------------------|
 def wcs_inv_proj_azp(my_wcs, coord):
     # Check shape of input array
     singlePt = False
@@ -594,6 +625,9 @@ def wcs_inv_proj_azp(my_wcs, coord):
     
     return coord
 
+#|----------------------------|
+#|--- Proj intermed to ZPN ---|
+#|----------------------------|
 def wcs_proj_zpn(my_wcs, coord):
     dtor = np.pi / 180.
     halfpi = np.pi / 2
@@ -672,7 +706,7 @@ def wcs_proj_zpn(my_wcs, coord):
     theta = halfpi - gamma
     w_missing = np.where(theta < - halfpi)
     
-    # Clculate the celestial spherical coordinates
+    # Calculate the celestial spherical coordinates
     if delta0 >= halfpi:
         alpha = alpha0 + phi - phip - np.pi
         delta = theta
@@ -694,6 +728,9 @@ def wcs_proj_zpn(my_wcs, coord):
     # Ignoring missing
     return coord
 
+#|----------------------------|
+#|--- Proj ZPN to intermed ---|
+#|----------------------------|
 def wcs_inv_proj_zpn(my_wcs, coord):
     # Check shape of input array
     singlePt = False
@@ -784,7 +821,9 @@ def wcs_inv_proj_zpn(my_wcs, coord):
         coord = coord.flatten()
     return coord
 
-
+#|----------------------------|
+#|--- Get coord of a pixel ---|
+#|----------------------------|
 def wcs_get_coord(my_wcs, pixels=None):
     # Assuming an appropriate header
     # ignoring distortion, associate, apply for now (139-152)
@@ -860,6 +899,9 @@ def wcs_get_coord(my_wcs, pixels=None):
     return coord    
     
     
+#|----------------------------|
+#|--- Get pixel of a coord ---|
+#|----------------------------|
 def wcs_get_pixel(my_wcs, coord,  doQuick=False, force_proj=False, noPC=False):
     # believe that these input coords should be heliocartesian (or like wcs)
     # and match the cunit in terms of arcsec...

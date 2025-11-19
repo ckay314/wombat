@@ -1,3 +1,14 @@
+"""
+Module for functions related to various generic secchi 
+processing. Called by secchi_prep and friends. Largely a port 
+of the corresponding IDL routines and we have kept names (mostly) 
+matching and indicated what portions have been left out to facilitate 
+comparison to the other version. Kept at a near match to the
+IDL routines on a pixel by pixel basis. We try to keep anything
+generic or named scc_ here as opposed to the individual 
+instrument python files
+
+"""
 from astropy.io import fits
 import numpy as np
 import datetime
@@ -7,14 +18,16 @@ import sys, os
 from scipy.io import readsav
 from sunspyce import get_sunspyce_roll, get_sunspyce_hpc_point
 
-# Hardcoded secchi backgrounds here  for now
-global secchi_bkg, gtFile
-#secchi_bkg = '/Users/kaycd1/STEREObackgrounds/'
-#gtFile = '/Users/kaycd1/ssw/stereo/secchi/data/gt/secchi_gtdbase.geny'
+#|--------------------|
+#|--- Date Globals ---|
+#|--------------------|
 global mjd_epoch, idl_base_date
 mjd_epoch = datetime.datetime(1858, 11, 17, 0, 0, 0)
 idl_base_date = datetime.datetime(1979, 1, 1, 0, 0, 0) # needed for anytim matching
 
+#|----------------------------------|
+#|--- Make empty secchi-like hdr ---|
+#|----------------------------------|
 def def_secchi_hdr():
     hdr = {}
     hdr['EXTEND'] = 'F'
@@ -236,6 +249,9 @@ def def_secchi_hdr():
     
     return hdr
 
+#|---------------------------------|
+#|--- Add missing keys to a hdr ---|
+#|---------------------------------|
 def fill_from_defhdr(hdr):
     mthdr   = def_secchi_hdr()
     allKeys = np.array(mthdr.keys())
@@ -245,10 +261,13 @@ def fill_from_defhdr(hdr):
             hdr[key] = mthdr[key]
     return hdr
 
+#|--------------------------------|
+#|--- Get origin based on inst ---|
+#|--------------------------------|
 def sccrorigin(hdr):
     # Full port of sccrorigin
     # Could probably just make a dictionary
-    p1col=51 # why are these in IDL?
+    p1col=51 # why are these in IDL? seem unused
     p1row=1 
     if hdr['rectify']:
         if hdr['OBSRVTRY'] == 'STEREO_A':
@@ -282,6 +301,9 @@ def sccrorigin(hdr):
         r1col, r1row = 51, 1
     return [r1col, r1row]
 
+#|-------------------------------------|
+#|--- Get headers + initiate arrays ---|
+#|-------------------------------------|
 def scc_make_array(filesIn, outSize=None, trim_off=False):
     # Port of IDL code
     # Starting at line 50
@@ -352,7 +374,13 @@ def scc_make_array(filesIn, outSize=None, trim_off=False):
         
     return imgs,  headers, int(outout), outSize.astype(int), out
         
+#|---------------------------------|
+#|--- Fill array with fits data ---|
+#|---------------------------------|
 def scc_zelensky_array(im, hdr, outsize, out):
+    # Port of scc_putin_array but got cute/political
+    # This is mostly useless bc Python doesn't need to premake arrays
+    # like IDL but it does do rebinning if needed.
     # Port of scc_putin_array
     
     # Assume we have been given proper header and out is defined from make_array
@@ -400,7 +428,9 @@ def scc_zelensky_array(im, hdr, outsize, out):
                                     
     return output_img, hdr
     
-    
+#|---------------------|
+#|--- Rectify it!!! ---|
+#|---------------------|
 def secchi_rectify(a, scch, norotrate=False, silent=True):
     # check not already rectified
     if scch['rectify'] not in ['F', False, 'False', '0', 0]:
@@ -782,6 +812,9 @@ def secchi_rectify(a, scch, norotrate=False, silent=True):
         
     return b, scch
     
+#|-----------------------------|
+#|--- Get pix of sun center ---|
+#|-----------------------------|
 def scc_sun_center(hdr):
     # assuming proper header, doing single not array of headers
     
@@ -795,11 +828,18 @@ def scc_sun_center(hdr):
     
     return suncen
     
+#|---------------------------|
+#|--- Mimic IDL rebinning ---|
+#|---------------------------|
+# Not 100% exact same but as close as possible
 def rebinIDL(arr, new_shape):
     factors = arr.shape // new_shape
     outarr = arr.reshape(new_shape[0], factors[0], new_shape[1], factors[1]).mean(3).mean(1)
     return outarr
     
+#|------------------------|
+#|--- Adjust for sebip ---|
+#|------------------------|
 def scc_sebip(img, hdr):
     # Assuming everything is ok as usual
     im = img
@@ -912,7 +952,10 @@ def scc_sebip(img, hdr):
         flag = True
     return im.astype(int), hdr, flag
 
-def scc_getbkgimg(hdr, secchi_bkg ='STEREObackgrounds/' , doRot=False):
+#|----------------------------|
+#|--- Get background image ---|
+#|----------------------------|
+def scc_getbkgimg(hdr, secchi_bkg ='STEREObackgrounds/', doRot=False):
     # Assume no interp for now
     
     # port of get_delim, untested on windows
@@ -1154,6 +1197,9 @@ def scc_getbkgimg(hdr, secchi_bkg ='STEREObackgrounds/' , doRot=False):
     
     return bim, bhdr
                         
+#|-------------------------------|
+#|--- Correct diffusion in HI ---|
+#|-------------------------------|
 def scc_hi_diffuse(hdr, ipsum=None):   
     dtor = np.pi / 180.            
     if ipsum == None:
@@ -1204,6 +1250,9 @@ def scc_hi_diffuse(hdr, ipsum=None):
    
     return correct
     
+#|---------------------|
+#|--- Trim an image ---|
+#|---------------------|
 def scc_img_trim(im, hdr, gtFile=None):
     # Check for un-reprocessed data
     if (hdr['DSTOP1'] < 1) or (hdr['DSTOP1'] > hdr['NAXIS1']) or  (hdr['DSTOP2'] > hdr['NAXIS2']):
@@ -1220,6 +1269,9 @@ def scc_img_trim(im, hdr, gtFile=None):
     return img, hdr
             
             
+#|------------------------------------|
+#|--- Pre commissioning correction ---|
+#|------------------------------------|
 def precommcorrect(im, hdr, gtFile=None):
     # Apply IcerDiv2 correction
     if (hdr['comprssn'] > 89) & (hdr['comprssn'] < 102):
@@ -1317,6 +1369,9 @@ def precommcorrect(im, hdr, gtFile=None):
     
     
     
+#|-------------------------|
+#|--- Get EUVI pointing ---|
+#|-------------------------|
 def euvi_point(hdr, gtFile):
     radeg = 180 / np.pi
     # assume passed a single header
@@ -1629,6 +1684,9 @@ def euvi_point(hdr, gtFile):
         
 
 
+#|----------------------------|
+#|--- gt Correction Things ---|
+#|----------------------------|
 def scc_gt2sunvec(anytim, sund, gtdata, obs, gtFile, doRad=False):
     if obs.lower() == 'a':
         cc    = [[1.0000, 0.715e-8, 1.341e-5, 0.329e-8], [1.2843, 1.883e-7, 2.203e-4, 0.625e-7], [1.1739, 1.759e-6, 1.718e-3, 0.511e-6]]
@@ -1697,6 +1755,9 @@ def scc_gt2sunvec(anytim, sund, gtdata, obs, gtFile, doRad=False):
     svec = np.array(svec) * fact 
     return svec     
     
+#|---------------------------|
+#|--- Icerdiv2 Correction ---|
+#|---------------------------|
 def scc_icerdiv2(hdr,img):
     ip = hdr['ip_00_19']
     # Make sure the string is long enough, could be trimmed

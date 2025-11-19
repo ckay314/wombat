@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 """
 Module to launch the wombat GUI 
 

@@ -1,15 +1,50 @@
+"""
+Module to process AIA observations
+
+This script was designed to take in Level 1 AIA data pulled from
+Sunpy Fido and process it for the WOMBAT GUI. It is just a wrapper
+of existing funtions from aiapy. The basic steps were taken from
+online documentation, but the respike and deconvolve steps do not
+function as suggested so we have left them out. The current code gets
+the pointing, registers it, and normalizes the image by the exposure
+time. It returns a list of processed maps corresponding to the input
+list of fits files
+
+External Calls:
+    aiapy
+
+
+"""
+
 import sunpy.map
 import astropy.units as u
 from aiapy.calibrate import register, update_pointing, respike, correct_degradation
 from aiapy.calibrate.util import get_pointing_table
 from aiapy.psf import deconvolve
                 
+#|-------------------------|
+#|--- Main Prep Routine ---|
+#|-------------------------|
 def aia_prep(filesIn, downSize=1024):
-    # No reason to port idl, we have aiapy and wont be doing any WL
-    # mass calc so assuming a close enough match
+    """
+    Function that processes a list of level 1 AIA fits files into 
+    astropy/sunpy maps. It was set up to use fits files pulled using
+    Sunpy Fido. Most of the other prep functions are ports of IDL 
+    routines to enable matching mass calculations but we do not support
+    that for AIA so we can use the existing routines to prep the data
+
+    Input:
+        filesIn: a list of fits files path+names
     
-    
-    
+    Optional Input:
+        downSize: size of the output image (in pixels)
+                  *** assuming a square output
+
+    Output:
+        maps_out: a list of maps corresponding to the input fits files
+
+
+    """    
     # |------------------------------------------------------|
     # |------------- Loop to process each image -------------|
     # |------------------------------------------------------|
@@ -45,6 +80,6 @@ def aia_prep(filesIn, downSize=1024):
         # Normalize by exposure time
         aia_map_normed = aia_map_registered / aia_map_registered.exposure_time
         
-        
+        # Add to the output list
         maps_out.append(aia_map_normed)
     return maps_out 

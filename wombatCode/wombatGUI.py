@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 """
 Set of functions and classes used to build and run the WOMBAT GUI
 

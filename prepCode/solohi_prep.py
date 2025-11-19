@@ -1,23 +1,25 @@
+"""
+Module for converting a set of solohi images into a mosaic.
+Only tested/used on L2 data so little to no processing, just
+dumping multiple sets of data into same frame. Port of IDL
+function of same name.
+
+"""
 import numpy as np
 import sunpy.map
 import sys
 from scc_funs import rebinIDL
 from sunspyce import get_sunspyce_hpc_point, get_sunspyce_roll
-#from cor_prep import cor_prep
-#from hi_prep import hi_prep
 from astropy.io import fits
 import astropy.units as u
 from astropy.coordinates import SkyCoord
 from sunpy.time import parse_time
-#from sunpy.coordinates import get_horizons_coord
-#from sunspyce import get_sunspyce_hpc_point, get_sunspyce_roll, get_sunspyce_coord, get_sunspyce_lonlat, get_sunspyce_p0_angle, get_sunspyce_carr_rot
-#from sunpy.coordinates import spice
-#import scipy.io
-#from wcs_funs import fitshead2wcs, wcs_get_coord, idlsav2wcs
 
-import matplotlib.pyplot as plt
+# L2 data avail at https://solohi.nrl.navy.mil/so_data/L2/
 
-# L2 data at https://solohi.nrl.navy.mil/so_data/L2/
+#|----------------------------|
+#|---Get Camera Parameters ---|
+#|----------------------------|
 def get_def_cam_params(instr):
     readout_rate=1.86e6  # 2 Mpixel/sec
     
@@ -61,6 +63,9 @@ def get_def_cam_params(instr):
     return ncol, nrow, xycoords, roxy, rodur, ypr, pscal
 
 
+#|-----------------------------------------|
+#|--- ID where each camera goes in grid ---|
+#|-----------------------------------------|
 def solohi_getgrid(s=0,get_det=True, reduce=4):
     # Not sure what exact s is since nothing is passed in test case but 
     # leaving it as an option
@@ -116,6 +121,9 @@ def solohi_getgrid(s=0,get_det=True, reduce=4):
     
     return None
 
+#|--------------------------|
+#|--- Make mosaic header ---|
+#|--------------------------|
 def mosaic_hdr(hdr):
     # Port of the essential parts of get_solohi_pointing that give 
     # the mosaic hdr
@@ -194,6 +202,9 @@ def mosaic_hdr(hdr):
     
     return hdr
     
+#|------------------------------------|
+#|--- Main Function to make Mosaic ---|
+#|------------------------------------|
 def solohi_fits2grid(filesIn, doFull=False):
     
     with fits.open(filesIn[0]) as hdulist:
@@ -281,32 +292,3 @@ def solohi_fits2grid(filesIn, doFull=False):
     else:
         return fullIm, mhdr
         
-if __name__ == '__main__':
-
-    file1A = '/Users/kaycd1/wombat/fits/solo_L2_solohi-1ft_20220329T053609_V02.fits'
-    file2A = '/Users/kaycd1/wombat/fits/solo_L2_solohi-2ft_20220329T053809_V02.fits'
-    file3A = '/Users/kaycd1/wombat/fits/solo_L2_solohi-3fg_20220329T054157_V02.fits'
-    file4A = '/Users/kaycd1/wombat/fits/solo_L2_solohi-4fg_20220329T055357_V02.fits'
-
-    file1B = '/Users/kaycd1/wombat/fits/solo_L2_solohi-1ft_20220329T052409_V02.fits'
-    file2B = '/Users/kaycd1/wombat/fits/solo_L2_solohi-2ft_20220329T052609_V02.fits'
-    file3B = '/Users/kaycd1/wombat/fits/solo_L2_solohi-3fg_20220329T051757_V02.fits'
-    file4B = '/Users/kaycd1/wombat/fits/solo_L2_solohi-4fg_20220329T052957_V02.fits'
-
-
-    quadImA, hdrA = solohi_fits2grid([file1A, file2A, file3A, file4A])
-
-    '''quadImB, hdrB = solohi_fits2grid([file1B, file2B, file3B, file4B])
-
-    diff = quadImA - quadImB
-
-    fig = plt.figure()
-    bval = 5e-14
-    bmin = -bval
-    bmax = bval	
-    diff_clipped = np.clip(diff, bmin, bmax)
-
-    # Perform the scaling and convert to an 8-bit unsigned integer (uint8)
-    result = ((diff_clipped - bmin) * 255 / (bmax - bmin)).astype(np.uint8)
-    plt.imshow(result,origin='lower')
-    plt.show()'''

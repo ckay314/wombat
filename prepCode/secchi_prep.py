@@ -1,3 +1,13 @@
+"""
+Module for processing SECCHI observations. Largely a wrapper that
+opens up the fits files and passes to the appropriate prep
+routines for each instrument. We have kept names matching 
+and indicated what portions have been left out to facilitate 
+comparison to the other version. Kept at a near match to the
+IDL routines on a pixel by pixel basis.
+
+"""
+
 import numpy as np
 import sunpy.map
 import sys
@@ -8,6 +18,9 @@ from hi_prep import hi_prep
 from astropy.io import fits
 
 
+#|----------------------------|
+#|--- Supress Info Logging ---|
+#|----------------------------|
 # Make sunpy/astropy shut up about info/warning for missing metadata
 import logging
 logging.basicConfig(level='INFO')
@@ -18,6 +31,9 @@ alogger.setLevel(logging.ERROR)
 np.seterr(divide='ignore')
 
 
+#|----------------------------|
+#|--- Main Wrapper Function ---|
+#|-----------------------------|
 def secchi_prep(filesIn, outSize=None, silent=False, polarizeOn=False, prepDir=None):
     # Port of the basic functionality of IDL version
     # For polarized images need to just pass three at a time
@@ -150,18 +166,4 @@ def secchi_prep(filesIn, outSize=None, silent=False, polarizeOn=False, prepDir=N
         
     return images_out, headers_out
                 
-    
-    
-#fileA = '/Users/kaycd1/wombat/fits/20241028_002330_d4c2A.fts'
-#fileB = '/Users/kaycd1/wombat/fits/20241028_125330_d4c2A.fts'
-#ims, hdrs = secchi_prep([fileA, fileB])
-
-#filenames = ['/Users/kaycd1/wombat/obsFiles/SECCHI/COR1_20230304_120600_n4c1a.fts', '/Users/kaycd1/wombat/obsFiles/SECCHI/COR1_20230304_120618_n4c1a.fts', '/Users/kaycd1/wombat/obsFiles/SECCHI/COR1_20230304_120636_n4c1a.fts']
-
-#ims, hdrs = secchi_prep(filenames, polarizeOn=True)
-
-#filenames = ['/Users/kaycd1/wombat/obsFiles/SECCHI/EUVI_171a_20230304_140930_n4eua.fts']
-#filenames = ['/Users/kaycd1/wombat/obsFiles/SECCHI/EUVI_284a_20230304_141330_n4eua.fts']
-#filenames = ['/Users/kaycd1/wombat/obsFiles/SECCHI/EUVI_304a_20230304_144545_n4eua.fts']
-
-#ims, hdrs = secchi_prep(filenames)    
+  

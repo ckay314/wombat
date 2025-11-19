@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 """
 Module with all the wireframe calculations for wombat
 

@@ -1,3 +1,10 @@
+"""
+Module for functions related to LASCO C2/C3 processing.
+Largely a port of the corresponding IDL routines and we 
+have kept names matching and indicatedwhat portions have
+been left out to facilitate comparison to the other version. 
+
+"""
 import numpy as np
 import sunpy.map
 import sys, os
@@ -5,9 +12,11 @@ from astropy.io import fits
 import astropy.units as u
 from astropy.coordinates import SkyCoord
 from astropy.time import Time
-
 from sunpy.time import parse_time
 
+#|---------------------------|
+#|--- Get solar ephemeris ---|
+#|---------------------------|
 def get_solar_ephem(yymmdd, isSOHO=False):
     dte = parse_time(yymmdd).utc
     j2000 = parse_time('2000/01/01').utc
@@ -23,6 +32,9 @@ def get_solar_ephem(yymmdd, isSOHO=False):
     
     return radius, dist, lon
     
+#|----------------------------------|
+#|--- Get exponential (?) factor ---|
+#|----------------------------------|
 def get_exp_factor(hdr, efacDir):
     tel = hdr['detector'].lower()
     mjd = hdr['mid_date']
@@ -39,7 +51,6 @@ def get_exp_factor(hdr, efacDir):
     if 'offset' in hdr:
         bias = hdr['offset']
     if os.path.exists(myDir+fn):
-        print (myDir+fn, hdr['filename']) 
         data = np.genfromtxt(myDir+fn, dtype=str)
         if hdr['filename'] in data[:,0]:
             idx = np.where(data[:,0] == hdr['filename'])[0]
@@ -48,6 +59,9 @@ def get_exp_factor(hdr, efacDir):
             bias = float(data[idx[0], 2])            
     return efac, bias
 
+#|---------------------------------|
+#|--- Get c2 calibration factor ---|
+#|---------------------------------|
 def c2_calfactor(hdr, nosum=False):
     filt = hdr['filter'].upper()
     polar = hdr['POLAR'].upper()
@@ -88,6 +102,9 @@ def c2_calfactor(hdr, nosum=False):
     cal_factor = cal_factor * 1e-10    
     return cal_factor
     
+#|---------------------------------|
+#|--- Get c3 calibration factor ---|
+#|---------------------------------|
 def c3_calfactor(hdr, nosum=False):
     filt = hdr['filter'].upper()
     polar = hdr['POLAR'].upper()
@@ -154,6 +171,9 @@ def c3_calfactor(hdr, nosum=False):
                      
     return cal_factor
     
+#|------------------------------|
+#|--- Do c2 Calibration Calc ---|
+#|------------------------------|
 def c2_calibrate(imIn, hdr, prepDir, noCalFac=False):
     im = np.copy(imIn)
     if hdr['detector'] != 'C2':
@@ -199,6 +219,9 @@ def c2_calibrate(imIn, hdr, prepDir, noCalFac=False):
     
     return im, hdr
     
+#|------------------------------|
+#|--- Do c2 Calibration Calc ---|
+#|------------------------------|
 def c3_calibrate(imIn, hdr, prepDir, noCalFac=False, noMask=False):
     im = np.copy(imIn)
     if hdr['detector'] != 'C3':
@@ -288,10 +311,10 @@ def c3_calibrate(imIn, hdr, prepDir, noCalFac=False, noMask=False):
         if not noMask:
             im = im * mask
         return im, hdr
-    
-        
-    
-    
+                    
+#|----------------------------|
+#|--- c2 Main Prep Wrapper ---|
+#|----------------------------|
 def c2_prep(filesIn, prepDir):
     ims, hdrs = [], []
     for aFile in filesIn:
@@ -307,6 +330,9 @@ def c2_prep(filesIn, prepDir):
     
     return np.array(ims), hdrs
     
+#|----------------------------|
+#|--- c3 Main Prep Wrapper ---|
+#|----------------------------|
 def c3_prep(filesIn, prepDir):
      ims, hdrs = [], []
      for aFile in filesIn:
@@ -323,24 +349,4 @@ def c3_prep(filesIn, prepDir):
      return np.array(ims), hdrs
     
 
- 
-if __name__ == '__main__':
-         
-    fileA = '/Users/kaycd1/wombat/fits/C2_22800178.fts'
-    fileB ='/Users/kaycd1/wombat/fits/C2_22800186.fts'
-    
-    #fileA ='/Users/kaycd1/wombat/fits/C3_32048310.fts'
-    #fileB ='/Users/kaycd1/wombat/fits/C3_32048311.fts'
-    
-    with fits.open(fileA) as hdulist:
-        imA  = hdulist[0].data
-        hdrA = hdulist[0].header
-    imA, hdrA = c2_calibrate(imA, hdrA)
-
-    with fits.open(fileB) as hdulist:
-        imB  = hdulist[0].data
-        hdrB = hdulist[0].header
-    imB, hdrB = c2_calibrate(imB, hdrB)
-    
-    diff = imB - imA
 

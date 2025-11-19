@@ -1,9 +1,12 @@
+"""
+Module for preparing PSP WISPR data. Largely a port
+of the IDL functions of the same names.
+
+"""
 import numpy as np
 import sunpy.map
 import sys
 from scc_funs import scc_make_array, scc_zelensky_array, rebinIDL
-from cor_prep import cor_prep
-from hi_prep import hi_prep
 from astropy.io import fits
 import astropy.units as u
 from astropy.coordinates import SkyCoord
@@ -16,6 +19,9 @@ from wcs_funs import fitshead2wcs, wcs_get_coord, idlsav2wcs
 
 
 
+#|----------------------------|
+#|--- Supress Info Logging ---|
+#|----------------------------|
 # Make sunpy/astropy shut up about info/warning for missing metadata
 import logging
 logging.basicConfig(level='INFO')
@@ -25,17 +31,21 @@ alogger = logging.getLogger('astropy')
 alogger.setLevel(logging.ERROR)
 np.seterr(divide='ignore')
 
+#|--------------------------|
+#|--- Launch SPICE thing ---|
+#|--------------------------|
 spice.install_frame('IAU_SUN')
 
-# python doesn't know about IDL specific env_vars bc runs in diff env
-# so hardcode this for now (NEED TO FIX EVENTUALLY!!!!)
-#global wcalpath
-#wcalpath = '/Users/kaycd1/ssw/psp/wispr/calibration/'
-
+#|---------------------|
+#|--- Useful Global ---|
+#|---------------------|
 global dtor 
 dtor = np.pi / 180.
 
 
+#|-------------------------|
+#|--- Read in fits file ---|
+#|-------------------------|
 def wispr_readfits(fileIn, LASCO=False, isCal=False):
     # Assume we are passed a good file, open it up and skip
     # down to clean up stuff at 128
@@ -64,6 +74,9 @@ def wispr_readfits(fileIn, LASCO=False, isCal=False):
             
     return im, hdr
         
+#|----------------------|
+#|--- Get Bias Value ---|
+#|----------------------|
 def wispr_bias_offset(im, hdr):
     if hdr['rectify'] == True:
         rectrota = hdr['rectrota']
@@ -89,6 +102,9 @@ def wispr_bias_offset(im, hdr):
     
     return offset
     
+#|------------------------------|
+#|--- Get calibration factor ---|
+#|------------------------------|
 def wispr_get_calfac(hdr):
     if (hdr['detector'] in [1, 2]) and  (hdr['gainmode'] in ['HIGH', 'LOW']):
         if hdr['detector'] == 1:
@@ -103,6 +119,9 @@ def wispr_get_calfac(hdr):
         sys.exit('Invalid WISPR header, issue in calfac')
     return calfac
     
+#|-----------------------------|
+#|--- Get calibration image ---|
+#|-----------------------------|
 def wispr_get_calimg(hdr, wcalpath):
     if hdr['detector'] not in [1, 2]:
         sys.exit('Invalid WISPR header, issue in calimg')
@@ -134,6 +153,9 @@ def wispr_get_calimg(hdr, wcalpath):
     return calimg, calhdr
 
     
+#|-------------------------------|
+#|--- Main Correction Wrapper ---|
+#|-------------------------------|
 def wispr_correction(im, hdr, wcalpath, calfacOff=False, calimgOff=False, exptimeOff=False, truncOff=False):
     hdr['history'] = 'Applied wispr_correction (Python port)'
     
@@ -182,6 +204,9 @@ def wispr_correction(im, hdr, wcalpath, calfacOff=False, calimgOff=False, exptim
    
     return im, hdr
     
+#|-------------------------|
+#|--- Get Pointing Info ---|
+#|-------------------------|
 def get_wispr_pointing(shdr, wcalpath, doSpice=True, doCoords=False):
     shdr['VERS_CAL'] = '2020915'
     detect = shdr['DETECTOR']
@@ -453,6 +478,9 @@ def get_wispr_pointing(shdr, wcalpath, doSpice=True, doCoords=False):
     return shdr
     
 
+#|----------------------------|
+#|--- Get image statistics ---|
+#|----------------------------|
 def wispr_img_stats(hdr, im):
     goodIm = im[np.isfinite(im)]
     goodIm = goodIm[np.where(goodIm !=0)]
@@ -472,6 +500,9 @@ def wispr_img_stats(hdr, im):
     return hdr, im
 
 
+#|---------------------------|
+#|--- Get straylight info ---|
+#|---------------------------|
 def wispr_straylight(hdr, im, dn=False):
     au = hdr['dsun_obs'] / 1.49578707e11 
     if au <= 0.15:
@@ -487,6 +518,9 @@ def wispr_straylight(hdr, im, dn=False):
     im = im - sl
     return hdr, im
 
+#|----------------------------|
+#|--- Main wrapper fuction ---|
+#|----------------------------|
 def wispr_prep(filesIn, wcalpath, outSize=None, silent=False, biasOff=False, biasOffsetOff=False, lin_correct=False, straylightOff=False, pointingOff=False):
     # Port of basic functionality of IDL version
     

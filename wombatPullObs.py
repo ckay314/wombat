@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 """
 Module to pull observations for the wombat GUI using Sunpy Fido/wget
 

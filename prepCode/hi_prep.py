@@ -1,3 +1,11 @@
+"""
+Module for functions related to HI processing that are 
+called by secchi_prep. Largely a port of the corresponding
+IDL routines and we have kept names matching and indicated
+what portions have been left out to facilitate comparison to
+the other version. 
+
+"""
 import numpy as np
 import os
 import sys
@@ -7,6 +15,9 @@ from scipy.interpolate import griddata
 from scc_funs import scc_sebip, scc_hi_diffuse
 from cor_prep import get_calfac, get_calimg
 
+#|-----------------------------|
+#|--- Get date for pointing ---|
+#|-----------------------------|
 def hi_read_pointing(fle):
     with fits.open(fle) as hdulist:
         nxt = len(hdulist) 
@@ -22,6 +33,9 @@ def hi_read_pointing(fle):
         outs = [hdulist[i+1].header for i in ordIdx]
         return outs
 
+#|----------------------------|
+#|--- Correct the pointing ---|
+#|----------------------------|
 def hi_fix_pointing(hdr, prepDir, hipointfile=None, ravg=None, tvary=False):
     # assume we dont start with the hipointfile
     if hipointfile == None:
@@ -94,6 +108,9 @@ def hi_fix_pointing(hdr, prepDir, hipointfile=None, ravg=None, tvary=False):
                 print (Quit)        
     return hdr
 
+#|------------------------|
+#|--- Invert something ---|
+#|------------------------|
 def sc_inverse(n,diag, below, above):
     wt_above = above / diag
     wt_below = below / diag
@@ -136,6 +153,9 @@ def sc_inverse(n,diag, below, above):
 
     return p
 
+#|-------------------------|
+#|--- Remove saturation ---|
+#|-------------------------|
 def hi_remove_saturation(im, hdr, saturation_limit=None, nsaturated=None):
     # ignoring header check
     if saturation_limit == None: saturation_limit = 14000
@@ -162,6 +182,9 @@ def hi_remove_saturation(im, hdr, saturation_limit=None, nsaturated=None):
     else:
         return im, hdr
 
+#|-----------------------|
+#|--- Get the cosmics ---|
+#|-----------------------|
 def hi_cosmics(im, hdr):
     # Assuming ok header
     if ('s4h' not in hdr['filename']):
@@ -202,6 +225,9 @@ def hi_cosmics(im, hdr):
                 print (Quit)
     return cosmics
 
+#|---------------------------|
+#|--- Desmear Observation ---|
+#|---------------------------|
 def hi_desmear(im,hdr):
     # Check header for valid values
     if hdr['CLEARTIM'] < 0:
@@ -252,6 +278,9 @@ def hi_desmear(im,hdr):
         
     return im, hdr
 
+#|----------------------|
+#|--- Correct Things ---|
+#|----------------------|
 def hi_correction(im, hdr, prepDir, sebip_off=False, bias_off=False, exptime_off=False, desmear_off=False, calfac_off=False, calimg_off=False):
     # Assuming valid header structure
     # Correct for SEB IP 
@@ -320,6 +349,9 @@ def hi_correction(im, hdr, prepDir, sebip_off=False, bias_off=False, exptime_off
 
     return im, hdr
 
+#|-------------------------|
+#|--- Main Prep Routine ---|
+#|-------------------------|
 def hi_prep(im, hdr, prepDir):
     # Assuming proper header structure again
     det = hdr['DETECTOR']

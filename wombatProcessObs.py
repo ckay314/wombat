@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 """
 Module to process observations for the wombat GUI 
 

@@ -1,3 +1,12 @@
+"""
+Module for functions related to SPICE kernels. The spiceypy
+package already exists and performs most of the IDL SPICE
+operations so we just port the portions that interface with
+spiceypy. The function names match the IDL versions but are
+spycy instead of spicy 
+
+"""
+
 import numpy as np
 import sys
 from sunpy.time import parse_time
@@ -7,9 +16,15 @@ import math
 from sunpy.coordinates import sun
 
 
+#|--------------------------------|
+#|--- Global for s/c ID number ---|
+#|--------------------------------|
 global scDict
 scDict = {'sta':'-234', 'stereoa':'-234', 'stereoahead':'-234', 'stb':'-235', 'stereob':'-235', 'stereobehind':'-235', 'solo':'-144', 'solarorbiter':'-144', 'psp':'-96','parkersolarprobe':'-96', 'EARTH':'399', 'Earth':'399', 'earth':'399'}
 
+#|-----------------------------------------------|
+#|--- Calc helioprojective cartesian pointing ---|
+#|-----------------------------------------------|
 def get_sunspyce_hpc_point(date, spacecraft, instrument=None, doDeg=False, doRad=False):
     # returns yaw (arcsec), pitch (arcsec), and roll angle (deg)
     # If doDeg then all three params returned in deg
@@ -55,7 +70,7 @@ def get_sunspyce_hpc_point(date, spacecraft, instrument=None, doDeg=False, doRad
             roll = roll + np.pi
             if roll > np.pi: roll = roll - twopi
 
-    # Ignoring stereo post conjunction
+    # Ignoring stereo post conjunction bc haven't used keyword
     
     # correct any cases where pitch is greater than 90
     if np.abs(pitch) > halfpi:
@@ -72,6 +87,9 @@ def get_sunspyce_hpc_point(date, spacecraft, instrument=None, doDeg=False, doRad
     return pointing
 
 
+#|-------------------------------|
+#|--- Get c matrix from SPICE ---|
+#|-------------------------------|
 def get_sunspyce_cmat(date, spacecraft, system=None, instrument=None, tolerance=None, sixVec=False):
     # Determine which spacecraft was requested and make it spicy    
     if spacecraft.lower() in scDict:
@@ -154,6 +172,9 @@ def get_sunspyce_cmat(date, spacecraft, system=None, instrument=None, tolerance=
     # ignoring weird storing stuff
     return ccmat    
         
+#|---------------------------|
+#|--- Get spacecraft roll ---|
+#|---------------------------|
 def get_sunspyce_roll(date, spacecraft, system=None, instrument=None, doRad=False, tolerance=None):
     # Assuming passed correct things
     units = 180. / np.pi
@@ -210,6 +231,9 @@ def get_sunspyce_roll(date, spacecraft, system=None, instrument=None, doRad=Fals
         
     return roll, pitch, yaw
 
+#|-----------------------------------------|
+#|--- Get Cartesian (?) location of s/c ---|
+#|-----------------------------------------|
 def get_sunspyce_coord(date, spacecraft, system=None, instrument=None, target=None, doMeters=False, doAU=False, doVelocity=True):
     # Determine which spacecraft was requested and make it spicy    
     if spacecraft.lower() in scDict:
@@ -313,6 +337,9 @@ def get_sunspyce_coord(date, spacecraft, system=None, instrument=None, target=No
     
     return state
 
+#|-------------------------------------|
+#|--- Get Spherical location of s/c ---|
+#|-------------------------------------|
 def get_sunspyce_lonlat(date, spacecraft, system=None, instrument=None, target=None, doMeters=False, doAU=False, doDegrees=False, pos_long=False, lt_carr=False):
     if type(system) != type(None):
         system = system.upper()
@@ -367,6 +394,9 @@ def get_sunspyce_lonlat(date, spacecraft, system=None, instrument=None, target=N
         lat = lat * 180. / np. pi
     return [rad, lon, lat]
 
+#|-------------------------------|
+#|--- Get the p0 angle of s/c ---|
+#|-------------------------------|
 def get_sunspyce_p0_angle(date, spacecraft, doDegrees=False):
     # Determine which spacecraft was requested and make it spicy    
     if spacecraft.lower() in scDict:
@@ -407,6 +437,9 @@ def get_sunspyce_p0_angle(date, spacecraft, doDegrees=False):
     
     return p0
 
+#|---------------------------------------|
+#|--- Get decimal Carrington Rotation ---|
+#|---------------------------------------|
 def get_sunspyce_carr_rot(date, spacecraft=None):
     twopi = 2 * np.pi
     
@@ -438,6 +471,9 @@ def get_sunspyce_carr_rot(date, spacecraft=None):
     
     return carr_rot
     
+#|------------------------------------|
+#|--- Load the basic spice kernels ---|
+#|------------------------------------|
 def load_common_kernels(pathIn):
     # Load the kernels that most satellites use
     kerns = ['de421.bsp', 'naif0012.tls', 'heliospheric.tf', 'pck00011_n0066.tpc']    
@@ -457,6 +493,9 @@ def load_common_kernels(pathIn):
         if fullName not in loadKerns:
             spice.furnsh(fullName)
             
+#|---------------------------------------|
+#|--- Load PSP specific spice kernels ---|
+#|---------------------------------------|
 def load_psp_kernels(pathIn):
     # Get the loaded kernels to check against so
     # we can avoid reloading
@@ -478,6 +517,9 @@ def load_psp_kernels(pathIn):
             if fullName not in loadKerns:
                 spice.furnsh(fullName)
         
+#|----------------------------------------|
+#|--- Load SolO specific spice kernels ---|
+#|----------------------------------------|
 def load_solo_kernels(pathIn):
     # Get the loaded kernels to check against so
     # we can avoid reloading

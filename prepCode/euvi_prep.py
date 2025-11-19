@@ -1,3 +1,12 @@
+"""
+Module for functions related to EUVI processing that are 
+called by secchi_prep. Largely a port of the corresponding
+IDL routines and we have kept names matching and indicated
+what portions have been left out to facilitate comparison to
+the other version. 
+
+"""
+
 import numpy as np
 import os
 import sys
@@ -7,6 +16,9 @@ import datetime
 from scipy.interpolate import griddata
 from cor_prep import get_calfac, get_calimg
 
+#|---------------------------|
+#|--- Check Filter Status ---|
+#|---------------------------|
 def euvi_get_normal(hdr):
     if hdr['WAVELNTH'] == 171:
         filtDict = {'OPEN':1, 'S1':0.49, 'S2':0.49, 'DBL':0.41}
@@ -26,6 +38,9 @@ def euvi_get_normal(hdr):
     return filter_factor
 
 
+#|-------------------------|
+#|--- Main Prep Routine ---|
+#|-------------------------|
 def euvi_correction(img, hdr, prepDir, sebipOff=False, exptimeOff=False, biasOff=False, normalOff=False, dn2pOff=False, calImgOff=False):
     if hdr['detector'] != 'EUVI':
         sys.exit('Passed non EUVI obs to euvi_correcton')
@@ -67,6 +82,9 @@ def euvi_correction(img, hdr, prepDir, sebipOff=False, exptimeOff=False, biasOff
         
     return img, hdr
 
+#|-------------------------|
+#|--- Main Prep Wrapper ---|
+#|-------------------------|
 def euvi_prep(im, hdr, prepDir, pointingOff=True, calibrateOff=False):
     if hdr['detector'] != 'EUVI':
         sys.exit('Calibration for EUVI DETECTOR only')

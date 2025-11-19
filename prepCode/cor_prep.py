@@ -1,3 +1,16 @@
+"""
+Module for functions related to COR1/COR2 processing that are 
+called by secchi_prep. Largely a port of the corresponding
+IDL routines and we have kept names matching and indicated
+what portions have been left out to facilitate comparison to
+the other version. The whole routine tends to be within 0.1% 
+accuracy for each pixel with only minor differences introduce
+by the difference in IDL and python built in interpretation
+routines.
+
+
+"""
+
 import numpy as np
 import os
 import sys
@@ -7,10 +20,16 @@ from wcs_funs import get_Suncent, fitshead2wcs
 import datetime
 from scipy.interpolate import griddata
 
+#|-------------------------|
+#|--- Set a few globals ---|
+#|-------------------------|
 
 c = np.pi / 180.
 cunit2rad = {'arcmin': c / 60.,   'arcsec': c / 3600.,  'mas': c / 3600.e3,  'rad':  1.}
 
+#|---------------------------|
+#|-- Get Calibration Image --|
+#|---------------------------|
 def get_calimg(hdr, calPath, calimg_filename=None, outSize=None):
     # Assuming proper header passed. Starting at 131
     new_flag = True
@@ -135,6 +154,9 @@ def get_calimg(hdr, calPath, calimg_filename=None, outSize=None):
                  
     return cal, hdr
     
+#|------------------------------|
+#|--- Get Calibration Factor ---|
+#|------------------------------|
 def get_calfac(hdr):
     # Assuming passed proper header
     det = hdr['detector']
@@ -209,6 +231,9 @@ def get_calfac(hdr):
         hdr['history'] = 'get_calfac Applied factor of 2 for total brightness'
     return calfac    
 
+#|--------------------------------|
+#|--- (Quick) 2D Interpolation ---|
+#|--------------------------------|
 def interp2d(xgrid, ygrid, gridvals, x_in, y_in):
     # Inspired by interp2d from the googles/aneeshnaik
     isScalar = False
@@ -251,6 +276,9 @@ def interp2d(xgrid, ygrid, gridvals, x_in, y_in):
         z = z[0]
     return z
 
+#|----------------------------|
+#|--- Warped Triangulation ---|
+#|----------------------------|
 def warp_tri(xr,yr,xi,yi,img):
     # i/r irregular/regular
     nx, ny = img.shape
@@ -278,6 +306,9 @@ def warp_tri(xr,yr,xi,yi,img):
     
     return imgOut
         
+#|-------------------------------------|
+#|--- COR2 Calibration Main Routine ---|
+#|-------------------------------------|
 def cor_calibrate(img, hdr,prepDir, outSize=None, sebip_off=False, exptime_off=False, bias_off=False, calimg_off=False, calfac_off=False):
     # Flag that we done this in the fits header history
     newStuff = 'Applied python port of cor_calibrate.pro CK 2025'
@@ -326,6 +357,9 @@ def cor_calibrate(img, hdr,prepDir, outSize=None, sebip_off=False, exptime_off=F
         
     return img, hdr
 
+#|-------------------------------------|
+#|--- COR1 Calibration Main Routine ---|
+#|-------------------------------------|
 def cor1_calibrate(img, hdr, prepDir, outSize=None, sebip_off=False, exptime_off=False, bias_off=False, calimg_off=False, calfac_off=False, bkgimg_off=False):  
     # Flag that we done this in the fits header history
     newStuff = 'Applied python port of cor_calibrate.pro CK 2025'
@@ -404,6 +438,9 @@ def cor1_calibrate(img, hdr, prepDir, outSize=None, sebip_off=False, exptime_off
     
     return img, hdr
     
+#|-------------------------------|
+#|--- COR2 Warping Correction ---|
+#|-------------------------------|
 def cor2_warp(im,hdr):
     # Establish control poitns x and y at every 32 pixels
     gridsize = 32
@@ -447,6 +484,9 @@ def cor2_warp(im,hdr):
     
     return im, hdr
 
+#|-------------------------|
+#|--- Main Prep Routine ---|
+#|-------------------------|
 def cor_prep(im, hdr, prepDir, outSize=None, calibrate_off=False, warp_off=False):
     # Assuming passed a nice header 
     
@@ -489,6 +529,9 @@ def cor_prep(im, hdr, prepDir, outSize=None, calibrate_off=False, warp_off=False
     
     return im, hdr
            
+#|-------------------------|
+#|--- Process Polarized ---|
+#|-------------------------|
 def cor_polarize(seq, seq_hdr, doPB=False, doPolAng=False):
     # Skipping to Muller Matrix and just doing that here
     angle1 = seq_hdr[0]['polar'] * np.pi/180.
