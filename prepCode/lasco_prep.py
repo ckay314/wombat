@@ -13,6 +13,8 @@ import astropy.units as u
 from astropy.coordinates import SkyCoord
 from astropy.time import Time
 from sunpy.time import parse_time
+from scc_funs import rebinIDL
+from cor_prep import warp_tri
 
 #|---------------------------|
 #|--- Get solar ephemeris ---|
@@ -349,4 +351,406 @@ def c3_prep(filesIn, prepDir):
      return np.array(ims), hdrs
     
 
+#|-------------------------|
+#|---  C2 Warp Function ---|
+#|-------------------------|
+def c2_warp(im, hdr):
+    # Establish control points every 32 pixels
+    w = np.arange(33*33)
+    y = (w / 33).astype(int)
+    x = w - y * 33
+    x = x *32
+    y = y*32
+    
+    im, hdr = reduce_std_size(im, hdr, noRebin=True, noCal=True)
 
+    # Use defaults for occulter center
+    tel  = hdr['DETECTOR']
+    filt = hdr['FILTER']
+    
+    if tel == 'C1':
+        if filt == 'FE X': ctr = [511.029,494.521]
+        elif filt == 'FE XIV': ctr = [510.400,495.478]
+        else: ctr = [511,495]
+    elif tel == 'C2':
+        if filt == 'ORANGE': ctr = [512.634,505.293]
+        else: ctr = [512.634,505.293]
+    elif tel == 'C3':
+        if filt == 'ORANGE': ctr = [516.284,529.489]
+        elif filt == 'CLEAR': ctr = [516.284,529.489]
+        else: ctr = [516.284,529.489]
+    else:
+        sys.exit('EIT not ported or other unknown instrument in c2_warp')
+        
+    xc, yc = ctr[0], ctr[1]
+    
+    # Might need to dumb down hdr again.. tbd
+    sumx = hdr['lebxsum'] * np.max([hdr['sumcol'], 1])
+    sumy = hdr['lebysum'] * np.max([hdr['sumrow'], 1])
+
+    if sumx > 0:
+        x = x / sumx
+        xc = xc / sumx
+    if sumy > 0:
+        y = y / sumy
+        yc = yc / sumy
+        
+    fDict = {'C1':5.8, 'C2':11.9, 'C3':56.} # pulled from subtense, called by get_sec_pixel
+    scalef = fDict[tel]    
+    r = np.sqrt((sumx * (x-xc))**2 + (sumy * (y-yc))**2)
+    
+    # apply c2_distortion
+    mm = r * 0.021
+    cf =[0.0051344125,-0.00012233862,1.0978595e-7] # pulled from DISTORTION_COEFFS for C2
+    f1 = mm * ( cf[0] + cf[1] * mm**2 + cf[2]*mm**4)
+    f1 = (r + f1/0.021)*scalef
+    r0 = f1 / (sumx * scalef)
+    
+    theta = np.arctan2(y-yc, x-xc)
+    x0 = r0 * np.cos(theta) + xc
+    y0 = r0 * np.sin(theta) + yc
+    
+    # Use warp tri already ported in cor_prep
+    im = warp_tri(x, y, x0, y0, im)
+        
+    return im, hdr
+
+#|-------------------------|
+#|---  C3 Warp Function ---|
+#|-------------------------|
+def c3_warp(im, hdr):
+    # Establish control points every 32 pixels
+    w = np.arange(33*33)
+    y = (w / 33).astype(int)
+    x = w - y * 33
+    x = x *32
+    y = y*32
+
+    im, hdr = reduce_std_size(im, hdr, noRebin=True, noCal=True)
+
+    # Use defaults for occulter center
+    tel  = hdr['DETECTOR']
+    filt = hdr['FILTER']
+    
+    # Using default occulter center, same for all filters in occltr_cntr.pro
+    ctr = [516.284,529.489]
+        
+    xc, yc = ctr[0], ctr[1]
+    
+    x1 = hdr['r1col'] - 20
+    x2 = hdr['r2col'] - 20
+    y1 = hdr['r1row'] - 1
+    y2 = hdr['r2row'] - 1
+
+    sumx = hdr['lebxsum'] * np.max([hdr['sumcol'], 1])
+    sumy = hdr['lebysum'] * np.max([hdr['sumrow'], 1])
+
+    if sumx > 1:
+        x  =  x / sumx
+        xc = xc / sumx
+        x1 = x1 / sumx
+        x2 = x2 / sumx
+    if sumy > 1:
+        y  =  y / sumy
+        yc = yc / sumy
+        y1 = y1 / sumy
+        y2 = y2 / sumy
+        
+    scalef = 56. # pulled from subtense for C3, called by get_sec_pixel
+    r = np.sqrt((sumx * (x-xc))**2 + (sumy * (y-yc))**2)
+    
+    # apply c2_distortion
+    mm = r * 0.021
+    cf =[-0.0151657, 0.000165455, 0.0] # pulled from DISTORTION_COEFFS for C3
+    f1 = mm * ( cf[0] + cf[1] * mm**2)
+    f1 = (r + f1/0.021)*scalef
+    r0 = f1 / (sumx * scalef)
+    
+    theta = np.arctan2(y-yc, x-xc)
+    x0 = r0 * np.cos(theta) + xc
+    y0 = r0 * np.sin(theta) + yc
+    
+    # Use warp tri already ported in cor_prep
+    im = warp_tri(x, y, x0, y0, im)
+        
+    return im, hdr
+
+        
+
+
+#|-----------------------|
+#|--- Reduce Function ---|
+#|-----------------------|
+def reduce_std_size(im, hdr,bias=None, noRebin=False, noCal=False, full=False, saveHDR=False):
+    sumrow = np.max([hdr['SUMROW'], 1])
+    sumcol = np.max([hdr['SUMCOL'], 1])
+    lebxsum = np.max([hdr['LEBXSUM'], 1])
+    lebysum = np.max([hdr['LEBYSUM'], 1])
+    naxis1 = hdr['NAXIS1']
+    naxis2 = hdr['NAXIS2']
+    polar = hdr['polar']
+    tel = hdr['TELESCOP']
+    
+    if (naxis1 <=0) or (naxis2 <=0):
+        sys.exit('Invaid image passed to reduce_std_size')
+        
+    r1col = hdr['R1COL']
+    r1row = hdr['R1ROW']
+    if r1col < 1: r1col = hdr['P1COL']
+    if r1row < 1: r1row = hdr['P1ROW']
+    
+    if (type(bias) != type(None)) & (not noCal):
+        print('Hitting unchecked portion of reduce_std_size')
+        if sumcol > 1:
+            im = (im - bias) / (sumcol * sumrow)
+        else:
+            if lebxsum > 1:
+                print ('Correcting for chip summing')
+                im = (im - bias)/(lebxsum*lebysum)
+        hdr['OFFSET'] = 0
+    
+    nxfac = 2**(sumcol+lebxsum-2)
+    nyfac = 2**(sumrow+lebysum-2)
+    
+    if tel == 'SOHO':
+        if ((hdr['r2col'] - r1col) == 1023) & ((hdr['r2row'] - r1row) == 1023)  & (naxis1 ==512):
+            nxfac, nyfac = 2, 2
+            
+    nx = nxfac*naxis1
+    ny = nyfac*naxis2
+    
+    # Some C1 images have incorrect values for r row/col values
+    if (hdr['r2col'] - r1col + 1) != (naxis1*lebxsum): r1col = r1col - 32
+    if (hdr['r2row'] - r1row + 1) != (naxis2*lebxsum): r1row = r1row - 32
+    
+    # Assuming not subframes
+    if ((nx < 1024) or (ny < 1024)) & (tel == 'SOHO'):
+        sys.exit('Havent ported subframe portion of reduce_std_size')
+    
+    scale_to = 512
+    if noRebin: scale_to = naxis1
+    if full: scale_to = 1024
+    
+    if not saveHDR:
+        if noCal:
+            hdr['crpix1'] = ((hdr['crpix1']*nxfac)+r1col-20)*scale_to/1024. 
+            hdr['crpix2'] = ((hdr['crpix2']*nyfac)+r1row-1)*scale_to/1024.
+        else:
+            sys.exit('Hitting uncoded portion of reduce_std_size (not noCal)')
+        
+        if tel == 'SOHO':
+            hdr['R1COL'] = 20
+            hdr['R1ROW'] = 1
+            hdr['R2COL'] = 1043
+            hdr['R2ROW'] = 1024
+        
+            if (type(bias) != type(None)):
+                hdr['lebxsum'] = 1
+                hdr['lebysum'] = 1
+                hdr['offset']  = 0
+                
+        hdr['NAXIS1'] = scale_to
+        hdr['NAXIS2'] = scale_to
+        hdr['cdelt1'] = hdr['cdelt1']*(1024/scale_to)
+        hdr['cdelt2'] = hdr['cdelt2']*(1024/scale_to)
+ 
+    # do the rebin
+    im = rebinIDL(im, np.array([scale_to, scale_to]))
+    return im, hdr
+
+#|----------------------|
+#|---  Modify Header ---|
+#|----------------------|
+# Might toss. not using atm
+def adjust_hdr_tcr(hdr):
+    adjusted= {'date':'', 'time':'', 'err':'', 'xpos':0.0, 'ypos':0.0, 'roll':0.0}
+    
+    tel  = hdr['TELESCOP']
+    date = hdr['DATE-OBS']
+    time = hdr['TIME-OBS']
+    
+    # Pulled these from 'c2_c3_last_post_recovery_day.sav' 
+    last_day = '2024-05-15'
+    utclast_day = parse_time(last_day).utc 
+    utcdate = parse_time(date).utc
+    if utcdate > utclast_day:
+        return adjusted
+    
+    adj_dt = adjust_all_date_obs(hdr)
+        
+        
+    tcr = None
+    return tcr
+
+#|---------------------------|
+#|---  Adjust Header Date ---|
+#|---------------------------|
+# Might toss. not using atm
+def adjust_all_date_obs(hdr):
+    adj= {'date':'', 'time':'', 'err':''}
+    tel  = hdr['TELESCOP']
+    date = hdr['DATE-OBS']
+    time = hdr['TIME-OBS']
+    print (date)
+    if time == '':
+        print ('Hitting unchecked portion of adjust_all_date_obs')
+        adj['date'] =  date[:4] + '/' + date[5:7] + '/' + date[8:10]
+        adj['time'] = data[11:]
+        adj['err'] = 'level-1 hdr, not adjusted'
+        return adj
+    
+    offset = 0 # ignoring this step for now, might be needed 48.6250
+    
+    return adj
+
+            
+#|--------------------------|
+#|---  Main Prep Wrapper ---|
+#|--------------------------|
+# Converts from 0.5 to Lev 1 data
+def reduce_level_1(filesIn, no_mask=False, noScale=False, prepDir='prepFiles/soho/lasco/'):
+    # Might need to findthings from common blocks 162-165
+    # Check if string or array
+    if type(filesIn) == type('ImAString'):
+        filesIn = [filesIn]
+    
+    ims, hdrs = [], []
+    # Loop through the array
+    for aFile in filesIn:
+        # Exit if cannot find file
+        if not os.path.exists(aFile):
+            sys.exit('Cannot find '+aFile)
+        # Open it otherwise
+        with fits.open(aFile) as hdulist:
+            im  = hdulist[0].data
+            hdr = hdulist[0].header
+       
+        camera = hdr['detector']
+        hdrIn = hdr
+        # Assume we need to read in the vig/mask/ramp files
+        
+        xsumming = np.max([hdr['sumcol'], 1]) * np.max([hdr['lebxsum'], 1])
+        ysumming = np.max([hdr['sumrow'], 1]) * np.max([hdr['lebysum'], 1])
+        summing = xsumming * ysumming
+        
+        if summing > 1:
+            # Ignoring fix wrap, just removes overflows
+            dofull = False
+        else:
+            dofull = True
+        
+        if (hdr['r2col']-hdr['r1col']+hdr['r2row']-hdr['r1row']-1023-1023) != 0:
+            sys.exit('Hit uncoded part in reduce_level_1, need to port reduce std size')
+        
+        fname = hdr['filename']
+        source = fname[1]
+        dot = fname.find('.')
+        root = fname[:dot]
+        yymmdd = hdr['date-obs'].replace('/','')[2:]
+        
+        if source in ['1', '3']:
+            root = root[0]+'4'+root[2:]
+        elif source == '2':
+            root = root[0]+'5'+root[2:]
+        elif source in ['m', 'd']:
+            sys.exit('Hit uncoded part in reduce_level_1, need to port monthly code portion')
+        
+        outname = root + '.fts' # suspect we want a diff name but keep the var
+        
+        # Skipping printing to logfile/screen 245-261
+        
+        # Take caldir as optional input, points to wombat files instead of ssw
+        
+        # Skipping more logfile things 267 - 307
+        
+        # Make a header with less details bc apparently thats what it wants
+        '''hdrLess = {}
+        # Skipping current time bc not going to use it in a history string
+        toGrab = ['FILENAME', 'FILEORIG', 'DATE-OBS', 'TIME-OBS','EXPTIME', 'TELESCOP', 'INSTRUME', 'DETECTOR', 'READPORT', 'SUMROW', 'SUMCOL', 'LEBXSUM', 'LEBYSUM', 'FILTER', 'POLAR', 'COMPRSSN', 'MID_DATE', 'MID_TIME', 'R1COL', 'R1ROW', 'R2COL', 'R2ROW']
+        for key in toGrab:
+            # Add both upper and lower bc python cares but IDL inconsistent
+            hdrLess[key.lower()] = hdr[key]
+            hdrLess[key] = hdr[key]
+        hdrLess['level'] = '1.0' '''
+        
+        
+        
+        # |------------------------------------|
+        # |---- Actual Processing by camera ---|
+        # |------------------------------------|
+        if camera == 'C1':
+            sys.exit('C1 not available in reduce_level_1')
+        elif camera == 'C2':
+            # Calibrate
+            im, hdr = c2_calibrate(im, hdr, prepDir)
+            
+            # Warp
+            im, hdr = c2_warp(im, hdr)
+                        
+            # No mask - assume no missing blocks for now (true on test case)
+        elif camera == 'C3':
+            # Calibrate
+            im, hdr = c3_calibrate(im, hdr, prepDir)
+            
+            # Warp
+            im, hdr = c3_warp(im, hdr)
+        
+        # Modify the hdr, or not
+        #tcr = adjust_hdr_tcr(hdr)
+        
+        # Running with unadjusted that are within 1 pix/deg
+        roll = hdr['crota1']
+        cx   = hdr['crpix1'] - 1 #think adjusted to array units not fits
+        cy   =  hdr['crpix2'] - 1 
+        
+        if np.abs(roll) > 170:
+            rectify = 180 
+            cntr = 511.5
+            x = cx-cntr
+            y = cy-cntr
+            cx = cntr + x * np.cos(rectify * np.pi/180.) - y * np.sin(rectify * np.pi/180.)
+            cy = cntr + x * np.sin(rectify * np.pi/180.) + y * np.cos(rectify * np.pi/180.)
+            
+            im = np.rot90(im, k=2)
+            roll = roll - 180
+        else:
+            rectify = 0
+        
+        xc = (cx - hdr['r1col'] + 20) / xsumming
+        yc = (cy - hdr['r1row'] + 1) / ysumming
+        
+        if roll < -180: roll += 360
+        
+        crpix_x = xc+1
+        crpix_y = yc+1
+        
+        # Rotate it the last bit (or not, its close now at least)
+        hdr['CRPIX1'] = crpix_x
+        hdr['CRPIX2'] = crpix_y
+        hdr['CROTA']  = roll
+        hdr['CROTA1']  = roll
+        hdr['CROTA2']  = roll
+        hdr['CRVAL1']  = 0
+        hdr['CRVAL2']  = 0
+        hdr['CTYPE1']  = 'HPLN-TAN'
+        hdr['CTYPE2']  = 'HPLT-TAN'
+        hdr['CUNIT1']  = 'arcsec'
+        hdr['CUNIT2']  = 'arcsec'
+        fDict = {'C1':5.8, 'C2':11.9, 'C3':56.} # pulled from subtense, called by get_sec_pixel
+        platescl = fDict[camera]
+        hdr['CDELT1']  = platescl
+        hdr['CDELT2']  = platescl
+        hdr['XCEN'] = 0 + platescl*((hdr['naxis1']+1)/2. - crpix_x)
+        hdr['YCEN'] = 0 + platescl*((hdr['naxis2']+1)/2. - crpix_y)
+        
+        
+        # Not doing scaling
+        ims.append(im)
+        hdrs.append(hdr)
+ 
+    return np.array(ims), hdrs     
+            
+if __name__ == '__main__':
+    prepDir = 'wbFits/SOHO/LASCO/C2/'
+    filesIn = 'pullFolder/SOHO/LASCO/C3/20230924T2142_C3_32754722.fts'
+    reduce_level_1(filesIn, prepDir)

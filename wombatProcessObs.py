@@ -84,7 +84,7 @@ from sunpy.time import parse_time
 sys.path.append('prepCode/') 
 from secchi_prep import secchi_prep
 from wispr_prep import wispr_prep
-from lasco_prep import c2_prep, c3_prep
+from lasco_prep import c2_prep, c3_prep, reduce_level_1
 from solohi_prep import solohi_fits2grid
 from aia_prep import aia_prep
 from wombatPullObs import setupFolderStructure
@@ -402,9 +402,9 @@ def processLASCO(times, insts, inFolder='pullFolder/SOHO/LASCO/', outFolder='wbF
             goodFiles[i] = np.sort(np.array(goodFiles[i]))
             outLines.append('LASCO_' + str(insts[i]) + '\n')
             if insts[i] == 'C2':
-                ims, hdrs = c2_prep(goodFiles[i], prepDir)  
+                ims, hdrs = reduce_level_1(goodFiles[i], prepDir)  
             if insts[i] == 'C3':    
-                ims, hdrs = c3_prep(goodFiles[i], prepDir)      
+                ims, hdrs = reduce_level_1(goodFiles[i], prepDir)      
             for j in range(len(ims)):
                 ymd = hdrs[j]['DATE-OBS'].replace('/','')+'T'+hdrs[j]['TIME-OBS'].replace(':','')[:6]
                 fitsName = 'wbpro_lasco'+insts[i]+'_'+ymd+'.fits'

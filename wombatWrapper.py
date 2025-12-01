@@ -281,7 +281,6 @@ def fits2maps(filesIn, names, diffMode='RD', diffEUV=False):
                     if (myData.shape == myBase.shape):
                         diffData = myData - myBase
                         diffMap = sunpy.map.Map(diffData, myHdr)
-
                         allFH[i][0].append(diffMap)
                         allFH[i][1].append(myHdr)
                     else:
