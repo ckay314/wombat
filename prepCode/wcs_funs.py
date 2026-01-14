@@ -19,6 +19,17 @@ cunit2rad = {'arcmin': c / 60.,   'arcsec': c / 3600.,  'mas': c / 3600.e3,  'ra
 #|--- Convert IDL save to WCS hdr ---|
 #|-----------------------------------|
 def idlsav2wcs(pathIn):
+    """
+    Function to convert an IDL save file to a wcs style dictionary
+    
+    Input:
+        pathIn: a path to the location of the IDL save file
+    
+    Output:
+        awcs: a wcs like dictionary
+
+
+    """
     idlwcso = scipy.io.readsav(pathIn)['wcso']
     awcs = {}
     awcs['COORD_TYPE'] = idlwcso['COORD_TYPE'].astype(str)[0]
@@ -57,12 +68,30 @@ def idlsav2wcs(pathIn):
 #|--- Convert fits hdr to WCS hdr ---|
 #|-----------------------------------|
 def fitshead2wcs(hdr,system=''):
-    # port of IDL version bc astropy is different somehow
-    # -> mostly seems that this has ability to pull the A tags
-    # for a different 'system'
+    """
+    Function to convert a fits header to a wcs style dictionary
     
+    Input:
+        hdr: the fits file header
+    
+    Optional Input:
+        system: option to add a tag (probably 'A') to pull different
+                set of tags from the fits header
+    Output:
+        wcs: a wcs like dictionary
+    
+    Notes:
+        Astropy has version of this that doesn't always play nice with
+        the ported versions of the IDL code. This version seems to work
+        as expected, particularly if one is careful about pulling the 
+        correct system of tags (with our without the A) for whatever the
+        use case needs
+    """    
     # skipping hdr check, assuming is fine/tbd
     
+    #|--------------------------------|
+    #|--- Make a header dictionary ---|
+    #|--------------------------------|
     tags = list(hdr.keys())
     tags = [aTag.upper() for aTag in tags]
     
@@ -71,14 +100,15 @@ def fitshead2wcs(hdr,system=''):
     column = ''
     orig_column = ''
     
-    # assume system is A for now bc that's whats passed
-    #system = 'A'
     
     # Skipping a lot of the safety checks
     n_axis = hdr['naxis']
     
     compliant = True
-    # Determine kind of WCS to extract
+    
+    #|--------------------------------|
+    #|--- Check type of wcs system ---|
+    #|--------------------------------|
     crota_present = False
     pc_present    = False
     cd_present    = False
@@ -103,6 +133,9 @@ def fitshead2wcs(hdr,system=''):
         print (Quit)
         
     
+    #|-----------------------------|
+    #|--- Pull keywords for wcs ---|
+    #|-----------------------------|
     # Extract CTYPE keywords (431)
     # Assume that the ctype is found so 1 is x and 2 is y
     if 'CTYPE1' in tags:
@@ -155,7 +188,9 @@ def fitshead2wcs(hdr,system=''):
             pc[1,1] = cosa
  
                 
-    # Determine type of coord sys
+    #|--------------------------------|
+    #|--- Determine coord sys type ---|
+    #|--------------------------------|
     if hdr['CTYPE1'+system][:4] == 'RA--':
         coord_type = 'Celestial-Equatorial'
         projection = hdr['CTYPE1'+system][5:]
@@ -188,7 +223,9 @@ def fitshead2wcs(hdr,system=''):
                 proj_names.append(key)
                 proj_values.append(hdr[key])
     
-    # Make the output dictionary
+    #|-------------------------------|
+    #|--- Fill the wcs dictionary ---|
+    #|-------------------------------|
     wcs = {}
     wcs['coord_type'] = coord_type
     wcs['wcsname'] = wcsname
@@ -217,8 +254,19 @@ def fitshead2wcs(hdr,system=''):
 #|--- Get Sun center in pixels ---|
 #|--------------------------------|
 def get_Suncent(my_wcs):
-    # this is simple version of wcs_get_coord with coord [0,0]
-    # shouldn't use for non TAN projection
+    """
+    Function to get the location of the sun center in pixels
+    
+    Input:
+        my_wcs: a wcs style dictionary
+    
+    Output:
+        [scx, scy]: the x and y coords of the sun center (in pixels)
+    
+    Notes:
+        This is simple version of wcs_get_coord with coord [0,0]
+        !!! shouldn't use for non TAN projection !!!
+    """
     c2rx = cunit2rad[my_wcs['cunit'][0].lower()]
     c2ry = cunit2rad[my_wcs['cunit'][1].lower()]
     coord = [0,0]
@@ -234,7 +282,31 @@ def get_Suncent(my_wcs):
 #|--- Proj intermed to TAN ---|
 #|----------------------------|
 def wcs_proj_tan(my_wcs, coord, doQuick=False, force_proj=False):
-    # Check shape of input array
+    """
+    Function to project intermediate coordinates into TAN coords
+    
+    Input:
+        my_wcs: a wcs style dictionary
+    
+        coord: a list of intermediate coord pairs (e.g. [[x1,y1], [x2,y2], ...])
+               intermed = relative to ref pix but crval not applied
+    
+    Optional Input:
+        doQuick: flag to force the quick version of the calculation instead
+                 of doing the full more accurate one (defaults to False)
+    
+        force_proj: flag to force the full projection calculation insted of 
+                    doing the quick, even if check suggests quick is 
+                    sufficient (defaults to False)
+
+    Output:
+        coord: the coordinates converted to TAN projection 
+               (same units as input e.g. arc, rad, deg ) 
+
+    """
+    #|--------------------------|
+    #|--- Make sure is array ---|
+    #|--------------------------|
     singlePt = False
     if len(coord.shape) == 1:
         singlePt = True
@@ -245,7 +317,10 @@ def wcs_proj_tan(my_wcs, coord, doQuick=False, force_proj=False):
     cx = cunit2rad[my_wcs['cunit'][0].lower()]
     cy = cunit2rad[my_wcs['cunit'][1].lower()]
 
-    # Check if within 3 deg of sun, if so switch to quick proj
+    #|----------------------------|
+    #|--- Check pixel location ---|
+    #|----------------------------|
+    # If within 3 deg of sun switch to quick proj instead of full
     # Setting force_proj to True will overwrite this
     if not force_proj:
         if my_wcs['coord_type'] == 'Helioprojective-Radial':
@@ -261,7 +336,9 @@ def wcs_proj_tan(my_wcs, coord, doQuick=False, force_proj=False):
             if (np.max([np.max(np.abs(xxrange)), np.max(np.abs(yrange))])) <= 3 * dtor:
                 doQuick = True
 
-    # Quick version
+    #|--------------------------|
+    #|--- Quick proj version ---|
+    #|--------------------------|
     if doQuick and not force_proj:
         if my_wcs['coord_type'] == 'Helioprojective-Radial':
             x = coord[0,:] * cx
@@ -274,7 +351,9 @@ def wcs_proj_tan(my_wcs, coord, doQuick=False, force_proj=False):
             coord[1,:] = coord[1,:] #+ my_wcs['crval'][1]
             return coord
         
-    # Full version
+    #|--------------------------|
+    #|--- Start full version ---|
+    #|--------------------------|
     # assume standard phi0, theta0 for now
     phi0, theta0 = 0. * dtor, 90. * dtor
     # Get the celestial longitude and latitude of the fiducial point.
@@ -325,12 +404,41 @@ def wcs_proj_tan(my_wcs, coord, doQuick=False, force_proj=False):
 #|--- Proj TAN to intermed ---|
 #|----------------------------|
 def wcs_inv_proj_tan(my_wcs, coord, doQuick=False, force_proj=False):
+    """
+    Function to project TAN coords into intermediate coordinates 
+    
+    Input:
+        my_wcs: a wcs style dictionary
+
+        coord: a list of TAN coord pairs (e.g. [[alp1,del1], [alp2,del2], ...])     
+    
+    Optional Input:
+        doQuick: flag to force the quick version of the calculation instead
+                 of doing the full more accurate one (defaults to False)
+    
+        force_proj: flag to force the full projection calculation insted of 
+                    doing the quick, even if check suggests quick is 
+                    sufficient (defaults to False)
+
+    Output:
+        coord: the coordinates converted to intermediate values
+               intermed = relative to ref pix but crval not applied
+               (same units as input e.g. arc, rad, deg ) 
+    
+
+    """
+    #|--------------------------|
+    #|--- Make sure is array ---|
+    #|--------------------------|
     # Check shape of input array
     singlePt = False
     if len(coord.shape) == 1:
         singlePt = True
         coord = coord.reshape([2,1])
         
+    #|----------------------------|
+    #|--- Pull values from hdr ---|
+    #|----------------------------|
     dtor = np.pi / 180.
     halfpi = np.pi / 2
     cx = cunit2rad[my_wcs['cunit'][0].lower()]
@@ -351,7 +459,9 @@ def wcs_inv_proj_tan(my_wcs, coord, doQuick=False, force_proj=False):
             if (np.max([np.max(np.abs(xxrange)), np.max(np.abs(yrange))])) <= 3 * dtor:
                 doQuick = True
     
-    # Quick version
+    #|--------------------------|
+    #|--- Quick proj version ---|
+    #|--------------------------|
     if doQuick and not force_proj:
         if my_wcs['coord_type'] == 'Helioprojective-Radial':
             r = coord[1,:] * cy + halfpi
@@ -364,6 +474,9 @@ def wcs_inv_proj_tan(my_wcs, coord, doQuick=False, force_proj=False):
             coord[1,:] = coord[1,:] - my_wcs['crval'][1]
             return coord
             
+    #|--------------------------|
+    #|--- Start full version ---|
+    #|--------------------------|
     phi0 = 0.
     theta0 = 90.
     if 'proj_names' in my_wcs:
@@ -425,12 +538,30 @@ def wcs_inv_proj_tan(my_wcs, coord, doQuick=False, force_proj=False):
 #|--- Proj intermed to AZP ---|
 #|----------------------------|
 def wcs_proj_azp(my_wcs, coord):
+    """
+    Function to project intermediate coordinates into AZP coords
+    
+    Input:
+        my_wcs: a wcs style dictionary
+    
+        coord: a list of intermediate coord pairs (e.g. [[x1,y1], [x2,y2], ...])
+               intermed = relative to ref pix but crval not applied
+    
+    Output:
+        coord: the coordinates converted to AZP projection 
+               (same units as input e.g. arc, rad, deg ) 
+
+    """
     dtor = np.pi / 180.
     halfpi = np.pi / 2
     cx = cunit2rad[my_wcs['cunit'][0]]
     cy = cunit2rad[my_wcs['cunit'][1]]
     phi0 = 0.
     theta0 = 90.
+
+    #|----------------------------|
+    #|--- Pull values from hdr ---|
+    #|----------------------------|
     if 'proj_names' in my_wcs:
         for item in my_wcs['proj_names']:
             if item == 'PV1_1':
@@ -474,6 +605,9 @@ def wcs_proj_azp(my_wcs, coord):
     
     phip = dtor * phip
     
+    #|------------------------|
+    #|--- Full Calculation ---|
+    #|------------------------|
     # Calculate the native spherical coords
     phi = np.arctan2(cx*coord[0,:], -cy*coord[1,:])
     r_theta = np.sqrt((cx*coord[0,:])**2 + (cy*coord[1,:]*np.cos(gamma))**2)
@@ -524,6 +658,23 @@ def wcs_proj_azp(my_wcs, coord):
 #|--- Proj AZP to intermed ---|
 #|----------------------------|
 def wcs_inv_proj_azp(my_wcs, coord):
+    """
+    Function to project AZP coordinates into intermediate coords
+    
+    Input:
+        my_wcs: a wcs style dictionary
+    
+        coord: a list of AZP coord pairs (e.g. [[alp1,del1], [alp2,del2], ...])     
+    
+    Output:
+        coord: the coordinates converted to intermediate values
+               intermed = relative to ref pix but crval not applied
+               (same units as input e.g. arc, rad, deg ) 
+
+    """
+    #|--------------------------|
+    #|--- Make sure is array ---|
+    #|--------------------------|
     # Check shape of input array
     singlePt = False
     if len(coord.shape) == 1:
@@ -536,6 +687,9 @@ def wcs_inv_proj_azp(my_wcs, coord):
     cx = cunit2rad[my_wcs['cunit'][0]]
     cy = cunit2rad[my_wcs['cunit'][1]]
     
+    #|----------------------------|
+    #|--- Pull values from hdr ---|
+    #|----------------------------|
     phi0 = 0.
     theta0 = 90.
     if 'proj_names' in my_wcs:
@@ -563,6 +717,9 @@ def wcs_inv_proj_azp(my_wcs, coord):
                 idx = np.where(my_wcs['proj_names'] == item)[0]
                 gamma = my_wcs['proj_values'][idx[0]]
     
+    #|------------------------|
+    #|--- Full Calculation ---|
+    #|------------------------|
     # Convert gamma to radians
     gamma = gamma  * dtor
     
@@ -629,8 +786,26 @@ def wcs_inv_proj_azp(my_wcs, coord):
 #|--- Proj intermed to ZPN ---|
 #|----------------------------|
 def wcs_proj_zpn(my_wcs, coord):
+    """
+    Function to project ZPN coordinates into intermediate coords
+    
+    Input:
+        my_wcs: a wcs style dictionary
+    
+        coord: a list of intermediate coord pairs (e.g. [[x1,y1], [x2,y2], ...])
+               intermed = relative to ref pix but crval not applied
+    
+    Output:
+        coord: the coordinates converted to ZPN projection 
+               (same units as input e.g. arc, rad, deg ) 
+
+    """
     dtor = np.pi / 180.
     halfpi = np.pi / 2
+
+    #|----------------------------|
+    #|--- Pull values from hdr ---|
+    #|----------------------------|
     cx = cunit2rad[my_wcs['cunit'][0]]
     cy = cunit2rad[my_wcs['cunit'][1]]
     
@@ -647,6 +822,9 @@ def wcs_proj_zpn(my_wcs, coord):
     if (phi0 != 0) or (theta0 != 90):
         print ('Non-standard PVi_1 and/or PVi_2 values -- ignored') # so why did we bother checking?
     
+    #|------------------------|
+    #|--- Full Calculation ---|
+    #|------------------------|
     # Convert to rads
     phi0, theta0 = phi0 * dtor, theta0 * dtor
     
@@ -732,6 +910,23 @@ def wcs_proj_zpn(my_wcs, coord):
 #|--- Proj ZPN to intermed ---|
 #|----------------------------|
 def wcs_inv_proj_zpn(my_wcs, coord):
+    """
+    Function to project AZP coordinates into intermediate coords
+    
+    Input:
+        my_wcs: a wcs style dictionary
+    
+        coord: a list of ZPN coord pairs (e.g. [[alp1,del1], [alp2,del2], ...])     
+    
+    Output:
+        coord: the coordinates converted to intermediate values
+               intermed = relative to ref pix but crval not applied
+               (same units as input e.g. arc, rad, deg ) 
+
+    """
+    #|--------------------------|
+    #|--- Make sure is array ---|
+    #|--------------------------|
     # Check shape of input array
     singlePt = False
     if len(coord.shape) == 1:
@@ -740,6 +935,11 @@ def wcs_inv_proj_zpn(my_wcs, coord):
     
     dtor = np.pi / 180.
     halfpi = np.pi / 2
+
+
+    #|----------------------------|
+    #|--- Pull values from hdr ---|
+    #|----------------------------|
     cx = cunit2rad[my_wcs['cunit'][0]]
     cy = cunit2rad[my_wcs['cunit'][1]]
     
@@ -756,6 +956,9 @@ def wcs_inv_proj_zpn(my_wcs, coord):
     if (phi0 != 0) or (theta0 != 90):
         print ('Non-standard PVi_1 and/or PVi_2 values -- ignored') # so why did we bother checking?
     
+    #|------------------------|
+    #|--- Full Calculation ---|
+    #|------------------------|
     # Convert to rads
     phi0, theta0 = phi0 * dtor, theta0 * dtor
        
@@ -825,9 +1028,35 @@ def wcs_inv_proj_zpn(my_wcs, coord):
 #|--- Get coord of a pixel ---|
 #|----------------------------|
 def wcs_get_coord(my_wcs, pixels=None):
+    """
+    Function to get wcs coordinates from pixel values. It can be
+    passed a list of specific pixel values or will calculated all
+    the values for the full image grid
+    
+    Input:
+        my_wcs: a wcs style dictionary
+        
+    Optional Input:
+        pixels: a list of specific pixel values to use in the calc
+                (defaults to None and does full grid calc)
+
+    Output:
+        im: the total brightness calculated from the pol images 
+            if doPB is flagged it returns the polarization brightness
+            if doPolAng is flagged it returns the polarized angle
+    
+        hdr: the corresponding header 
+    
+    Notes:
+        The code assumes an appropriate set of images are passed
+
+    """
     # Assuming an appropriate header
     # ignoring distortion, associate, apply for now (139-152)
     
+    #|---------------------------------|
+    #|--- Sort out pixels/full grid ---|
+    #|---------------------------------|
     # Get the dimensions/indices
     naxis = my_wcs['naxis']
     n_axis = len(naxis) # these var names bother me but following idl
@@ -848,7 +1077,10 @@ def wcs_get_coord(my_wcs, pixels=None):
 
     # Skipping distortion
     
-    # Apply CRPIX values
+    #|-------------------------------|
+    #|--- Get intermediate coords ---|
+    #|-------------------------------|
+    # Adjust relative to CRPIX
     crpix = my_wcs['crpix']
     coord[0,:] = coord[0,:] - (crpix[0] -1)
     coord[1,:] = coord[1,:] - (crpix[1] -1)
@@ -875,7 +1107,9 @@ def wcs_get_coord(my_wcs, pixels=None):
     
     # Assume we dont hit any of the weird cases of proj and crval already dealt with (319-350)
     
-    # Apply spherical proj
+    #|------------------------|
+    #|--- Apply projection ---|
+    #|------------------------|
     proj = my_wcs['projection']
     if proj == 'TAN':
         coord = wcs_proj_tan(my_wcs, coord)
@@ -890,7 +1124,9 @@ def wcs_get_coord(my_wcs, pixels=None):
     # Skipping projextion, pos_long, nowrap since not hit in simple version
     
     
-    # Reformat
+    #|-----------------------|
+    #|--- Reformat Output ---|
+    #|-----------------------|
     if type(pixels) != type(None):
         coord.reshape(pixels.shape)
     else:
@@ -903,8 +1139,32 @@ def wcs_get_coord(my_wcs, pixels=None):
 #|--- Get pixel of a coord ---|
 #|----------------------------|
 def wcs_get_pixel(my_wcs, coord,  doQuick=False, force_proj=False, noPC=False):
-    # believe that these input coords should be heliocartesian (or like wcs)
-    # and match the cunit in terms of arcsec...
+    """
+    Function to get pixel values for wcs coordinates. 
+    
+    Input:
+        my_wcs: a wcs style dictionary
+    
+        coord: a list of coordinates in the projection type of my_wcs
+        
+    Optional Input:
+        doQuick: flag to force the quick version of the calculation instead
+                 of doing the full more accurate one (defaults to False)
+    
+        force_proj: flag to force the full projection calculation insted of 
+                    doing the quick, even if check suggests quick is 
+                    sufficient (defaults to False)
+    
+        noPC: flag to not to use the PC matrix in calculating the coords
+              (defaults to False )
+
+    Output:
+        coord: the pixel values of the coordinates
+     
+    """
+    #|---------------------|
+    #|--- Process Input ---|
+    #|---------------------|
     if isinstance(coord, list):
         coord = np.array(coord)
     # Check shape of input array
@@ -912,6 +1172,10 @@ def wcs_get_pixel(my_wcs, coord,  doQuick=False, force_proj=False, noPC=False):
     if len(coord.shape) == 1:
         singlePt = True
         coord = coord.reshape([2,1])
+        
+    #|--------------------------|
+    #|--- Inverse Projection ---|
+    #|--------------------------|
     if my_wcs['projection'] == 'TAN':
         outpix = wcs_inv_proj_tan(my_wcs, coord, doQuick=doQuick)
     elif my_wcs['projection'] == 'AZP':
@@ -922,6 +1186,9 @@ def wcs_get_pixel(my_wcs, coord,  doQuick=False, force_proj=False, noPC=False):
         print ('Other projections not ported')
         print (Quit)
 
+    #|-----------------------------------|
+    #|--- Convert from intermed coord ---|
+    #|-----------------------------------|
     # Skipping subtract ref values for non-spherical and de-app tablular
     coord[0,:] = outpix[0,:] / my_wcs['cdelt'][0]
     coord[1,:] = outpix[1,:] / my_wcs['cdelt'][1]

@@ -5,6 +5,9 @@ IDL routines and we have kept names matching and indicated
 what portions have been left out to facilitate comparison to
 the other version. 
 
+External Calls:
+    scc_funs, cor_prep
+
 """
 import numpy as np
 import os
@@ -19,7 +22,21 @@ from cor_prep import get_calfac, get_calimg
 #|--- Get date for pointing ---|
 #|-----------------------------|
 def hi_read_pointing(fle):
+    """
+    Function that takes a pointing file and returns a list of 
+    headers in date order
+
+    Input:
+        fle: a pointing file
+
+    Output:
+        outs: a list of headers in date order 
+
+
+    """
+    #|--- Open the pointing file ---|
     with fits.open(fle) as hdulist:
+        #|--- Loop through list and grab each date ---|
         nxt = len(hdulist) 
         allDates = []
         for i in range(nxt-1):
@@ -28,6 +45,7 @@ def hi_read_pointing(fle):
             if 'DATE-AVG' in hdr: hdr['DATE_AVG'] = hdr['date-avg']
             allDates.append(hdr['date-avg'])
         
+        #|--- Sort by dates and return ---|
         ordIdx = np.argsort(allDates)
         ordIdx = [int(i) for i in ordIdx]
         outs = [hdulist[i+1].header for i in ordIdx]
@@ -37,22 +55,48 @@ def hi_read_pointing(fle):
 #|--- Correct the pointing ---|
 #|----------------------------|
 def hi_fix_pointing(hdr, prepDir, hipointfile=None, ravg=None, tvary=False):
-    # assume we dont start with the hipointfile
+    """
+    Function to correct the pointing in an HI header
+
+    Input:
+        hdr: a header 
+    
+        prepDir: the path to where the prep files are stored
+    
+    Optional Input:
+        hipointfile: the name of the pointing file (not implemented)
+    
+        ravg: sets rtmp value
+    
+        tvary: flag to not use the fix_mu_fov correction file (defaults to false)
+
+    Output:
+        hdr: the modified header 
+    
+    Notes:
+        Only base version ported to suit needs of wombat processing
+
+    """     
+    # |------------------------------------|
+    # |--- Assume not given hipointfile ---| 
+    # |------------------------------------|
     if hipointfile == None:
         myDir = prepDir + 'hi/'
         
-        # asumme we are passed a single header at a time (for now)
+        # |--- Set the rtmp criteria ---|
         rtmp = 5
         if ravg != None: rtmp = ravg
         
-        # Get file name
+        # |--- Get pointing file name ---|
         yymmdd = hdr['date-avg'][:10]
         if tvary:
             fle = myDir + 'pnt_' + hdr['detector'] + hdr['obsrvtry'][7] + '_' + yymmdd + '.fts'
         else:
             fle = myDir + 'pnt_' + hdr['detector'] + hdr['obsrvtry'][7] + '_' + yymmdd + '_fix_mu_fov.fts' 
         
-        # make sure file exists
+        # |-------------------------------|
+        # |--- Process the hipointfile ---| 
+        # |-------------------------------|
         if os.path.exists(fle):
             hipoint = hi_read_pointing(fle)
             ec = -1
@@ -60,6 +104,9 @@ def hi_fix_pointing(hdr, prepDir, hipointfile=None, ravg=None, tvary=False):
                 aHdr = hipoint[i]
                 if aHdr['extname'] == hdr['date-avg']:
                     ec = i
+            # |-----------------------------------------|
+            # |--- Pick the appropriate pointing hdr ---| 
+            # |-----------------------------------------|        
             if ec != -1:
                 pHdr = hipoint[ec] 
                 stcravg = pHdr['ravg']
@@ -73,6 +120,9 @@ def hi_fix_pointing(hdr, prepDir, hipointfile=None, ravg=None, tvary=False):
                 if stcnst1 < 20:
                     print ('Assuming subfield in hi_fix_pointing, but havent ported this')
                     print (Quit)
+                # |--------------------------------------------|
+                # |--- Replace hdr values using poining hdr ---| 
+                # |--------------------------------------------|
                 else:
                     if (pHdr['ravg'] < rtmp) & (pHdr['ravg'] >= 0.):
                         hdr['crval1a'] = pHdr['crval1a']
@@ -112,6 +162,25 @@ def hi_fix_pointing(hdr, prepDir, hipointfile=None, ravg=None, tvary=False):
 #|--- Invert something ---|
 #|------------------------|
 def sc_inverse(n,diag, below, above):
+    """
+    Function to inverse smearing matrix (?)
+
+    Input:
+        n: the size of the inverted axis
+    
+        diag: exp_eff as calculated in hi_desmear
+    
+        below: ?
+    
+        above: ?
+
+    Output:
+        p: a matrix used by hi_desmear
+    
+    Notes:
+        Ported and matches IDL, but not particularly well-understood 
+
+    """
     wt_above = above / diag
     wt_below = below / diag
     
@@ -157,18 +226,49 @@ def sc_inverse(n,diag, below, above):
 #|--- Remove saturation ---|
 #|-------------------------|
 def hi_remove_saturation(im, hdr, saturation_limit=None, nsaturated=None):
+    """
+    Function to remove saturated points
+
+    Input:
+        im: an HI image
+    
+        hdr: the header of the image
+    
+    Optional Input:
+        saturation_limit: the limit for saturation
+    
+        nsaturated: the number of saturated points
+
+    Output:
+        p: a matrix used by hi_desmear
+    
+    Notes:
+        Ported and matches IDL, but not particularly well-understood 
+
+    """
     # ignoring header check
     if saturation_limit == None: saturation_limit = 14000
     if saturation_limit < 0:
         return im, hdr
-    if nsaturated == None: nsaturated = 5
+    # IDL has but not needed with how we use colmask
+    #if nsaturated == None: nsaturated = 5
     
+    #|-------------------------------------|
+    #|--- Calc corrected saturation val ---|
+    #|-------------------------------------|
     n_im = hdr['imgseq'] + 1
     ssum = hdr['summed']
     dsatval = saturation_limit * n_im*(2.**(ssum-1))**2
     
+    #|-----------------------|
+    #|--- Find saturation ---|
+    #|-----------------------|
     ii = np.where(im > dsatval)
     nii = len(ii)
+    
+    #|------------------------------|
+    #|--- Mask out saturated val ---|
+    #|------------------------------|
     if nii > 0:
         mask = np.copy(im) * 0
         mask[ii] = 1
@@ -186,7 +286,27 @@ def hi_remove_saturation(im, hdr, saturation_limit=None, nsaturated=None):
 #|--- Get the cosmics ---|
 #|-----------------------|
 def hi_cosmics(im, hdr):
-    # Assuming ok header
+    """
+    Function that gets the cosmic ray scrub report 
+
+    Input:
+        im: a HI image
+        
+        hdr: the header of the image
+         
+    Output:
+        im: the image with the cosmic report filled by
+            the adjacent row values
+    
+        hdr: the corresponding header 
+    
+        cosmics: the cosmic ray info
+
+
+    """     
+    #|---------------------------------|
+    #|--- Pull cosmics based on hdr ---|
+    #|---------------------------------|
     if ('s4h' not in hdr['filename']):
         cosmics = hdr['cosmics']
     elif (hdr['n_images'] < 1) & (hdr['imgseq'] < 1):
@@ -194,6 +314,9 @@ def hi_cosmics(im, hdr):
     else:
         count = hdr['imgseq'] + 1
     
+        #|-----------------------------|
+        #|--- Determine if inverted ---|
+        #|-----------------------------|
         inverted = False
         if hdr['rectify']:
             if (hdr['date-obs'] > '2015-07-01T00:00:00') & (hdr['date-obs'] < '2023-08-12T00:00:00'):
@@ -201,7 +324,9 @@ def hi_cosmics(im, hdr):
             else:
                 inverted = hdr['OBSRVTRY'] == 'STEREO_B'
                 
-        # Inverted Case
+        #|------------------------|
+        #|--- Process Inverted ---|
+        #|------------------------|
         if inverted:
             cosmic_counter = im[0,count]
             if cosmic_counter == count:
@@ -210,7 +335,9 @@ def hi_cosmics(im, hdr):
                 print ('hit un ported part in hi_cosmics, need to do')
                 print (Quit)
         
-        # Non inverted case
+        #|----------------------------|
+        #|--- Process Non-Inverted ---|
+        #|----------------------------|
         else:
             naxis1 = hdr['naxis1']
             naxis2 = hdr['naxis2']
@@ -223,13 +350,29 @@ def hi_cosmics(im, hdr):
             else:
                 print ('hit un ported part in hi_cosmics, need to do')
                 print (Quit)
-    return cosmics
+    return im, hdr, cosmics
 
 #|---------------------------|
 #|--- Desmear Observation ---|
 #|---------------------------|
 def hi_desmear(im,hdr):
-    # Check header for valid values
+    """
+    Function corrects for smearing
+
+    Input:
+        im: the image to correct
+    
+        hdr: the corresponding header
+    
+    Output:
+        im: the corrected image 
+    
+        hdr: the updated header
+
+    """     
+    #|---------------------------|
+    #|--- Check header values ---|
+    #|---------------------------|
     if hdr['CLEARTIM'] < 0:
         sys.exit('CLEARTIM invalid in header. Cannot desmear')
     if hdr['RO_DELAY'] < 0:
@@ -239,11 +382,17 @@ def hi_desmear(im,hdr):
     if hdr['LINE_RO'] < 0:
         sys.exit('LINE_RO invalid in header. Cannot desmear')
         
+    #|------------------------------|
+    #|--- Post-Conjunction Check ---|
+    #|------------------------------|
     date_obs = hdr['date-obs']    
     post_conj = False
     if (date_obs > '2015-07-01T00:00:00') & (date_obs < '2023-08-12T00:00:00'):
         post_conj = True
     
+    #|---------------------------|
+    #|--- Check for underscan ---|
+    #|---------------------------|
     # Extract image array if underscan present.
     if (hdr['dstart1'] < 1) or (hdr['naxis1'] == hdr['naxis2']):
         image = im
@@ -251,24 +400,34 @@ def hi_desmear(im,hdr):
         print ('Unchecked line in hi_desmear AAA')
         image = im[hdr['dstart2']-1:hdr['dstop2'],hdr['dstart1']-1:hdr['dstop1']]
     
-    # Compute the inverted correction matrix
+    #|-------------------------------|
+    #|--- Compute inv corr matrix ---|
+    #|-------------------------------|
     clearest=0.70
     exp_eff = hdr['EXPTIME'] + hdr['n_images'] * (clearest-hdr['CLEARTIM'] + hdr['RO_DELAY'])
     
     # Weight correction by number of images and some other words
     dataWeight = hdr['n_images'] * ((2**(hdr['ipsum']-1)))
 
+    #|---------------------------|
+    #|--- Determine inversion ---|
+    #|---------------------------|
     inverted = False
     if hdr['rectify']:
         if hdr['OBSRVTRY'] == 'STEREO_B': inverted = True
         if (hdr['OBSRVTRY'] == 'STEREO_A') & (post_conj): inverted = True
     
+    #|-------------------------|
+    #|--- Invert the matrix ---|
+    #|-------------------------|
     if inverted:
         fixup = sc_inverse(hdr['naxis2'], exp_eff, dataWeight*hdr['line_clr'], dataWeight*hdr['line_ro'])
     else:
         fixup = sc_inverse(hdr['naxis2'], exp_eff, dataWeight*hdr['line_ro'], dataWeight*hdr['line_clr'])
     
-    # matrix mult
+    #|-------------------------|
+    #|--- Correct the image ---|
+    #|-------------------------|    
     image = np.matmul(fixup, image)
     # patch the repaired image back in if needed
     if (hdr['dstart1'] < 1) or (hdr['naxis1'] == hdr['naxis2']):
@@ -282,12 +441,48 @@ def hi_desmear(im,hdr):
 #|--- Correct Things ---|
 #|----------------------|
 def hi_correction(im, hdr, prepDir, sebip_off=False, bias_off=False, exptime_off=False, desmear_off=False, calfac_off=False, calimg_off=False):
-    # Assuming valid header structure
-    # Correct for SEB IP 
+    """
+    Main wrapper for HI image correction
+
+    Input:
+        img: the image we want to correct
+        
+        hdr: the header of the image we want to correct
+    
+        prepDir: the path where the extra files needed for prep are stored
+       
+    Optional Input:   
+        sebip_off: flag to turn off the seb ip correction (defaults false)
+
+        bias_off: flag to turn off the bias correction (defaults false)
+        
+        exptime_off: flag to turn off the exposure time correction (defaults false)
+    
+        desmear_off: flag to turn off the smearing correction (defaults false)
+    
+        calfac_off: flag to turn off the calibration factor correction (defaults false)
+
+        calimg_off: flag to turn off the calibration image correction (defaults false)
+
+    Output:
+        img: the calibrated image 
+        
+        hdr: the updated header for the calbrated image 
+
+    """     
+    #|-------------------------------|
+    #|--- Assume passed valid hdr ---|
+    #|-------------------------------|
+    
+    #|-------------------------|
+    #|--- SEB IP Correction ---|
+    #|-------------------------|
     if not sebip_off:
         im, hdr, sebipFlag  = scc_sebip(im, hdr)
 
-    # Bias subtraction
+    #|------------------------|
+    #|--- Bias subtraction ---|
+    #|------------------------|
     if bias_off:
         biasmean = 0.
     else:
@@ -303,11 +498,15 @@ def hi_correction(im, hdr, prepDir, sebip_off=False, bias_off=False, exptime_off
             hdr['OFFSETCR'] = biasmean
             im = im - biasmean
             
-    # Extract and correct for cosmics
-    cosmics = hi_cosmics(im, hdr)    
+    #|--------------------------------|
+    #|--- Cosmics check/correction ---|
+    #|--------------------------------|
+    im, hdr, cosmics = hi_cosmics(im, hdr)    
     im, hdr = hi_remove_saturation(im, hdr)
 
-    # Exposure time
+    #|--------------------------------|
+    #|--- Exposure Time Correction ---|
+    #|--------------------------------|
     if not exptime_off:
         if desmear_off:
             print('Need to code desmear off in hi_correction in hi_prep')
@@ -322,7 +521,9 @@ def hi_correction(im, hdr, prepDir, sebip_off=False, bias_off=False, exptime_off
     # capture ipsum
     ipkeep = hdr['ipsum']
     
-    # Apply calibration factor, cannot be done before hi_desmear
+    #|-------------------------------------|
+    #|--- Calibration Factor Correction ---|
+    #|-------------------------------------|
     if calfac_off:
         calfac = 1.
     else:
@@ -336,7 +537,10 @@ def hi_correction(im, hdr, prepDir, sebip_off=False, bias_off=False, exptime_off
             hdr['history'] = 'Applied diffuse source correction'
     else:
         calfac_off = True
-        
+    
+    #|------------------------------------|
+    #|--- Calibration Image Correction ---|
+    #|------------------------------------|    
     # Correction for flat field and vignetting
     if calimg_off:
         calimg = 1.0
@@ -344,7 +548,9 @@ def hi_correction(im, hdr, prepDir, sebip_off=False, bias_off=False, exptime_off
         calimg, chdr = get_calimg(hdr, prepDir+'calimg/')
         hdr['history'] = 'Applied flat field'
         
-    # Apply correction 
+    #|------------------------|
+    #|--- Apply Correction ---|
+    #|------------------------|
     im = (im * calimg * calfac * diffuse)
 
     return im, hdr
@@ -353,19 +559,44 @@ def hi_correction(im, hdr, prepDir, sebip_off=False, bias_off=False, exptime_off
 #|--- Main Prep Routine ---|
 #|-------------------------|
 def hi_prep(im, hdr, prepDir):
-    # Assuming proper header structure again
+    """
+    Main wrapper for HI image preparation
+
+    Input:
+        img: the image we want to correct
+        
+        hdr: the header of the image we want to correct
+    
+        prepDir: the path where the extra files needed for prep are stored
+       
+    Output:
+        img: the calibrated image 
+        
+        hdr: the updated header for the calbrated image 
+
+    """     
+    #|------------------------------|
+    #|--- Check passed valid hdr ---|
+    #|------------------------------|
     det = hdr['DETECTOR']
     if det not in ['HI1', 'HI2']:
         sys.exit('hi_prep only for HI detector')
     
-    # fixing 'bugzilla 332'    
+    #|----------------------|
+    #|--- 'Bugzilla 332' ---|
+    #|----------------------|
     if (hdr['naxis1'] > 1024) & (hdr['imgseq'] !=0) & (hdr['n_images'] == 1):
         hdr['imgseq'] = 0
     
-    # Calibration/correction
+    #|----------------------------------|
+    #|--- Pass to correction routine ---|
+    #|----------------------------------|
     # cosmic seems undefined on first pass then saved after for future calls?
     im, hdr = hi_correction(im, hdr, prepDir)
     
+    #|------------------------------|
+    #|--- Fix pointing in header ---|
+    #|------------------------------|
     # Update header with the best calibrated pointing
     hdr = hi_fix_pointing(hdr, prepDir)
     

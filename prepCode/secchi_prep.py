@@ -6,6 +6,10 @@ and indicated what portions have been left out to facilitate
 comparison to the other version. Kept at a near match to the
 IDL routines on a pixel by pixel basis.
 
+External Calls:
+    scc_funs, euvi_prep, cor_prep, hi_prep
+
+
 """
 
 import numpy as np
@@ -35,9 +39,45 @@ np.seterr(divide='ignore')
 #|--- Main Wrapper Function ---|
 #|-----------------------------|
 def secchi_prep(filesIn, outSize=None, silent=False, polarizeOn=False, prepDir=None):
+    """
+    Main wrapper script for preparing SECCHI images from any instrument.
+    This script does limited processing itself but passes the files to  
+    the appropriate instrument scripts as needed. Polarized images need 
+    to be passed to it as a set of three and flagged via keyword. Other
+    images can be a list of arbitrary length.
+
+    Input:
+        filesIn: a list of fits files to process
+               
+    Optional Input:   
+        outSize: size of the output image (defaults to None)
+                 *** need to check is fully working for every instrument
+        
+        silent: flag to turn off any unnecessary printing to the terminal (defaults to False)
+        
+        polarizeOn: flag to indicate we are processing triplets of polarized images
+    
+        prepDir: the path where the extra files needed for prep are stored
+    
+
+    Output:
+        images_out: a list containing the processed image data for each input file
+        
+        headers_out: a list of the corresponding headers
+    
+    Note:
+        This is a port of the basic functionality of the IDL version. We include what is
+        needed to process images for wombat and do not include every feature from the
+        full version. We try to consistently flag when it hits un-ported features from
+        the IDL version, which could be ported in future work.
+
+    """
     # Port of the basic functionality of IDL version
     # For polarized images need to just pass three at a time
     
+    #|---------------------|
+    #|--- Check if list ---|
+    #|---------------------|
     # Want filesIn as a list, even if single
     if isinstance(filesIn, str):
         filesIn = [filesIn]
@@ -51,10 +91,8 @@ def secchi_prep(filesIn, outSize=None, silent=False, polarizeOn=False, prepDir=N
     # |------------------------------------------------------|
     # |---------- Set up the run based on keywords ----------|
     # |------------------------------------------------------|
-    # Create the keyword structure (277) that is used to send keywords
-    # to the sub routines. Not really using yet bc ignoring most keywords
-    ex = {}
-    ex['blank'] = -1
+    # Dropping the ex keyword structure (277) that is used to send keywords
+    # to the sub routines. Not needed in python
     
     # Check the write_on keyword for type, ignoring for now
     # but might want later (279 - 288)
@@ -68,12 +106,10 @@ def secchi_prep(filesIn, outSize=None, silent=False, polarizeOn=False, prepDir=N
     
     # |------------------------------------------------------|
     # |------- Create array to return images to memory ------|
-    # |------------- (no clue what that means) --------------|
-    # Might have outsize keyword passed, don't have to explicitly check in Python
+    # |------------------------------------------------------|
     # This sets up empty arrays and an empty header dict
     # -> probably don't need this bc python doesn't allot memory like IDL
     images, headers, outout, outsize, out = scc_make_array(filesIn, outSize=outSize)
-    ex['outsize'] = outsize
 
     # |------------------------------------------------------|
     # |------------- Loop to process each image -------------|
@@ -88,13 +124,18 @@ def secchi_prep(filesIn, outSize=None, silent=False, polarizeOn=False, prepDir=N
         if not silent:
             print ('Processing image '+ str(i+1) +' out of ' + str(num))
             
+        #|-------------------|
+        #|--- Open a File ---|
+        #|-------------------|
         # im = SCCREADFITS(filenames[i],hdr,silent=silent,header=str_hdr)
         # Going to attempt using astropy fits instead of full port, tbd on success
         with fits.open(filesIn[i]) as hdulist:
             im  = hdulist[0].data.astype(np.int64)
             hdr = hdulist[0].header
                 
-        # Random cases that have been ported but not tested
+        #|--------------------------|
+        #|--- Header adjustments ---|
+        #|--------------------------|
         if 'calfac' in hdr: #COR2B test case doesn't have       
             if hdr['calfac'] == 0.:
                 hdr['calfac'] = 1.
@@ -103,9 +144,11 @@ def secchi_prep(filesIn, outSize=None, silent=False, polarizeOn=False, prepDir=N
             hdr['r2col']=hdr['p2col']
             hdr['r1row']=hdr['p1row']
             hdr['r2row']=hdr['p2row']
-        # Not including keyword rectify for now
+        # Not including keyword rectify for now -> things check for it anyway
 
-        # Skipping pre commissioning since we don't seem to hit (383 - 404)
+        #|--------------------------------------|
+        #|--- EUVI Precommission Corrections ---|
+        #|--------------------------------------|
         det = hdr['DETECTOR']
         if det == 'EUVI':
             # Only one of our cases that hits this is EUVI
@@ -113,50 +156,58 @@ def secchi_prep(filesIn, outSize=None, silent=False, polarizeOn=False, prepDir=N
             im, hdr = scc_img_trim(im, hdr, gtFile=gtFile)
         # Not hitting trimming (405 - 408)
                 
-        # Rescale image to fit output size
+        #|-------------------------|
+        #|--- Fill empty arrays ---|
+        #|-------------------------|
         #im = SCC_PUTIN_ARRAY(im,hdr,outout,_extra=ex)
         im, hdr = scc_zelensky_array(im, hdr, outout, out)
 
-        # Not appliying discri_pobk (413-425)
-        # Check if level 1 image
-        let = hdr['filename'][16]
-        encoded_bytes = let.encode(encoding='utf-8')
-        levelb = encoded_bytes[0]
-        if (levelb <= 57) & (levelb >= 48):
-            print ('Calibration already applied')
-            ex['calibrate_off'] = True
-            ex['calfac_off'] = True
-        else:
-            ex['calibrate_off'] = False
-            ex['calfac_off'] = False
                     
                 
         # |------------------------------------------------------|
         # |----------------- Begin Calibration ------------------|
         # |------------------------------------------------------|
         det = hdr['DETECTOR']
-                
+        
+        #|------------|
+        #|--- EUVI ---|
+        #|------------|        
         if det == 'EUVI':
             im, hdr = euvi_prep(im, hdr, prepDir)
+        #|------------|
+        #|--- COR1 ---|
+        #|------------|
         elif det == 'COR1':
             im, hdr = cor_prep(im, hdr, prepDir, outSize)        
             # Do polarization below after looped
-            
+        #|------------|
+        #|--- COR2 ---|
+        #|------------|    
         elif det == 'COR2':
             im, hdr = cor_prep(im, hdr, prepDir, outSize)
-             
-            # No polarization for now
+        #|-----------|
+        #|--- HI1 ---|
+        #|-----------|
         elif det == 'HI1':
             im, hdr = hi_prep(im, hdr, prepDir)
+        #|-----------|
+        #|--- HI2 ---|
+        #|-----------|
         elif det == 'HI2':
             im, hdr = hi_prep(im, hdr, prepDir)
             
         # IP summing already done it seems
                 
-        # Return the things
+        #|-----------------|
+        #|--- Packaging ---|
+        #|-----------------|
+        
         images_out.append(im)
         headers_out.append(hdr)
         
+    #|-----------------------|
+    #|--- Polarized Cases ---|
+    #|-----------------------|
     if polarizeOn:
         seq = images_out[::-1] # is reversed in IDL so do it here too
         seq_hdr = headers_out[::-1]

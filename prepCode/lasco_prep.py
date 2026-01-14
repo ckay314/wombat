@@ -1,8 +1,11 @@
 """
 Module for functions related to LASCO C2/C3 processing.
 Largely a port of the corresponding IDL routines and we 
-have kept names matching and indicatedwhat portions have
+have kept names matching and indicated what portions have
 been left out to facilitate comparison to the other version. 
+
+External Calls:
+    scc_funs, cor_prep
 
 """
 import numpy as np
@@ -16,10 +19,31 @@ from sunpy.time import parse_time
 from scc_funs import rebinIDL
 from cor_prep import warp_tri
 
+
 #|---------------------------|
 #|--- Get solar ephemeris ---|
 #|---------------------------|
 def get_solar_ephem(yymmdd, isSOHO=False):
+    """
+    Function to get properties of the sun for a given date. Port of
+    solar_ephem.pro from IDL.
+
+    Input:
+        yymmdd: the date of interest in the form YYMMDD
+               
+    Optional Input:   
+        isSOHO: a flag to calculated values for SOHO (defaults to false)
+                sets distance to 0.99 au instead of 1 au
+    
+    Output:
+        radius: the radius of the sun [in deg]
+        
+        dist: distance from sun to earth [in AU]
+    
+        lon: mean longitude of sun, correcteed for aberration [in deg]
+    
+
+    """
     dte = parse_time(yymmdd).utc
     j2000 = parse_time('2000/01/01').utc
     n = dte.mjd - j2000.mjd
@@ -34,10 +58,28 @@ def get_solar_ephem(yymmdd, isSOHO=False):
     
     return radius, dist, lon
     
-#|----------------------------------|
-#|--- Get exponential (?) factor ---|
-#|----------------------------------|
+#|---------------------------|
+#|--- Get exposure factor ---|
+#|---------------------------|
 def get_exp_factor(hdr, efacDir):
+    """
+    Function to get the exposure factor for LASCO observationvs
+
+    Input:
+        hdr: the header for the observation of interest
+    
+        efacDir: the directory where the supporting efac files are located
+           
+    Output:
+        efac: the exposure factor
+        
+        bias: the bias value
+    
+
+    """
+    #|-------------------------------|
+    #|--- Build support file name ---|
+    #|-------------------------------|
     tel = hdr['detector'].lower()
     mjd = hdr['mid_date']
     jd = mjd + 2400000.5
@@ -46,6 +88,9 @@ def get_exp_factor(hdr, efacDir):
     yymm = dt.strftime('%y%m%d') # idl has days so we do too despite the name    
     fn = tel + '_expfactor_'+yymm+'.dat'
     
+    #|-----------------------------|
+    #|--- Pull values from file ---|
+    #|-----------------------------|
     # Going rogue from here bc IDL is using common blocks but found the source files
     myDir = efacDir + yymm[:4] + '/'
     efac = 1 # bc if we don't find it, it's nearly one anyway
@@ -65,10 +110,29 @@ def get_exp_factor(hdr, efacDir):
 #|--- Get c2 calibration factor ---|
 #|---------------------------------|
 def c2_calfactor(hdr, nosum=False):
+    """
+    Function to get the calibration factor for a LASCO C2 image
+
+    Input:
+        hdr: the header of the image we want to calbrate
+           
+    Optional Input:   
+        noSum: flag not to account for summing in the calfactor (defaults to false)
+            
+    Output:
+        cal_factor: the calibration factor
+
+    """
+    #|------------------------------|
+    #|--- Pull header properties ---|
+    #|------------------------------|
     filt = hdr['filter'].upper()
     polar = hdr['POLAR'].upper()
     mjd = hdr['mid_date']
     
+    #|---------------------------------|
+    #|--- Get factor based on props ---|
+    #|---------------------------------|
     if filt == 'ORANGE':
         cal_factor=4.60403e-07*mjd+0.0374116
         polref=cal_factor/.25256
@@ -95,6 +159,9 @@ def c2_calfactor(hdr, nosum=False):
     else:
         sys.exit('Unrecognized filter in c3_calfactor')
         
+    #|---------------------------|
+    #|--- Summing adjustments ---|
+    #|---------------------------|
     if not nosum:
         if (hdr['sumcol'] > 0): cal_factor = cal_factor / hdr['sumcol']
         if (hdr['sumrow'] > 0): cal_factor = cal_factor / hdr['sumrow']
@@ -108,10 +175,29 @@ def c2_calfactor(hdr, nosum=False):
 #|--- Get c3 calibration factor ---|
 #|---------------------------------|
 def c3_calfactor(hdr, nosum=False):
+    """
+    Function to get the calibration factor for a LASCO C3 image
+
+    Input:
+        hdr: the header of the image we want to calbrate
+           
+    Optional Input:   
+        noSum: flag not to account for summing in the calfactor (defaults to false)
+            
+    Output:
+        cal_factor: the calibration factor
+
+    """
+    #|------------------------------|
+    #|--- Pull header properties ---|
+    #|------------------------------|
     filt = hdr['filter'].upper()
     polar = hdr['POLAR'].upper()
     mjd = hdr['mid_date']
     
+    #|---------------------------------|
+    #|--- Get factor based on props ---|
+    #|---------------------------------|
     if filt == 'ORANGE':
         cal_factor = 0.0297
         polref = cal_factor/.25256	
@@ -163,6 +249,9 @@ def c3_calfactor(hdr, nosum=False):
         sys.exit('Unrecognized filter in c3_calfactor')
         
     
+    #|---------------------------|
+    #|--- Summing adjustments ---|
+    #|---------------------------|
     if not nosum:
         if (hdr['sumcol'] > 0): cal_factor = cal_factor / hdr['sumcol']
         if (hdr['sumrow'] > 0): cal_factor = cal_factor / hdr['sumrow']
@@ -177,11 +266,36 @@ def c3_calfactor(hdr, nosum=False):
 #|--- Do c2 Calibration Calc ---|
 #|------------------------------|
 def c2_calibrate(imIn, hdr, prepDir, noCalFac=False):
+    """
+    Main processing wrapper for C2 calibration
+
+    Input:
+        imIn: the image we want to calbrate
+        
+        hdr: the header of the image we want to calbrate
+    
+        prepDir: the path where the extra files needed for prep are stored
+       
+    Optional Input:   
+        noCalFac: flag to turn off calibration factor correction (defaults to False)
+            
+    Output:
+        img: the calibrated image 
+        
+        hdr: the updated header for the calbrated image 
+    
+
+    """
+    #|-------------------|
+    #|--- Check is C2 ---|
+    #|-------------------|
     im = np.copy(imIn)
     if hdr['detector'] != 'C2':
         sys.exit('Error in c2_calibrate, passed non C2 files')
     
-    # Get the exp_factor
+    #|-----------------------------|
+    #|--- Pull exp_factor value ---|
+    #|-----------------------------|
     efacDir = prepDir+'expfac_data/'
     expfac, bias = get_exp_factor(hdr, efacDir)
     hdr['EXPTIME'] = hdr['EXPTIME'] * expfac
@@ -191,7 +305,9 @@ def c2_calibrate(imIn, hdr, prepDir, noCalFac=False):
     else:
         calfac = 1
 
-    # open the vignetting file
+    #|---------------------------|
+    #|--- Get vignetting file ---|
+    #|---------------------------|
     c2vigFile = prepDir + 'c2vig_final.fts'
     with fits.open(c2vigFile) as hdulist:
         vig  = hdulist[0].data
@@ -210,6 +326,9 @@ def c2_calibrate(imIn, hdr, prepDir, noCalFac=False):
         # lines 170 -178 in IDL
         sys.exit('Need to rebin vignetting and not done yet, byeeee')
         
+    #|-----------------------------|
+    #|--- Apply the corrections ---|
+    #|-----------------------------|
     # Ignoring some header history updating
     if hdr['polar'] in ['PB', 'TI', 'UP', 'JY', 'JZ', 'Qs', 'Us', 'Qt', 'Jr', 'Jt']:
         im = im / hdr['exptime']
@@ -225,11 +344,39 @@ def c2_calibrate(imIn, hdr, prepDir, noCalFac=False):
 #|--- Do c2 Calibration Calc ---|
 #|------------------------------|
 def c3_calibrate(imIn, hdr, prepDir, noCalFac=False, noMask=False):
+    """
+    Main processing wrapper for C3 calibration
+
+    Input:
+        imIn: the image we want to calbrate
+        
+        hdr: the header of the image we want to calbrate
+    
+        prepDir: the path where the extra files needed for prep are stored
+       
+    Optional Input:   
+        noCalFac: flag to turn off calibration factor correction (defaults to False)
+    
+        noMask: flag to turn off masking (defaults to False)
+            
+    Output:
+        img: the calibrated image 
+        
+        hdr: the updated header for the calbrated image 
+    
+
+    """
+    
+    #|-------------------|
+    #|--- Check is C3 ---|
+    #|-------------------|
     im = np.copy(imIn)
     if hdr['detector'] != 'C3':
         sys.exit('Error in c3_calibrate, passed non C3 files')
         
-    # Get the exp_factor
+    #|-----------------------------|
+    #|--- Pull exp_factor value ---|
+    #|-----------------------------|
     efacDir = prepDir+'expfac_data/'
     expfac, bias = get_exp_factor(hdr, efacDir)
     hdr['EXPTIME'] = hdr['EXPTIME'] * expfac
@@ -240,7 +387,9 @@ def c3_calibrate(imIn, hdr, prepDir, noCalFac=False, noMask=False):
     else:
         calfac = 1
         
-    # Vignetting    
+    #|---------------------------|
+    #|--- Get vignetting file ---|
+    #|---------------------------|
     mjd = hdr['mid_date']
     if mjd < 51000:
         vigFile = prepDir + 'c3vig_preint_final.fts' 
@@ -250,18 +399,25 @@ def c3_calibrate(imIn, hdr, prepDir, noCalFac=False, noMask=False):
         vig  = hdulist[0].data
         hdrV = hdulist[0].header
     
-    # Mask file    
+    #|---------------------|
+    #|--- Get mask file ---|
+    #|---------------------|
     c3maskFile = prepDir + 'c3_cl_mask_lvl1.fts'
     with fits.open(c3maskFile) as hdulist:
         mask  = hdulist[0].data
         hdrM = hdulist[0].header
     
-    # Ramp file    
+    #|---------------------|
+    #|--- Get ramp file ---|
+    #|---------------------|
     c3rampFile = prepDir + 'C3ramp.fts'
     with fits.open(c3rampFile) as hdulist:
         ramp = hdulist[0].data
         hdrR = hdulist[0].header
      
+    #|---------------------------|
+    #|--- Get background file ---|
+    #|---------------------------|
     # Bkg file for fuzziness?    
     c3bkgFile = prepDir + '3m_clcl_all.fts'
     with fits.open(c3bkgFile) as hdulist:
@@ -270,6 +426,9 @@ def c3_calibrate(imIn, hdr, prepDir, noCalFac=False, noMask=False):
     
     bkg = 0.8 * bkg / hdrb['exptime']
 
+    #|----------------------------|
+    #|--- Subsections of files ---|
+    #|----------------------------|
     if (hdr['r1col'] != 20) or (hdr['r1row'] != 1) or (hdr['r2col'] != 1043) or (hdr['r2row'] != 1024):
         x1 = hdr['r1col'] - 20
         x2 = hdr['r2col'] - 20
@@ -286,6 +445,9 @@ def c3_calibrate(imIn, hdr, prepDir, noCalFac=False, noMask=False):
         # lines 265 -289 in IDL
         sys.exit('Need to rebin vignetting and not done yet, byeeee')
     
+    #|-----------------------------|
+    #|--- Apply the corrections ---|
+    #|-----------------------------|
     # check if monthly image    
     if hdr['fileorig'] == 0:
         print ('Untested monthly image portion of c3_calibrate, should doublecheck')
@@ -318,6 +480,21 @@ def c3_calibrate(imIn, hdr, prepDir, noCalFac=False, noMask=False):
 #|--- c2 Main Prep Wrapper ---|
 #|----------------------------|
 def c2_prep(filesIn, prepDir):
+    """
+    Main processing wrapper for LASCO C2 images
+
+    Input:
+        filesIn: a list of files we want to calbrate
+            
+        prepDir: the path where the extra files needed for prep are stored
+           
+    Output:
+        ims: an array with image data for each of the files
+        
+        hdrs: the corresponding headers
+    
+
+    """
     ims, hdrs = [], []
     for aFile in filesIn:
         with fits.open(aFile) as hdulist:
@@ -336,6 +513,20 @@ def c2_prep(filesIn, prepDir):
 #|--- c3 Main Prep Wrapper ---|
 #|----------------------------|
 def c3_prep(filesIn, prepDir):
+     """
+     Main processing wrapper for LASCO C3 images
+
+     Input:
+         filesIn: a list of files we want to calbrate
+            
+         prepDir: the path where the extra files needed for prep are stored
+           
+     Output:
+         ims: an array with image data for each of the files
+        
+         hdrs: the corresponding headers
+    
+     """
      ims, hdrs = [], []
      for aFile in filesIn:
          with fits.open(aFile) as hdulist:
@@ -355,6 +546,23 @@ def c3_prep(filesIn, prepDir):
 #|---  C2 Warp Function ---|
 #|-------------------------|
 def c2_warp(im, hdr):
+    """
+    Function to correct for warping in C2 images
+
+    Input:
+        img: the image we want to correct
+        
+        hdr: the header of the image we want to correct
+        
+    Output:
+        img: the corrected image 
+        
+        hdr: the updated header for the corrected image    
+
+    """
+    #|-------------------------------------|
+    #|--- Set up grid of control points ---|
+    #|-------------------------------------|
     # Establish control points every 32 pixels
     w = np.arange(33*33)
     y = (w / 33).astype(int)
@@ -364,6 +572,9 @@ def c2_warp(im, hdr):
     
     im, hdr = reduce_std_size(im, hdr, noRebin=True, noCal=True)
 
+    #|----------------------------------|
+    #|--- Get Occulter Center pixels ---|
+    #|----------------------------------|
     # Use defaults for occulter center
     tel  = hdr['DETECTOR']
     filt = hdr['FILTER']
@@ -388,6 +599,9 @@ def c2_warp(im, hdr):
     sumx = hdr['lebxsum'] * np.max([hdr['sumcol'], 1])
     sumy = hdr['lebysum'] * np.max([hdr['sumrow'], 1])
 
+    #|---------------------------|
+    #|--- Correct for summing ---|
+    #|---------------------------|
     if sumx > 0:
         x = x / sumx
         xc = xc / sumx
@@ -399,7 +613,9 @@ def c2_warp(im, hdr):
     scalef = fDict[tel]    
     r = np.sqrt((sumx * (x-xc))**2 + (sumy * (y-yc))**2)
     
-    # apply c2_distortion
+    #|------------------------------|
+    #|--- Apply warping function ---|
+    #|------------------------------|
     mm = r * 0.021
     cf =[0.0051344125,-0.00012233862,1.0978595e-7] # pulled from DISTORTION_COEFFS for C2
     f1 = mm * ( cf[0] + cf[1] * mm**2 + cf[2]*mm**4)
@@ -410,7 +626,9 @@ def c2_warp(im, hdr):
     x0 = r0 * np.cos(theta) + xc
     y0 = r0 * np.sin(theta) + yc
     
-    # Use warp tri already ported in cor_prep
+    #|-------------------------------------------|
+    #|--- Convert using the cor_prep function ---|
+    #|-------------------------------------------|    
     im = warp_tri(x, y, x0, y0, im)
         
     return im, hdr
@@ -419,6 +637,24 @@ def c2_warp(im, hdr):
 #|---  C3 Warp Function ---|
 #|-------------------------|
 def c3_warp(im, hdr):
+    """
+    Function to correct for warping in C3 images
+
+    Input:
+        img: the image we want to correct
+        
+        hdr: the header of the image we want to correct
+        
+    Output:
+        img: the corrected image 
+        
+        hdr: the updated header for the corrected image    
+
+    """
+
+    #|-------------------------------------|
+    #|--- Set up grid of control points ---|
+    #|-------------------------------------|
     # Establish control points every 32 pixels
     w = np.arange(33*33)
     y = (w / 33).astype(int)
@@ -432,6 +668,9 @@ def c3_warp(im, hdr):
     tel  = hdr['DETECTOR']
     filt = hdr['FILTER']
     
+    #|----------------------------------|
+    #|--- Get Occulter Center pixels ---|
+    #|----------------------------------|
     # Using default occulter center, same for all filters in occltr_cntr.pro
     ctr = [516.284,529.489]
         
@@ -442,6 +681,9 @@ def c3_warp(im, hdr):
     y1 = hdr['r1row'] - 1
     y2 = hdr['r2row'] - 1
 
+    #|---------------------------|
+    #|--- Correct for summing ---|
+    #|---------------------------|
     sumx = hdr['lebxsum'] * np.max([hdr['sumcol'], 1])
     sumy = hdr['lebysum'] * np.max([hdr['sumrow'], 1])
 
@@ -459,7 +701,10 @@ def c3_warp(im, hdr):
     scalef = 56. # pulled from subtense for C3, called by get_sec_pixel
     r = np.sqrt((sumx * (x-xc))**2 + (sumy * (y-yc))**2)
     
-    # apply c2_distortion
+    #|------------------------------|
+    #|--- Apply warping function ---|
+    #|------------------------------|
+    # apply c3_distortion
     mm = r * 0.021
     cf =[-0.0151657, 0.000165455, 0.0] # pulled from DISTORTION_COEFFS for C3
     f1 = mm * ( cf[0] + cf[1] * mm**2)
@@ -470,18 +715,47 @@ def c3_warp(im, hdr):
     x0 = r0 * np.cos(theta) + xc
     y0 = r0 * np.sin(theta) + yc
     
-    # Use warp tri already ported in cor_prep
+    #|-------------------------------------------|
+    #|--- Convert using the cor_prep function ---|
+    #|-------------------------------------------|    
     im = warp_tri(x, y, x0, y0, im)
         
     return im, hdr
 
-        
-
-
-#|-----------------------|
-#|--- Reduce Function ---|
-#|-----------------------|
+#|---------------------------------|
+#|--- Make Standard Format Img  ---|
+#|---------------------------------|
 def reduce_std_size(im, hdr,bias=None, noRebin=False, noCal=False, full=False, saveHDR=False):
+    """
+    Function to reduce to a standard, processed 512x512 C2/C3 image
+
+    Input:
+        img: the image we want to calbrate
+        
+        hdr: the header of the image we want to calbrate
+          
+    Optional Input:   
+        bias: a bias value (think this was supposed to be an IDL output.., ignored here anyway)
+        
+        noRebin: flag to keep the image full sized (1024 not 512) (defauls to False)
+        
+        noCal: flag to turn off the calibration (defaults false)
+        
+        noRebin: flag to keep the image full sized (1024 not 512, defaults to False)
+                 *IDL has both of these... seems unnecessary
+    
+        saveHDR: option to save the original hdr (i.e. do not put new values in it, defaults to false)
+    
+    Output:
+        img: the standard image 
+        
+        hdr: the corresponding header
+    
+
+    """
+    #|--------------------------|
+    #|--- Pull Header Values ---|
+    #|--------------------------|
     sumrow = np.max([hdr['SUMROW'], 1])
     sumcol = np.max([hdr['SUMCOL'], 1])
     lebxsum = np.max([hdr['LEBXSUM'], 1])
@@ -499,6 +773,9 @@ def reduce_std_size(im, hdr,bias=None, noRebin=False, noCal=False, full=False, s
     if r1col < 1: r1col = hdr['P1COL']
     if r1row < 1: r1row = hdr['P1ROW']
     
+    #|------------------------------------------|
+    #|--- Standard Corrections based on hdr  ---|
+    #|------------------------------------------|
     if (type(bias) != type(None)) & (not noCal):
         print('Hitting unchecked portion of reduce_std_size')
         if sumcol > 1:
@@ -531,6 +808,9 @@ def reduce_std_size(im, hdr,bias=None, noRebin=False, noCal=False, full=False, s
     if noRebin: scale_to = naxis1
     if full: scale_to = 1024
     
+    #|---------------------------------|
+    #|--- Update the header values  ---|
+    #|---------------------------------|
     if not saveHDR:
         if noCal:
             hdr['crpix1'] = ((hdr['crpix1']*nxfac)+r1col-20)*scale_to/1024. 
@@ -554,73 +834,57 @@ def reduce_std_size(im, hdr,bias=None, noRebin=False, noCal=False, full=False, s
         hdr['cdelt1'] = hdr['cdelt1']*(1024/scale_to)
         hdr['cdelt2'] = hdr['cdelt2']*(1024/scale_to)
  
-    # do the rebin
+    #|-----------------------|
+    #|--- Rebin the image ---|
+    #|-----------------------|
     im = rebinIDL(im, np.array([scale_to, scale_to]))
     return im, hdr
-
-#|----------------------|
-#|---  Modify Header ---|
-#|----------------------|
-# Might toss. not using atm
-def adjust_hdr_tcr(hdr):
-    adjusted= {'date':'', 'time':'', 'err':'', 'xpos':0.0, 'ypos':0.0, 'roll':0.0}
-    
-    tel  = hdr['TELESCOP']
-    date = hdr['DATE-OBS']
-    time = hdr['TIME-OBS']
-    
-    # Pulled these from 'c2_c3_last_post_recovery_day.sav' 
-    last_day = '2024-05-15'
-    utclast_day = parse_time(last_day).utc 
-    utcdate = parse_time(date).utc
-    if utcdate > utclast_day:
-        return adjusted
-    
-    adj_dt = adjust_all_date_obs(hdr)
-        
-        
-    tcr = None
-    return tcr
-
-#|---------------------------|
-#|---  Adjust Header Date ---|
-#|---------------------------|
-# Might toss. not using atm
-def adjust_all_date_obs(hdr):
-    adj= {'date':'', 'time':'', 'err':''}
-    tel  = hdr['TELESCOP']
-    date = hdr['DATE-OBS']
-    time = hdr['TIME-OBS']
-    print (date)
-    if time == '':
-        print ('Hitting unchecked portion of adjust_all_date_obs')
-        adj['date'] =  date[:4] + '/' + date[5:7] + '/' + date[8:10]
-        adj['time'] = data[11:]
-        adj['err'] = 'level-1 hdr, not adjusted'
-        return adj
-    
-    offset = 0 # ignoring this step for now, might be needed 48.6250
-    
-    return adj
-
             
 #|--------------------------|
 #|---  Main Prep Wrapper ---|
 #|--------------------------|
 # Converts from 0.5 to Lev 1 data
 def reduce_level_1(filesIn, no_mask=False, noScale=False, prepDir='prepFiles/soho/lasco/'):
+    """
+    Main processing wrapper for LASCO images
+
+    Input:
+        filesIn: a list of files to process
+       
+    Optional Input:   
+        no_mask: flag to not include mask in images (defaults to false)
+        
+        noScale: flag that does nothing, for unported IDL parts (defaults to false)
+        
+        prepDir: directory where the processing helper files live (defaults to prepFiles/soho/lasco/)
+    
+    Output:
+        ims: an array of prepped images corresponding to the input files 
+        
+        hdrs: an array of headers matching the images
+    
+
+    """
     # Might need to findthings from common blocks 162-165
-    # Check if string or array
+    
+    #|---------------------------|
+    #|---  Check array/string ---|
+    #|---------------------------|
     if type(filesIn) == type('ImAString'):
         filesIn = [filesIn]
     
+    #|-----------------|
+    #|--- Main Loop ---|
+    #|-----------------|
     ims, hdrs = [], []
     # Loop through the array
     for aFile in filesIn:
         # Exit if cannot find file
         if not os.path.exists(aFile):
             sys.exit('Cannot find '+aFile)
-        # Open it otherwise
+        #|-------------------|
+        #|--- Open a file ---|
+        #|-------------------|
         with fits.open(aFile) as hdulist:
             im  = hdulist[0].data
             hdr = hdulist[0].header
@@ -661,18 +925,7 @@ def reduce_level_1(filesIn, no_mask=False, noScale=False, prepDir='prepFiles/soh
         
         # Take caldir as optional input, points to wombat files instead of ssw
         
-        # Skipping more logfile things 267 - 307
-        
-        # Make a header with less details bc apparently thats what it wants
-        '''hdrLess = {}
-        # Skipping current time bc not going to use it in a history string
-        toGrab = ['FILENAME', 'FILEORIG', 'DATE-OBS', 'TIME-OBS','EXPTIME', 'TELESCOP', 'INSTRUME', 'DETECTOR', 'READPORT', 'SUMROW', 'SUMCOL', 'LEBXSUM', 'LEBYSUM', 'FILTER', 'POLAR', 'COMPRSSN', 'MID_DATE', 'MID_TIME', 'R1COL', 'R1ROW', 'R2COL', 'R2ROW']
-        for key in toGrab:
-            # Add both upper and lower bc python cares but IDL inconsistent
-            hdrLess[key.lower()] = hdr[key]
-            hdrLess[key] = hdr[key]
-        hdrLess['level'] = '1.0' '''
-        
+        # Skipping more logfile things 267 - 307        
         
         
         # |------------------------------------|
@@ -681,24 +934,33 @@ def reduce_level_1(filesIn, no_mask=False, noScale=False, prepDir='prepFiles/soh
         if camera == 'C1':
             sys.exit('C1 not available in reduce_level_1')
         elif camera == 'C2':
-            # Calibrate
+            #|-----------------|
+            #|--- Calibrate ---|
+            #|-----------------|
             im, hdr = c2_calibrate(im, hdr, prepDir)
             
-            # Warp
+            #|---------------|
+            #|--- Warping ---|
+            #|---------------|
             im, hdr = c2_warp(im, hdr)
                         
             # No mask - assume no missing blocks for now (true on test case)
         elif camera == 'C3':
-            # Calibrate
+            #|-----------------|
+            #|--- Calibrate ---|
+            #|-----------------|
             im, hdr = c3_calibrate(im, hdr, prepDir)
             
-            # Warp
+            #|---------------|
+            #|--- Warping ---|
+            #|---------------|
             im, hdr = c3_warp(im, hdr)
         
-        # Modify the hdr, or not
-        #tcr = adjust_hdr_tcr(hdr)
-        
-        # Running with unadjusted that are within 1 pix/deg
+        #|-----------------------|
+        #|--- Roll correction ---|
+        #|-----------------------|       
+        # adjust_hdr_tcr was a rabbit hole not worth the effort
+        # Running with unadjusted values that are within 1 pix/deg
         roll = hdr['crota1']
         cx   = hdr['crpix1'] - 1 #think adjusted to array units not fits
         cy   =  hdr['crpix2'] - 1 
@@ -724,7 +986,9 @@ def reduce_level_1(filesIn, no_mask=False, noScale=False, prepDir='prepFiles/soh
         crpix_x = xc+1
         crpix_y = yc+1
         
-        # Rotate it the last bit (or not, its close now at least)
+        #|---------------------|
+        #|--- Adjust header ---|
+        #|---------------------|       
         hdr['CRPIX1'] = crpix_x
         hdr['CRPIX2'] = crpix_y
         hdr['CROTA']  = roll

@@ -8,6 +8,9 @@ IDL routines on a pixel by pixel basis. We try to keep anything
 generic or named scc_ here as opposed to the individual 
 instrument python files
 
+External Calls:
+    sunspyce
+
 """
 from astropy.io import fits
 import numpy as np
@@ -29,6 +32,17 @@ idl_base_date = datetime.datetime(1979, 1, 1, 0, 0, 0) # needed for anytim match
 #|--- Make empty secchi-like hdr ---|
 #|----------------------------------|
 def def_secchi_hdr():
+    """
+    Function that generates and empty secci style header
+
+    Input:
+       None
+    
+    Output:
+        hdr: a dictionary set up with typical secchi style keywords
+             set to default/null values
+    
+    """    
     hdr = {}
     hdr['EXTEND'] = 'F'
     hdr['BITPIX'] = 0
@@ -253,6 +267,17 @@ def def_secchi_hdr():
 #|--- Add missing keys to a hdr ---|
 #|---------------------------------|
 def fill_from_defhdr(hdr):
+    """
+    Function that adds any missing secchi-like keywords to an 
+    existing header (using default/null values for missing)
+
+    Input:
+        hdr: the input header
+    
+    Output:
+        hdr: the header with added keys/values
+
+    """    
     mthdr   = def_secchi_hdr()
     allKeys = np.array(mthdr.keys())
     keys    = np.array(hdr.keys())
@@ -265,6 +290,19 @@ def fill_from_defhdr(hdr):
 #|--- Get origin based on inst ---|
 #|--------------------------------|
 def sccrorigin(hdr):
+    """
+    Function that returns the origin for the data portion
+    of a secchi instrument fits image
+
+    Input:
+        hdr: a header for a secchi image
+    
+    Output:
+        coord:  an array of [column, row] corresponding to the pixels
+                of the origin
+
+
+    """    
     # Full port of sccrorigin
     # Could probably just make a dictionary
     p1col=51 # why are these in IDL? seem unused
@@ -305,9 +343,40 @@ def sccrorigin(hdr):
 #|--- Get headers + initiate arrays ---|
 #|-------------------------------------|
 def scc_make_array(filesIn, outSize=None, trim_off=False):
+    """
+    Function that makes empty arrays to hold the fits image data. This 
+    could probably be tossed bc python doesn't require pre-defined variables
+
+    Input:
+        filesIn: a list of fits files path+names
+    
+    Optional Input:
+        outSize: size of the output image. Gets overwritten for all cases?
+    
+        trim_off: flag to turn off trimming the image down to only data (defaults to false)
+
+    Output:
+        imgs: an array of empty arrays sized to hold the image data
+    
+        hdrs: the hdrs from each file
+    
+        outout: the maximum dimension of outSize
+        
+        outSize: an array with the integer sizes of the dimensionts
+    
+        out: a dictionary of useful things
+             {'outsize':outSize,'offset':offset,'readsize':readsize,'binned':summed}
+    
+        *** this seems like the outputs could be cleaned up but not a priority fix
+
+
+    """    
     # Port of IDL code
     # Starting at line 50
     
+    #|-----------------------------|
+    #|--- Define out dictionary ---|
+    #|-----------------------------|
     # Cannot find where output_array common is defined but seems 
     # to always have the following values    
     out =  {'outsize':[2048.00, 2048.00], 'offset':[129, 2176, 51, 2098], 'readsize':[2048, 2048], 'binned':1.00000}
@@ -321,6 +390,9 @@ def scc_make_array(filesIn, outSize=None, trim_off=False):
         with fits.open(filesIn[i]) as hdulist:
                mhdr.append(hdulist[0].header)
     
+    #|----------------------------|
+    #|--- Untrimmed properties ---|
+    #|----------------------------|
     if trim_off:
         # These seem to be the contents of the out common block...
         outsize  = [2176,2176]
@@ -329,6 +401,10 @@ def scc_make_array(filesIn, outSize=None, trim_off=False):
         summed   = 1.
     
     else:
+        #|-------------------------------|
+        #|--- Calculate values w/trim ---|
+        #|-------------------------------|
+        
         # call sccrorigin
         # gets the 'rectified lower left (origin) value of full im area
         start = sccrorigin(mhdr[0])
@@ -347,6 +423,10 @@ def scc_make_array(filesIn, outSize=None, trim_off=False):
             
         readsize = np.array([offset[1]-offset[0]+1,offset[3]-offset[2]+1])
             
+ 
+    #|--------------------------|
+    #|--- Summing Adjustment ---|
+    #|--------------------------|
     if outSize:
         summed = np.max(readsize) / outSize[0]
         outSize = readsize / summed
@@ -361,10 +441,15 @@ def scc_make_array(filesIn, outSize=None, trim_off=False):
             
     # Skipping polarized for now (102 - 108)
     
+    #|----------------------------|
+    #|--- Reset out dictionary ---|
+    #|----------------------------|
     out = {'outsize':outSize,'offset':offset,'readsize':readsize,'binned':summed}
     outout = np.max(outSize)
     
-    # Create output arrays
+    #|-------------------------|
+    #|--- Make empty arrays ---|
+    #|-------------------------|
     imgs = np.empty([int(outSize[0]), int(outSize[1]), num], dtype=float)
     # makes an empty header
     headers = []
@@ -378,11 +463,28 @@ def scc_make_array(filesIn, outSize=None, trim_off=False):
 #|--- Fill array with fits data ---|
 #|---------------------------------|
 def scc_zelensky_array(im, hdr, outsize, out):
-    # Port of scc_putin_array but got cute/political
-    # This is mostly useless bc Python doesn't need to premake arrays
-    # like IDL but it does do rebinning if needed.
-    # Port of scc_putin_array
+    """
+    Function that puts data into the empty arrays. This is based on
+    scc_putin_array in IDL but CK got cute/political. Probably 
+    unnecessary anyway bc python can just open fits files directly
+    to image variables
+
+    Input:
+        im: image data from a fits file
     
+        hdr: header data from a fits file
+    
+        outsize: the desired size of the output image
+    
+        out: a dictionary of useful things
+             {'outsize':outSize,'offset':offset,'readsize':readsize,'binned':summed}
+    
+    Output:
+        output_img: the image, which is either the same or size changed according to outSize
+    
+        hdr: the updated header
+
+    """        
     # Assume we have been given proper header and out is defined from make_array
     
     # Set up some things
@@ -395,12 +497,19 @@ def scc_zelensky_array(im, hdr, outsize, out):
     # Skipping new/full keyword    
 
     # Skipping to 141
+
+    #|------------------------------|
+    #|--- Check if changing size ---|
+    #|------------------------------|    
     output_img = im
     if (hdr['naxis1'] != out['outsize'][0]) or (hdr['naxis2'] != out['outsize'][1]):
         if (out['readsize'][1] - 1 != (hdr['r2col'] - hdr['r1col'])) or (out['readsize'][0] - 1 != (hdr['r2row'] - hdr['r1row'])):
             print ('hit uncoded part of scc_zelensky_array')
             print(Quit)
             
+        #|--------------------------------|
+        #|--- Resize and update header ---|
+        #|--------------------------------|
         if out['binned'] != 2 ** (hdr['summed'] -1):
             outshape = np.array(output_img.shape).astype(float)
             bindif = np.max(outshape /np.max(out['outsize']))
@@ -432,13 +541,40 @@ def scc_zelensky_array(im, hdr, outsize, out):
 #|--- Rectify it!!! ---|
 #|---------------------|
 def secchi_rectify(a, scch, norotrate=False, silent=True):
-    # check not already rectified
+    """
+    Function that rectifies/rotates an image based on the spacecraft
+    information. A little math and a lot of tedious header edits
+    
+    Input:
+        a: an image
+    
+        scch: the corresponding header
+    
+        ** CK did not pick these var names, matches IDL...
+    
+    Optional Input:
+        norotrate: flag to not rotate the image, only update rot keyword in hdr (defaults to False)
+                *** should prob be norotate not norotrate but keep as is to avoid breaking anything
+    
+        silent: flag to not print non-critical info to screen (defaults to True)
+
+    Output:
+        b: a rotated image
+    
+        scch: the corresponding header
+
+    """    
+    #|----------------------------------|
+    #|--- Check if already rectified ---|
+    #|----------------------------------|    
     if scch['rectify'] not in ['F', False, 'False', '0', 0]:
         if not silent:
             print('We already done did the rectifying. Returning original img in secchi_rectify')
         return a, scch
     
-    # Check if post conjunction
+    #|---------------------------------|
+    #|--- Check if post conjunction ---|
+    #|---------------------------------|
     post_conj = False 
     # Have to check if key actually exist bc stripped from some calibration files
     # Haven't tested a case that hits this
@@ -452,21 +588,26 @@ def secchi_rectify(a, scch, norotrate=False, silent=True):
                 post_conj = True
         except:
             print('No date in header to use in rectify. Assuming not post conjunction')
-    
+            
+    # Copy the header
     stch = scch
-    # -----------------
-    # Rotate version
-    # -----------------
+    
+    #|--------------------------------|
+    #|--- Do full rotation version ---|
+    #|--------------------------------|    
     if ~norotrate:
         scch['rectify'] = True
         obs = scch['obsrvtry']
-        # -----------------
-        #  A not post_conj
-        # -----------------
         
+        #|---------------------------------|
+        #|--- STA, not post-conjunction ---|
+        #|---------------------------------|
         if (obs == 'STEREO_A') & ~post_conj:
             det = scch['detector']  
             
+            #|------------|
+            #|--- EUVI ---|
+            #|------------|
             if det == 'EUVI':
                 b = np.rot90(a[:,::-1], k=-1)
                 stch['r1row']=2176-scch['p2col']+1
@@ -490,6 +631,9 @@ def secchi_rectify(a, scch, norotrate=False, silent=True):
                 stch['dstop2']	=stch['dstart2']-1+((stch['r2row']-stch['r1row']+1)<2048)
                 
 
+            #|------------|
+            #|--- COR1 ---|
+            #|------------|
             if det == 'COR1':
                 b=np.rot90(a,k=1)  
                 stch['r1row']=2176-scch['p2col']+1
@@ -512,6 +656,9 @@ def secchi_rectify(a, scch, norotrate=False, silent=True):
                 stch['dstart2']	=(79-stch['r1row']+1)>1
                 stch['dstop2']	=stch['dstart2']-1+((stch['r2row']-stch['r1row']+1)<2048)
             
+            #|------------|
+            #|--- COR2 ---|
+            #|------------|
             if det == 'COR2':
                 # IDL -> b = rotate(a,1) same as np.rot90(k=3)
                 b = np.rot90(a,k=3)
@@ -536,6 +683,9 @@ def secchi_rectify(a, scch, norotrate=False, silent=True):
                 stch['dstart2']	=(51-stch['r1row']+1)>1
                 stch['dstop2']	=stch['dstart2']-1+((stch['r2row']-stch['r1row']+1)<2048)
                 
+            #|-----------|
+            #|--- HI1 ---|
+            #|-----------|
             if det == 'HI1':
                 b=a 	    	# no change
                 stch['r1row']=scch['p1row']
@@ -546,6 +696,9 @@ def secchi_rectify(a, scch, norotrate=False, silent=True):
                 stch['rectrota']=0
                 rotcmt='no rotation necessary'
             
+            #|-----------|
+            #|--- HI2 ---|
+            #|-----------|
             if det == 'HI2':
                 b=a 	    	# no change
                 stch['r1row']=scch['p1row']
@@ -556,11 +709,15 @@ def secchi_rectify(a, scch, norotrate=False, silent=True):
                 stch['rectrota']=0
                 rotcmt='no rotation necessary'
                             
-        # -----------------
-        #  B (didn't survive to post_conj)
-        # -----------------        
+        #|---------------------------|
+        #|--- STB, whenever (RIP) ---|
+        #|---------------------------|
         if (obs == 'STEREO_B'):
             det = scch['detector']  
+            
+            #|------------|
+            #|--- EUVI ---|
+            #|------------|
             if det == 'EUVI':
                 b=np.rot90(a,k=1)
                 stch['r1row']=2176-scch['p2col']+1
@@ -583,6 +740,9 @@ def secchi_rectify(a, scch, norotrate=False, silent=True):
                 stch['dstart2']	=(79-stch['r1row']+1)>1
                 stch['dstop2']	=stch['dstart2']-1+((stch['r2row']-stch['r1row']+1)<2048)
 
+            #|------------|
+            #|--- COR1 ---|
+            #|------------|
             if det == 'COR1':
                 b=np.rot90(a,k=-1)      # 90 CCW =[x0,y0]=[y0,x1], [x1,y1]=[y1,x0] 
                 stch['r1row']=scch['p1col']
@@ -605,6 +765,9 @@ def secchi_rectify(a, scch, norotrate=False, silent=True):
                 stch['dstart2']	=(51-stch['r1row']+1)>1
                 stch['dstop2']	=stch['dstart2']-1+((stch['r2row']-stch['r1row']+1)<2048)
             
+            #|------------|
+            #|--- COR2 ---|
+            #|------------|
             if det == 'COR2':
                 # IDL -> b = rotate(a,3) same as np.rot90(,k=1)
                 b = np.rot90(a)
@@ -628,6 +791,9 @@ def secchi_rectify(a, scch, norotrate=False, silent=True):
                 stch['dstart2']	=(79-stch['r1row']+1)>1
                 stch['dstop2']	=stch['dstart2']-1+((stch['r2row']-stch['r1row']+1)<2048)
             
+            #|-----------|
+            #|--- HI1 ---|
+            #|-----------|
             if det == 'HI1':
                 b= a[::-1,::-1]
                 stch['r1row']=2176-scch['p2row']+1
@@ -648,6 +814,9 @@ def secchi_rectify(a, scch, norotrate=False, silent=True):
                 stch['dstart2']	=(129-stch['r1row']+1)>1
                 stch['dstop2']	=stch['dstart2']-1+((stch['r2row']-stch['r1row']+1)<2048)
             
+            #|-----------|
+            #|--- HI2 ---|
+            #|-----------|
             if det == 'HI2':
                 b= a[::-1,::-1]
                 stch['r1row']=2176-scch['p2row']+1
@@ -669,12 +838,15 @@ def secchi_rectify(a, scch, norotrate=False, silent=True):
                 stch['dstop2']	=stch['dstart2']-1+((stch['r2row']-stch['r1row']+1)<2048)
             
                 
-        # -----------------
-        #  A  post_conj
-        # -----------------        
+        #|-----------------------------|
+        #|--- STA, post-conjunction ---|
+        #|-----------------------------|    
         if (obs == 'STEREO_A') & post_conj:
             det = scch['detector']
             
+            #|------------|
+            #|--- EUVI ---|
+            #|------------|
             if det == 'EUVI':
                 b=np.transpose(a)
                 stch['r1row']=scch['p1col']
@@ -697,6 +869,9 @@ def secchi_rectify(a, scch, norotrate=False, silent=True):
                 stch['dstart2']	=(79-stch['r1row']+1)>1
                 stch['dstop2']	=stch['dstart2']-1+((stch['r2row']-stch['r1row']+1)<2048)
 
+            #|------------|
+            #|--- COR1 ---|
+            #|------------|
             if det == 'COR1':
                 b=np.rot90(a, k=-1) #stch['r1row'] 90 CCW =[x0,y0]=[y0,x1], [x1,y1]=[y1,x0] 
                 stch['r1row']=scch['p1col']
@@ -719,6 +894,9 @@ def secchi_rectify(a, scch, norotrate=False, silent=True):
                 stch['dstart2']	=(51-stch['r1row']+1)>1
                 stch['dstop2']	=stch['dstart2']-1+((stch['r2row']-stch['r1row']+1)<2048)
             
+            #|------------|
+            #|--- COR2 ---|
+            #|------------|
             if det == 'COR2':
                 # IDL -> b = rotate(a,3) same as np.rot90(,k=1)
                 b = np.rot90(a)
@@ -742,6 +920,9 @@ def secchi_rectify(a, scch, norotrate=False, silent=True):
                 stch['dstart2']	=(79-stch['r1row']+1)>1
                 stch['dstop2']	=stch['dstart2']-1+((stch['r2row']-stch['r1row']+1)<2048)
 
+            #|-----------|
+            #|--- HI1 ---|
+            #|-----------|
             if det == 'HI1':
                 b=a[::-1,::-1]
                 stch['r1row']=2176-scch['p2row']+1
@@ -762,6 +943,9 @@ def secchi_rectify(a, scch, norotrate=False, silent=True):
                 stch['dstart2']	=(129-stch['r1row']+1)>1
                 stch['dstop2']	=stch['dstart2']-1+((stch['r2row']-stch['r1row']+1)<2048)
             
+            #|-----------|
+            #|--- HI2 ---|
+            #|-----------|
             if det == 'HI2':
                 b=a[::-1,::-1]
                 stch['r1row']=2176-scch['p2row']+1
@@ -784,9 +968,9 @@ def secchi_rectify(a, scch, norotrate=False, silent=True):
             
                 
         
-    # -----------------
-    # No Rotate version
-    # -----------------
+    #|-------------------------------|
+    #|--- Do keyword only version ---|
+    #|-------------------------------|    
     else:
         stch.rectify = 'F'
         b = a 	    	# no change
@@ -816,6 +1000,23 @@ def secchi_rectify(a, scch, norotrate=False, silent=True):
 #|--- Get pix of sun center ---|
 #|-----------------------------|
 def scc_sun_center(hdr):
+    """
+    Function that gets the pixel location of the sun center. Mostly
+    a wrapper of the astropy wcs function, which is slower than the 
+    routine in wcs_funs, but slightly more accurate
+
+    Input:
+        hdr: a header for the time/instrument
+    
+    Optional Input:
+        downSize: size of the output image (in pixels)
+                  *** assuming a square output
+
+    Output:
+        scen: center of the sun in pixels [x,y]
+
+
+    """    
     # assuming proper header, doing single not array of headers
     
     sunc = {'xcen':0, 'ycen':0.}
@@ -826,13 +1027,25 @@ def scc_sun_center(hdr):
     
     scen = wcs_get_pixel(my_wcs, [0,0])
     
-    return suncen
+    return scen
     
 #|---------------------------|
 #|--- Mimic IDL rebinning ---|
 #|---------------------------|
 # Not 100% exact same but as close as possible
 def rebinIDL(arr, new_shape):
+    """
+    Function that rebin things an array in the most similar way
+    possible to the standard IDL rebinning. This is not 100 percent
+    exact match but it is pretty close
+
+    Input:
+        arr: an input array
+    
+    Output:
+        new_shape: the desired shape of the output
+
+    """    
     factors = arr.shape // new_shape
     outarr = arr.reshape(new_shape[0], factors[0], new_shape[1], factors[1]).mean(3).mean(1)
     return outarr
@@ -841,10 +1054,29 @@ def rebinIDL(arr, new_shape):
 #|--- Adjust for sebip ---|
 #|------------------------|
 def scc_sebip(img, hdr):
+    """
+    Function that performs a SEB IP correction
+
+    Input:
+        img: an image
+    
+        hdr: its header
+    
+    Output:
+        im: the corrected image
+        
+        hdr: the update header
+    
+        flag: a flag indicating the correction was applied (?)
+
+    """    
     # Assuming everything is ok as usual
     im = img
     flag = 0
 
+    #|------------------------------|
+    #|--- Pull/process IP values ---|
+    #|------------------------------|
     ip = hdr['ip_00_19']
     # Make sure IP is 60 char long, could be as low as 58
     # (just porting these very non python lines for now)
@@ -866,11 +1098,15 @@ def scc_sebip(img, hdr):
         print ('Need to port this when hit proper test case (in scc_sebip)')
         print (Quit)
 
-    # Don't need the Vin Diesel chunk (108 - 121), just check the cases for corrections
-    # on the fly below
+    # Don't need the Vin Diesel chunk (108 - 121) from IDL, just check the cases 
+    # for corrections on the fly below. (its a bunch of xxx = lines)
     flag = False
 
+    #|-----------------------------------------------|
+    #|--- Check for each tag and adjust as needed ---|
+    #|-----------------------------------------------|
     seb_ip = np.array(seb_ip)
+    # |--- Case of 1 ---|
     if '  1' in seb_ip:
         count = len(np.where(seb_ip == '  1')[0])
         if hdr['DIV2CORR']: 
@@ -879,72 +1115,84 @@ def scc_sebip(img, hdr):
         hdr['history'] = 'seb_ip Corrected for Divide by 2 x '+str(count)
         flag = True
         
+    # |--- Case of 2 ---|
     if '  2' in seb_ip:
         count = len(np.where(seb_ip == '  2')[0])
         im = im**(2**count)
         hdr['history'] = 'seb_ip Corrected for Square Root x '+str(count)
         flag = True
         
+    # |--- Case of 16 or 17 ---|
     if (' 16' in seb_ip) or (' 17' in seb_ip):
         count = len(np.where(seb_ip == ' 16')[0]) + len(np.where(seb_ip == ' 17')[0])
         im = im * (64**count)
         hdr['history'] = 'seb_ip Corrected for HI?SPW Divide by 64 x '+str(count)
         flag = True
 
+    # |--- Case of 50 ---|
     if ' 50' in seb_ip:
         count = len(np.where(seb_ip == ' 50')[0])
         im = im * (4**count)
         hdr['history'] = 'seb_ip Corrected for for Divide by 4 x '+str(count)
         flag = True
         
+    # |--- Case of 53 ---|
     if ' 53' in seb_ip:
         count = len(np.where(seb_ip == ' 53')[0])
         im = im * (4**count)
         hdr['history'] = 'seb_ip Corrected for for Divide by 4 x '+str(count)
         flag = True
         
+    # |--- Case of 82 ---|
     if ' 82' in seb_ip:
         count = len(np.where(seb_ip == ' 82')[0])
         im = im * (2**count)
         hdr['history'] = 'seb_ip Corrected for Divide by 2 x '+str(count)
         flag = True
 
+    # |--- Case of 83 ---|
     if ' 83' in seb_ip:
         count = len(np.where(seb_ip == ' 83')[0])
         im = im * (4**count)
         hdr['history'] = 'seb_ip Corrected for for Divide by 4 x '+str(count)
         flag = True
 
+    # |--- Case of 84 ---|
     if ' 84' in seb_ip:
         count = len(np.where(seb_ip == ' 84')[0])
         im = im * (8**count)
         hdr['history'] = 'seb_ip Corrected for for Divide by 8 x '+str(count)
         flag = True
 
+    # |--- Case of 85 ---|
     if ' 85' in seb_ip:
         count = len(np.where(seb_ip == ' 85')[0])
         im = im * (16**count)
         hdr['history'] = 'seb_ip Corrected for for Divide by 16 x '+str(count)
         flag = True
 
+    # |--- Case of 86 ---|
     if ' 86' in seb_ip:
         count = len(np.where(seb_ip == ' 86')[0])
         im = im * (32**count)
         hdr['history'] = 'seb_ip Corrected for for Divide by 32 x '+str(count)
         flag = True
 
+    # |--- (Crosby) Case of 87 (booooo) ---|
     if ' 87' in seb_ip:
         count = len(np.where(seb_ip == ' 87')[0])
         im = im * (64**count)
         hdr['history'] = 'seb_ip Corrected for for Divide by 64 x '+str(count)
         flag = True
 
+    # |--- (Pastrnak) Case of 88 (yay) ---|
     if ' 88' in seb_ip:
         count = len(np.where(seb_ip == ' 88')[0])
         im = im * (128**count)
         hdr['history'] = 'seb_ip Corrected for for Divide by 128 x '+str(count)
         flag = True
 
+    # |--- Case of 118 ---|
     if '118' in seb_ip:
         count = len(np.where(seb_ip == '118')[0])
         im = im * (3**count)
@@ -956,6 +1204,28 @@ def scc_sebip(img, hdr):
 #|--- Get background image ---|
 #|----------------------------|
 def scc_getbkgimg(hdr, secchi_bkg ='STEREObackgrounds/', doRot=False):
+    """
+    Function that grabs the appropriate background file for a given header.
+    It matches the image size of the input but does not currently correct
+    for any (minor) difference in the between their rolls.
+
+    Input:
+        hdr: a list of fits files path+names
+    
+    Optional Input:
+        secchi_bkg: folder where the background files are stored
+                    (defaults to STEREObackgrounds/)
+    
+        doRot: rotate to correct for a roll diff between input and 
+               background file (not implemented, defaults false)
+    
+    Output:
+        bim: the processed background image
+    
+        bhdr: the corresponding header
+
+
+    """    
     # Assume no interp for now
     
     # port of get_delim, untested on windows
@@ -967,6 +1237,9 @@ def scc_getbkgimg(hdr, secchi_bkg ='STEREObackgrounds/', doRot=False):
         
     # Assume proper header
     
+    #|--------------------|
+    #|--- Get detector ---|
+    #|--------------------|
     tel = hdr['DETECTOR'].upper().strip()
     if tel == 'EUVI':
         cam = 'eu'
@@ -976,6 +1249,9 @@ def scc_getbkgimg(hdr, secchi_bkg ='STEREObackgrounds/', doRot=False):
     
     doshift = False # is this still used? commented out below
     
+    #|----------------------|
+    #|--- Get spacecraft ---|
+    #|----------------------|
     # Get sc name
     tags = np.array([key for key in hdr])
     filename = hdr['FILENAME']
@@ -987,10 +1263,13 @@ def scc_getbkgimg(hdr, secchi_bkg ='STEREObackgrounds/', doRot=False):
     else:
         sc = hdr['OBSRVTRY'][7].lower()
 
-    # Check cs name
+    # Check scname
     if sc not in ['a', 'b']:
         sys.exit('Error in scc_getbkgim. Invalid spacecraft name.')
         
+    #|------------------------|
+    #|--- Check processing ---|
+    #|------------------------|
     # Check processing level
     isL1 = False
     levchar = filename[16]
@@ -998,6 +1277,9 @@ def scc_getbkgimg(hdr, secchi_bkg ='STEREObackgrounds/', doRot=False):
         isL1 = True
         match = False
 
+    #|----------------------|
+    #|--- Build filename ---|
+    #|----------------------|    
     # Not setting up keywords raw_calroll, calroll, daily so skipping (401-413)
     ndays = 30
     rootdir = secchi_bkg + sc + delim + 'monthly_min' + delim
@@ -1012,6 +1294,9 @@ def scc_getbkgimg(hdr, secchi_bkg ='STEREObackgrounds/', doRot=False):
 
     # not using the totalb, double_totalB keys for now so skipping (423-427)
     
+    #|-----------------------|
+    #|--- Format the date ---|
+    #|-----------------------|    
     # Get the date
     if 'DATE-AVG' in tags:
         dtin = hdr['DATE-AVG']
@@ -1026,6 +1311,9 @@ def scc_getbkgimg(hdr, secchi_bkg ='STEREObackgrounds/', doRot=False):
     avgDT = datetime.datetime.strptime(dtin, "%Y-%m-%dT%H:%M:%S.%f" )
     mjdin = (avgDT - mjd_epoch).total_seconds()/(24*3600)
     
+    #|-------------------------|
+    #|--- Check repointings ---|
+    #|-------------------------|    
     # Check against major sc repointings
     if sc == 'a':
         repoint = ['2006-12-21T13:15', '2007-02-03T13:15','2015-05-19T00:00', '2023-08-12T00:00']
@@ -1073,6 +1361,9 @@ def scc_getbkgimg(hdr, secchi_bkg ='STEREObackgrounds/', doRot=False):
     if isHI:
         roll = 0
     
+    #|---------------------------|
+    #|--- Find closest friend ---|
+    #|---------------------------|    
     # Look for the correct or closest file. IDL makes this a headache
     # This is equiv to 531-662 but ignoring interp and other stuff
     exactFile = rootdir + sdir + delim + fchar + cam + sc.upper() + polstr + sfil + postd + '.fts'
@@ -1115,6 +1406,9 @@ def scc_getbkgimg(hdr, secchi_bkg ='STEREObackgrounds/', doRot=False):
                     
     # Skipping more for interp, postd, doubles 
     
+    #|---------------------|
+    #|--- Open bkg file ---|
+    #|---------------------|    
     # Read in file, skipping 666-711
     if isL1 and not isHI:
         print ('Need to add secchi prep the background, not coded')
@@ -1146,7 +1440,9 @@ def scc_getbkgimg(hdr, secchi_bkg ='STEREObackgrounds/', doRot=False):
         else:
             sys.exit('Issue getting background image date')
             
-    # Match image size
+    #|------------------|
+    #|--- Match size ---|
+    #|------------------|    
     i_reduce = bhdr['naxis1'] / hdr['naxis1']
     j_reduce = bhdr['naxis2'] / hdr['naxis2']
         
@@ -1201,17 +1497,38 @@ def scc_getbkgimg(hdr, secchi_bkg ='STEREObackgrounds/', doRot=False):
 #|--- Correct diffusion in HI ---|
 #|-------------------------------|
 def scc_hi_diffuse(hdr, ipsum=None):   
+    """
+    Function that gets a correction factor for diffusion
+    in HI images. The returned factor is the size of the
+    image as defined in the header
+
+    Input:
+        hdr: an HI header file
+    
+    Optional Input:
+        ipsum: an ipsum value. it will be pulled from the hdr if
+               not provided (defaults to None)
+
+    Output:
+        correct: a 2d array correction factor
+
+
+    """    
     dtor = np.pi / 180.            
     if ipsum == None:
         ipsum = hdr['ipsum']
-        
+    
+    #|--- Calculate summing ---|    
     summing = 2 ** (ipsum - 1)
     
+    #|--- Case with ravg in hdr ---|
     cdelt = None
     if 'ravg' in hdr:
         if hdr['ravg'] > 0:
             mu = hdr['pv2_1']
             cdelt = hdr['cdelt1'] * dtor
+    
+    #|--- Other cases ---|
     if cdelt == None:
         if hdr['detector'] == 'HI1':
             if hdr['OBSRVTRY'] == 'STEREO_A':
@@ -1232,6 +1549,9 @@ def scc_hi_diffuse(hdr, ipsum=None):
     pixelSize = 0.0135 * summing
     fp = pixelSize / cdelt
     
+    #|-----------------------------|
+    #|--- Make Correction Array ---|
+    #|-----------------------------|
     # Compute linear distance from center of ccd
     x = np.arange(hdr['naxis1']) - hdr['crpix1'] + hdr['dstart1']
     y = np.arange(hdr['naxis2']) - hdr['crpix2'] + hdr['dstart2']
@@ -1254,26 +1574,80 @@ def scc_hi_diffuse(hdr, ipsum=None):
 #|--- Trim an image ---|
 #|---------------------|
 def scc_img_trim(im, hdr, gtFile=None):
-    # Check for un-reprocessed data
+    """
+    Function that trims an image based on the dstart/dstop
+    values from the header.
+
+    Input:
+        im: a array with SECCHI image data
+    
+        hdr: the corresponding header 
+    
+    Optional Input:
+        gtFile: a prep file for precommcorrect to use
+
+    Output:
+        img: the trimmed image data
+        
+        hdr: the corresponding header
+    
+    Notes:
+        Only a partial port for the piece used by wombat
+
+    """    
+    #|----------------------------|
+    #|--- Check if unprocessed ---|
+    #|----------------------------|
     if (hdr['DSTOP1'] < 1) or (hdr['DSTOP1'] > hdr['NAXIS1']) or  (hdr['DSTOP2'] > hdr['NAXIS2']):
         im, hdr = precommcorrect(im, hdr, gtFile=gtFile )
+    
+    
+    #|---------------|
+    #|--- Trim it ---|
+    #|---------------|
     x1 = int(hdr['DSTART1']-1)
     x2 = int(hdr['DSTOP1']-1)
     y1 = int(hdr['DSTART2']-1)
     y2 = int(hdr['DSTOP2']-1)
     img = im[y1:y2+1,x1:x2+1]
+    
+    #|-------------------------|
+    #|--- Flag uncoded part ---|
+    #|-------------------------|
     s = img.shape
     if (hdr['naxis1'] != s[0]) or (hdr['naxis2'] != s[1]):
         sys.exit('Havent implemented section of scc img trim but doable')
         
     return img, hdr
             
-            
 #|------------------------------------|
 #|--- Pre commissioning correction ---|
 #|------------------------------------|
 def precommcorrect(im, hdr, gtFile=None):
-    # Apply IcerDiv2 correction
+    """
+    Function that applies the pre commissioning correction
+
+    Input:
+        im: a array with SECCHI image data
+    
+        hdr: the corresponding header 
+    
+    Optional Input:
+        gtFile: a prep file used by euvi_point (defaults to None)
+
+    Output:
+        im: the processed image data
+        
+        hdr: the corresponding header
+    
+    Notes:
+        This has been ported for wombat using EUVI images. The
+        other instruments have not been full ported.
+
+    """    
+    #|---------------------------|
+    #|--- ICERDIV2 Correction ---|
+    #|---------------------------|
     if (hdr['comprssn'] > 89) & (hdr['comprssn'] < 102):
         if hdr['DIV2CORR'] == False:
             hdr, im = scc_icerdiv2(hdr,im)
@@ -1297,13 +1671,17 @@ def precommcorrect(im, hdr, gtFile=None):
                 
     hdr['mask_tbl'] = 'NONE'
     
-    # Correct image center
+    #|------------------------------------|
+    #|--- EUVI Image Center Correction ---|
+    #|------------------------------------|
     if hdr['DETECTOR'] == 'EUVI':
         hdr = euvi_point(hdr, gtFile)
     else:
         sys.exit('COR point corrections not ported in precommcorrect')
     
-    #--Add DSTART(STOP)1(2)------------------------------------
+    #|-------------------------------|
+    #|--- DSTART/STOP Corrections ---|
+    #|-------------------------------|
     #--Code taken from revision 1.19 of scc_img_trim.pro  
     #--Calculate data area from un-rectified image cooridinates
     if (hdr['DSTOP1'] < 1) or (hdr['DSTOP1'] > hdr['NAXIS1']) or (hdr['DSTOP2'] > hdr['NAXIS2']):
@@ -1329,9 +1707,9 @@ def precommcorrect(im, hdr, gtFile=None):
         y1 = int(y1 / 2**(hdr['summed']-1))
         y2 =((hdr['P2ROW'] - hdr['P1ROW'] + 1) / 2**(hdr['summed'] - 1)) + y1 - 1
         
-        #--Convert data area cooridinates for rectified image
-        #--Reset R1(2)COL and R1(2)ROW to trimmed values
-
+        #|---------------------------------|
+        #|--- Rectified Img Corrections ---|
+        #|---------------------------------|
         if hdr['RECTIFY'] in ['T', True, 'True', 1, '1']:
             if (hdr['OBSRVTRY'] == 'STEREO_A'):
                 if hdr['DETECTOR'] ==  'EUVI':
@@ -1366,22 +1744,46 @@ def precommcorrect(im, hdr, gtFile=None):
         hdr['DSTOP2'] = y2+1
   
     return im, hdr           
-    
-    
-    
+        
 #|-------------------------|
 #|--- Get EUVI pointing ---|
 #|-------------------------|
 def euvi_point(hdr, gtFile):
+    """
+    Function that corrects the pointing and updates the information
+    in an EUVI header
+
+    Input:
+        hdr: an EUVI hdr
+    
+        gtFile: a file used to get sunvec
+    
+    Optional Input:
+        downSize: size of the output image (in pixels)
+                  *** assuming a square output
+
+    Output:
+        maps_out: a list of maps corresponding to the input fits files
+
+
+    """    
     radeg = 180 / np.pi
     # assume passed a single header
     
-    # assume running spice
+    #|------------------------|
+    #|--- Set to run SPICE ---|
+    #|------------------------|
     icy = True    
     
+    #|--------------------|
+    #|--- Get sat info ---|
+    #|--------------------|
     obss = hdr['obsrvtry'].upper()
     dets = hdr['detector'].upper()
     
+    #|---------------------|
+    #|--- STA EUVI Case ---|
+    #|---------------------|
     if (obss == 'STEREO_A') & (dets == 'EUVI'):
         obs = 0
         obs_s = 'a'
@@ -1398,7 +1800,10 @@ def euvi_point(hdr, gtFile):
                 flp2 = (1.0-flp2)
                 grol = grol + np.pi
                 erol = erol + np.pi
-    
+        
+        #|----------------------------------|
+        #|--- Build pointing drift array ---|
+        #|----------------------------------|  
         # Define the pointing drift records for A
         # If were assigning all this garbage by hand just skipping
         # the anytim part
@@ -1479,6 +1884,9 @@ def euvi_point(hdr, gtFile):
         aPD['c2'][8]  =  pdrec[6]['c2'][8]
         pdrec.append(aPD)
         
+    #|---------------------|
+    #|--- STB EUVI Case ---|
+    #|---------------------|
     elif (obss == 'STEREO_B') & (dets == 'EUVI'):
         obs = 1
         obs_s = 'b'
@@ -1496,6 +1904,9 @@ def euvi_point(hdr, gtFile):
                 grol = grol + np.pi
                 erol = erol + np.pi
         
+        #|----------------------------------|
+        #|--- Build pointing drift array ---|
+        #|----------------------------------|  
         # Define the pointing drift records for B
         pdrec = []
         # k = 0
@@ -1545,6 +1956,9 @@ def euvi_point(hdr, gtFile):
         aPD['c2'][8]  =  pdrec[3]['c2'][8]
         pdrec.append(aPD)
 
+    #|-----------------------------|
+    #|--- Other Cases (uncoded) ---|
+    #|-----------------------------|
     else:
         sys.exit('Non EUIVI header passed to euvi_point')
         
@@ -1556,8 +1970,11 @@ def euvi_point(hdr, gtFile):
     er2_1 =  np.sin(erol)
     er2_2 =  np.cos(erol)
     
+    #|----------------|
+    #|--- Get svec ---|
+    #|----------------|
     # Just take the att_file from hdr, not entirely sure what 370-400 doing
-    att_file = hdr['att_file'].replace('+1GT','')
+    #att_file = hdr['att_file'].replace('+1GT','')
     t = datetime.datetime.strptime(hdr['DATE-OBS'], "%Y-%m-%dT%H:%M:%S.%f" )
     anytim = (t-idl_base_date).total_seconds() +  hdr['exptime'] + 2.0 # end exp + 2 sec
     dsun = hdr['dsun_obs'] / 1.496e11 # sun distance in AU
@@ -1568,6 +1985,9 @@ def euvi_point(hdr, gtFile):
     
     # Assume we are improving the pointing
     
+    #|----------------------|
+    #|--- Pull pd record ---|
+    #|----------------------|
     # Cannot figure out where IDL pulls this saved info from or how two calculate
     # but the few (from 2023 test cases) all have this so run for now
     # Suspect may need to change for earlier and/or STB events
@@ -1582,7 +2002,9 @@ def euvi_point(hdr, gtFile):
     else:
         sys.exit('Error finding matching pd record in euvi_point')
         
-    # calculate the pointing correction
+    #|--------------------------------|
+    #|--- Calc pointing correction ---|
+    #|--------------------------------|
     tpd = (anytim - pd['t0']) / pd['torb'] # orb. phase
     pd1 = pd['c1'][0] + pd['c1'][1] * np.exp(-pd['c1'][8] * tpd) # const+exp term
     pd2 = pd['c2'][0] + pd['c2'][1] * np.exp(-pd['c2'][8] * tpd) # const+exp term
@@ -1591,6 +2013,9 @@ def euvi_point(hdr, gtFile):
         pd1 = pd1 + pd['c1'][2*k] * np.sin(ppd) + pd['c1'][2*k+1] * np.cos(ppd) 
         pd2 = pd2 + pd['c2'][2*k] * np.sin(ppd) + pd['c2'][2*k+1] * np.cos(ppd)
     
+    #|----------------------------|
+    #|--- Recalc header values ---|
+    #|----------------------------|
     # get the summing factors, assuming image is rectified:
     sumfac1 = 2.**int(hdr['summed'] - 1)   
     sumfac2 = sumfac1
@@ -1623,7 +2048,10 @@ def euvi_point(hdr, gtFile):
     # dont hit the ra/dec section
     # Don't need to show changes
  
-     #sanity check between existing PC, CROTA and SC_ROLL:
+    #|-------------------------|
+    #|--- Check roll values ---|
+    #|-------------------------|
+    #sanity check between existing PC, CROTA and SC_ROLL:
     roll_bad = 0
     if 'sc_roll' in hdr:
         scrota = hdr['sc_roll'] + erol* 180 / np.pi
@@ -1632,6 +2060,9 @@ def euvi_point(hdr, gtFile):
         if 'crota' in hdr:
             if np.abs(hdr['crota'] - scrota) > 0.1: roll_bad = 1
             
+    #|------------------------|
+    #|--- Roll corrections ---|
+    #|------------------------|
     # Assume we are doing the roll 
     yr0 = datetime.datetime(int(hdr['date-obs'][:4]), 1, 1, 0,0,0)
     sDOY = str(int((t-yr0).total_seconds()/3600./24. + 1)).zfill(3)
@@ -1682,31 +2113,66 @@ def euvi_point(hdr, gtFile):
         hdr['ycen'] = hdr['cdelt2'] * (hdr['pc2_1']*ceni + hdr['pc2_2']*cenj)
     return hdr
         
-
-
-#|----------------------------|
-#|--- gt Correction Things ---|
-#|----------------------------|
+#|------------------------------|
+#|--- Get sunvec in GT Frame ---|
+#|------------------------------|
 def scc_gt2sunvec(anytim, sund, gtdata, obs, gtFile, doRad=False):
+    """
+    Function that calculates a sun vector
+
+    Input:
+        anytim: a time in the IDL anytime format. This is total seconds from
+                some arbitrary time that IDL picked
+    
+        sund: distance from the sun (in AU)
+    
+        gtdata: the FPS offset from a header
+    
+        obs: an observatory string
+    
+        gtFile: a helper file (IDL save file)
+    
+    Optional Input:
+        doRad: return the result in radians (defaults to False )
+    
+    Output:
+        sunvec: the y and z sun vector components in the GT frame 
+
+
+    """    
+    #|----------------|
+    #|--- STA Case ---|
+    #|----------------|
     if obs.lower() == 'a':
         cc    = [[1.0000, 0.715e-8, 1.341e-5, 0.329e-8], [1.2843, 1.883e-7, 2.203e-4, 0.625e-7], [1.1739, 1.759e-6, 1.718e-3, 0.511e-6]]
         yrgain = (378./256.) * 1.100    # as of 2007-04-30
         zrgain = (378./256.) * 1.100    # as of 2007-04-30
         ypgain = yrgain * 1.389  # pri/red based on nominal preamp resistor values
         zpgain = zrgain * 1.389  # pri/red based on nominal preamp resistor values
+    #|----------------|
+    #|--- STB Case ---|
+    #|----------------|
     else:
         cc    = [[1.0000, 0.176e-8, 0.641e-5, 0.162e-8], [0.9505, 0.265e-7, 0.451e-4, 0.281e-7], [4.7232, 0.915e-6, 1.020e-3, 0.065e-6]]
         yrgain = (378./256.) * 0.920    # as of 2007-04-30
         zrgain = (378./256.) * 0.920    # as of 2007-04-30
         ypgain = yrgain * 1.381  # pri/red based on nominal preamp resistor values
         zpgain = zrgain * 1.381  # pri/red based on nominal preamp resistor values
-    # simplified version of scc_time2gtparms    
+    
+    #|--------------------------------|
+    #|--- Port of scc_time2gtparms ---|
+    #|--------------------------------|
+    # yes it's parms not params    
     gt = readsav(gtFile)
     if obs.lower() == 'a':
         fulldb = gt['p0'].a[0]
     fulldb = fulldb[np.where(fulldb.flg ==1 )]
     myIdx = np.max(np.where(fulldb.t <= anytim))
     mydb = fulldb[myIdx]
+    
+    #|---------------------------|
+    #|--- Pull GT file values ---|
+    #|---------------------------|
     # Determine whether prime or redundant diodes, based on GT gain
     if np.sum(mydb.cg2) < 450*4:
         redun = 1
@@ -1722,6 +2188,9 @@ def scc_gt2sunvec(anytim, sund, gtdata, obs, gtFile, doRad=False):
     else:
         sys.exit('Havent ported cases where gt has more than two values')
         
+    #|------------------------|
+    #|--- Calculate Things ---|
+    #|------------------------|
     # Apply sun distance to the coefficients
     rr = [1.0,sund-1.0,(sund-1.0)*(sund-1.0)]
     cs  = np.matmul(rr, cc)
@@ -1759,6 +2228,24 @@ def scc_gt2sunvec(anytim, sund, gtdata, obs, gtFile, doRad=False):
 #|--- Icerdiv2 Correction ---|
 #|---------------------------|
 def scc_icerdiv2(hdr,img):
+    """
+    Function that does the icerdiv2 correction
+
+    Input:
+        hdr: an fits file header
+    
+        img: the associated fits image data
+    
+    Output:
+        hdr: an updated header
+    
+        img: the corrected image
+
+
+    """    
+    #|-------------------------------|
+    #|--- Process IP tag from hdr ---|
+    #|-------------------------------|    
     ip = hdr['ip_00_19']
     # Make sure the string is long enough, could be trimmed
     if len(ip) < 60: ip=' '+ip  
@@ -1777,7 +2264,10 @@ def scc_icerdiv2(hdr,img):
     
     # Not hitting pipeline 
     
-    # Calculate various conditions
+    #|---------------------------|
+    #|--- Apply IP conditions ---|
+    #|---------------------------|
+    # Calculate various factors based on conditions
     icer = (ip[nip-1] >= 90) & (ip[nip-1] < 102)
     div2 = ip[nip-2] == 1
     noticfilt = (ip[nip-2] < 106) or (ip[nip-2] > 112)
@@ -1790,6 +2280,9 @@ def scc_icerdiv2(hdr,img):
     # this logic does not determine whether the correction was already applied    
     domul2 =  icradiv2 or idecdiv2 or (icer & noticfilt & nosubbias & p01ltbias)
     
+    #|---------------------|
+    #|--- Multiply by 2 ---|
+    #|---------------------|
     if domul2:
         # not making the same form of 2
         img = img * 2

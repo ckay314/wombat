@@ -21,6 +21,31 @@ from sunpy.time import parse_time
 #|---Get Camera Parameters ---|
 #|----------------------------|
 def get_def_cam_params(instr):
+    """
+    Function to pull the default camera parameters based on an
+    instrument tag
+    
+    Input:
+        instr: the instrument tag
+               (from SOLOHI1, SOLOHI2, SOLOHI3, SOLOHI4)
+
+    Output:
+        ncol: the number of columns
+    
+        nrow:
+    
+        xycoords: a 1x4 array with [col0, col_end, row0, row_end]
+    
+        roxy: a 1x2 array with two values from [x0, x1, y0, y1]
+              (read order x y?)
+    
+        rodur: a duration in seconds (eq to nrow*ncol / reaout rate)
+        
+        ypr: an 1x3 array (degrees)
+    
+        pscal: a float plate scale (?) in deg/pixel
+
+    """
     readout_rate=1.86e6  # 2 Mpixel/sec
     
     if instr == 'SOLOHI1': # top left
@@ -67,12 +92,34 @@ def get_def_cam_params(instr):
 #|--- ID where each camera goes in grid ---|
 #|-----------------------------------------|
 def solohi_getgrid(s=0,get_det=True, reduce=4):
-    # Not sure what exact s is since nothing is passed in test case but 
-    # leaving it as an option
+    """
+    Function to get the locations of each of the solohi
+    instruments within the standardized grids. Only set
+    up to run with get_det flagged as True. The IDL version
+    does more that is not ported here. IDL is solohi_get_grid
     
-    dev = ['x','T','T','B','B']
+    Input:
+        None
     
-    # set reduce default in keywords
+    Optional Input:
+        s: uncertain, exists in IDL but not used here (defaults to 0)
+    
+        get_det: flag to get the detector locations for showing instruments
+                 on a grid (defaults to True)
+    
+        reduce: factor to scale down images (not implemented here, defaults to 4)
+    
+    Output:
+        det: an mosaic array with the regions for each SOLOHI instr labeled
+    
+    Note:
+        A lot of steps skipped because only doing the get_det portion
+        of this, not any of the plotting 
+    """
+    
+    #|--------------------------------------|
+    #|--- Make generic empty grid and XY ---|
+    #|--------------------------------------|
     degperpix = 0.00986
     
     fullview = [44.73, 5.2011, -20.73, 20.62]
@@ -92,10 +139,14 @@ def solohi_getgrid(s=0,get_det=True, reduce=4):
     det = np.zeros([ypixels,xpixels]) # keeping indexing oppo IDL
     roarrow = np.zeros([4,4])
     
+    #|-------------------------------|
+    #|--- Fill grid by instrument ---|
+    #|-------------------------------|
     for i in range(4):
         instr = 'SOLOHI'+str(i+1)
         ncol, nrow, xycoords, roxy, rodur, ypr, pscal = get_def_cam_params(instr)
         det[np.where((xgrid >= xycoords[0]) & (xgrid <= xycoords[1]) & (ygrid >= xycoords[2]) & (ygrid <= xycoords[3]))] = int(i+1)
+        # base wombat doesn't even use the rest of this but keep for now
         tx = 0
         if 'y' in roxy[0]: tx=2
         if '1' in roxy[0]:
@@ -116,6 +167,9 @@ def solohi_getgrid(s=0,get_det=True, reduce=4):
     
     # only running with get_det so far so skipping to skip plot (missing 175-227)
     
+    #|------------------------------|
+    #|--- Return the mosaic grid ---|
+    #|------------------------------|
     if get_det:
         return det
     
@@ -125,6 +179,21 @@ def solohi_getgrid(s=0,get_det=True, reduce=4):
 #|--- Make mosaic header ---|
 #|--------------------------|
 def mosaic_hdr(hdr):
+    """
+    Function to make a header suitable for the mosaic images
+    where the four SOLOHI panels have been combined into one
+    
+    Input:
+        hdr: the header for one of the original panels
+    
+    Output:
+        hdr: the updated header
+    
+    Note:
+        Not a full port, skipped some of the header parameters that
+        are not necessary for wombat
+    
+    """
     # Port of the essential parts of get_solohi_pointing that give 
     # the mosaic hdr
     
@@ -206,12 +275,39 @@ def mosaic_hdr(hdr):
 #|--- Main Function to make Mosaic ---|
 #|------------------------------------|
 def solohi_fits2grid(filesIn, doFull=False):
+    """
+    Main function to combine a set of four SOLOHI images
+    into a single mosaic image. We assume the given data
+    is level 2 and do not do lower level processing.
     
+    Input:
+        filesIn: a list of fits files
+    
+    Optional Input:
+        doFull: a flag to keep full resolution results instead
+                of downsizing for the combined image (defaults False)
+    
+    Output:
+        binIm -or- fullIm: either a binned or full resolution mosaic image
+        hdr: the corresponding header
+    
+    Note:
+        Not a full port, skipped some of the header parameters that
+        are not necessary for wombat
+    
+    """
+    
+    #|-----------------------|
+    #|--- Get the binning ---|
+    #|-----------------------|
     with fits.open(filesIn[0]) as hdulist:
         im  = hdulist[0].data
         hdr = hdulist[0].header
     nbin = hdr['nbin1']
     
+    #|-----------------------|
+    #|--- Setup empty arr ---|
+    #|-----------------------|
     # Not doing prep since using L2
     det_grid = solohi_getgrid(get_det=True)
     if nbin != 1:
@@ -230,6 +326,10 @@ def solohi_fits2grid(filesIn, doFull=False):
     hdr0 = hdr
     for i in range(len(filesIn)):
         # no prepping for now
+        
+        #|-----------------------|
+        #|--- Open the images ---|
+        #|-----------------------|
         with fits.open(filesIn[i]) as hdulist:
             im  = hdulist[0].data
             hdr = hdulist[0].header
@@ -247,6 +347,10 @@ def solohi_fits2grid(filesIn, doFull=False):
         z = np.where(detcs == hdr['detector'])[0][0]
         zs[i] = z
         
+        #|------------------------------|
+        #|--- Stick data in img vars ---|
+        #|------------------------------|
+        # IDL reasons for not going directly into fullIm?
         if hdr['detector'] == '1':
             imgs1[0,:,:] = imgs1[0,:,:] + im
         elif hdr['detector'] == '2':
@@ -256,6 +360,9 @@ def solohi_fits2grid(filesIn, doFull=False):
         elif hdr['detector'] == '4':
             imgs2[1,:,:] = imgs2[1,:,:] + im
 
+    #|--------------------------------|
+    #|--- Copy from im into fullIm ---|
+    #|--------------------------------|
     fullIm = np.copy(det_grid)
     idx = np.where(det_grid==1)
     fullIm[idx[0][0]:idx[0][-1]+1, idx[1][0]:idx[1][-1]+1] = imgs1[0,:,:]
@@ -269,6 +376,9 @@ def solohi_fits2grid(filesIn, doFull=False):
     mhdr = mosaic_hdr(hdr0)
 
 
+    #|--------------|
+    #|--- Bin it ---|
+    #|--------------|
     binN = 4
     if not doFull:
         sz = fullIm.shape
@@ -289,6 +399,9 @@ def solohi_fits2grid(filesIn, doFull=False):
         mhdr['dstop1'] = np.min([mhdr['dstop1'], sz[0]]) # think this equiv of IDL
         mhdr['dstop2'] = np.min([mhdr['dstop2'], sz[1]])
         return binIm, mhdr
+    #|--------------|
+    #|--- Or not ---|
+    #|--------------|
     else:
         return fullIm, mhdr
         

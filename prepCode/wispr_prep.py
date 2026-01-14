@@ -47,6 +47,25 @@ dtor = np.pi / 180.
 #|--- Read in fits file ---|
 #|-------------------------|
 def wispr_readfits(fileIn, LASCO=False, isCal=False):
+    """
+    Function to read in a wispr fits file
+    
+    Input:
+        fileIn: the path to the wispr fits file 
+    
+    Optional Input:
+        LASCO: flag to indicate it is a LASCO file (defaults to False)
+               *** key ported from IDL but not really implemented
+    
+        isCal: flag to indicate that it is a calibration file being opened
+               (defaults to False)
+    
+    Output:
+        im: the image data from the fits file
+    
+        hdr: the corresponding header     
+
+    """
     # Assume we are passed a good file, open it up and skip
     # down to clean up stuff at 128
     with fits.open(fileIn) as hdulist:
@@ -78,6 +97,18 @@ def wispr_readfits(fileIn, LASCO=False, isCal=False):
 #|--- Get Bias Value ---|
 #|----------------------|
 def wispr_bias_offset(im, hdr):
+    """
+    Function to get the bias offset for wispr data
+    
+    Input:
+        im: a wispr image
+    
+        hdr: the corresponding header
+    
+    Output:
+        offset: the median bias value  
+
+    """
     if hdr['rectify'] == True:
         rectrota = hdr['rectrota']
         # not sure the extent of possible options for this
@@ -106,6 +137,18 @@ def wispr_bias_offset(im, hdr):
 #|--- Get calibration factor ---|
 #|------------------------------|
 def wispr_get_calfac(hdr):
+    """
+    Function to get the calibration factor for wispr data
+    based on the detector, gainmode, and gaincmd values 
+    within a header
+    
+    Input:
+        hdr: a wispr header
+    
+    Output:
+        calfac: the calibration factor  
+
+    """
     if (hdr['detector'] in [1, 2]) and  (hdr['gainmode'] in ['HIGH', 'LOW']):
         if hdr['detector'] == 1:
             if hdr['gainmode'] == 'LOW': calfac = 2.49e-13
@@ -123,6 +166,20 @@ def wispr_get_calfac(hdr):
 #|--- Get calibration image ---|
 #|-----------------------------|
 def wispr_get_calimg(hdr, wcalpath):
+    """
+    Function to open and process a wispr calibration image
+    
+    Input:
+        hdr: the header for the image for which we want the calibration img
+    
+        wcalpath: path to where the wispr calibration images live
+    
+    Output:
+        calimg: the image data for the calibration image
+    
+        calhdr: the corresponding calibration image header
+
+    """
     if hdr['detector'] not in [1, 2]:
         sys.exit('Invalid WISPR header, issue in calimg')
     if hdr['detector'] == 1:
@@ -157,15 +214,43 @@ def wispr_get_calimg(hdr, wcalpath):
 #|--- Main Correction Wrapper ---|
 #|-------------------------------|
 def wispr_correction(im, hdr, wcalpath, calfacOff=False, calimgOff=False, exptimeOff=False, truncOff=False):
+    """
+    The main wrapper for wispr image correction.
+    
+    Input:
+        im: a wispr image
+    
+        hdr: the corresponding header
+    
+    Optional Input:
+        calfacOff: flag to turn off calibration factor correction (defaults to False)
+    
+        calimgOff: flag to turn off calibration image correction (defaults to False)
+    
+        exptimeOff: flag to turn off exposure time correction (defaults to False)
+    
+        truncOff: flag to turn off IP truncation correction (defaults to False)
+    
+    Output:
+        im: the corrected wispr image
+    
+        hdr: the updated header
+
+    """
     hdr['history'] = 'Applied wispr_correction (Python port)'
     
     calcnt = 0 
     
-    # Correct for truncation
+   #|-----------------------------|
+   #|--- Truncation Correction ---|
+   #|-----------------------------|
     if not truncOff and (hdr['IPTRUNC'] != 0):
         im = im * 2**hdr['IPTRUNC']
         hdr['history'] = 'Image multiplied by ' + str(2**hdr['IPTRUNC']) + ' due to truncation'
         
+    #|--------------------------|
+    #|--- Binning Correction ---|
+    #|--------------------------|
     # Correct for DN/s for binned images
     divfactor = hdr['nbin']
     if divfactor > 1:
@@ -173,6 +258,9 @@ def wispr_correction(im, hdr, wcalpath, calfacOff=False, calimgOff=False, exptim
         hdr['history'] = 'Image divided by ' + str(divfactor) + ' for binning'
         hdr['dsatval'] = hdr['dsatval'] / divfactor
             
+    #|--------------------------------|
+    #|--- Exposure Time Correction ---|
+    #|--------------------------------|
     # Normalize for exposure time
     if not exptimeOff:
         im = im / hdr['xposure']
@@ -181,7 +269,9 @@ def wispr_correction(im, hdr, wcalpath, calfacOff=False, calimgOff=False, exptim
         calcnt = calcnt + 1
         hdr['history'] = 'Exposure normalized to 1 second'
     
-    # Calfac
+    #|-------------------------------------|
+    #|--- Calibration Factor Correction ---|
+    #|-------------------------------------|
     calfac = 1.
     if not calfacOff:
         hdr['bunit'] = 'MSB'
@@ -189,6 +279,9 @@ def wispr_correction(im, hdr, wcalpath, calfacOff=False, calimgOff=False, exptim
         hdr['dsatval'] = hdr['dsatval'] * calfac
         calcnt = calcnt + 1
    
+    #|------------------------------------|
+    #|--- Calibration Image Correction ---|
+    #|------------------------------------|
     # cal img
     calimg = 1.
     if not calimgOff:
@@ -197,7 +290,9 @@ def wispr_correction(im, hdr, wcalpath, calfacOff=False, calimgOff=False, exptim
        
     im = im / calimg * calfac
     
-    # calcnt
+    #|-----------------------|
+    #|--- Set Level Label ---|
+    #|-----------------------|
     if calcnt == 3:
         if hdr['level'] != 'L2':
             hdr['level'] = 'L2'
@@ -208,6 +303,23 @@ def wispr_correction(im, hdr, wcalpath, calfacOff=False, calimgOff=False, exptim
 #|--- Get Pointing Info ---|
 #|-------------------------|
 def get_wispr_pointing(shdr, wcalpath, doSpice=True, doCoords=False):
+    """
+    Function to get the pointing of wispr
+    
+    Input:
+        shdr: the header of a wispr image
+    
+        wcalpath: the path to where the wispr calibration images live
+    
+    Optional Input:
+        doSpice: use spice functions to get the pointing (defaults to True)
+    
+        doCoords: flag to update the header with additional coordinate info
+    
+    Output:
+        shdr: an updated header
+
+    """
     shdr['VERS_CAL'] = '2020915'
     detect = shdr['DETECTOR']
     instr = ['SPP_WISPR_INNER', 'SPP_WISPR_OUTER']
@@ -216,7 +328,9 @@ def get_wispr_pointing(shdr, wcalpath, doSpice=True, doCoords=False):
     #8 WCS Compliant FITS Keyword Definition
     #detector depndent information
     
-    # Detector 1
+    #|-------------------------|
+    #|--- Detector 1 values ---|
+    #|-------------------------|
     if detect == 1:
         shdr['CRPIX1'] =  (991.547 - (1920 - shdr['PXEND2'])) / np.sqrt(shdr['nbin'])
         shdr['CRPIX2'] =  (1015.11 - (2048 - shdr['PXEND1'])) / np.sqrt(shdr['nbin'])
@@ -243,7 +357,9 @@ def get_wispr_pointing(shdr, wcalpath, doSpice=True, doCoords=False):
         xcor = 0.54789
         ycor = -.3501
     
-    # Detector 2    
+    #|-------------------------|
+    #|--- Detector 2 values ---|
+    #|-------------------------|
     elif detect == 2:
         shdr['CRPIX1'] = (984.733 - (1920 - shdr['PXEND2'])) / shdr['nbin1']
         shdr['CRPIX2'] = (1026.37 - (2048 - shdr['PXEND1'])) / shdr['nbin2']
@@ -269,6 +385,9 @@ def get_wispr_pointing(shdr, wcalpath, doSpice=True, doCoords=False):
         xcor = 0
         ycor = 0
         
+    #|------------------------|
+    #|--- Unknown Detector ---|
+    #|------------------------|
     else:
         sys.exit('Invalid detector given to get_wispr_pointing')
         
@@ -283,6 +402,9 @@ def get_wispr_pointing(shdr, wcalpath, doSpice=True, doCoords=False):
     shdr['PV2_4A'] = shdr['PV2_4']
     shdr['PV2_5A'] = shdr['PV2_5']
     
+    #|--------------------|
+    #|--- Get pointing ---|
+    #|--------------------|
     point = np.zeros(3)   
     if doSpice:
         point = get_sunspyce_hpc_point(shdr['DATE-AVG'], 'psp', instrument=instr[detect-1], doDeg=True) 
@@ -317,6 +439,9 @@ def get_wispr_pointing(shdr, wcalpath, doSpice=True, doCoords=False):
     ra = 0.
     dec = 90.
         
+    #|-------------------------|
+    #|---Get satellite roll ---|
+    #|-------------------------|
     if doSpice:
         roll, dec, ra = get_sunspyce_roll(shdr['DATE-AVG'], 'psp', instrument=instr[detect-1], system='GEI')   
     roll = roll + instrument_roll
@@ -328,11 +453,12 @@ def get_wispr_pointing(shdr, wcalpath, doSpice=True, doCoords=False):
     pc= np.array([[np.cos(roll*dtor), np.sin(roll*dtor)], [-np.sin(roll*dtor), np.cos(roll*dtor)]]) * skew
     shdr['PC1_1A'] = pc[0,0]
     shdr['PC1_2A'] = pc[1,0] # swapped index to match IDL 
-    shdr['PC2_1A'] = pc[0,1] # swapped index to match IDL 
-    
+    shdr['PC2_1A'] = pc[0,1] # swapped index to match IDL     
     shdr['PC2_2A'] = pc[1,1]
 
-    # On to detector stuff
+    #|----------------------------|
+    #|--- Pull detector values ---|
+    #|----------------------------|
     if shdr['detector'] == 1:
         # Load up save files from IDL, may want to replace eventually
         if np.abs(roll) <= 150.:
@@ -415,6 +541,9 @@ def get_wispr_pointing(shdr, wcalpath, doSpice=True, doCoords=False):
         shdr['PV1_3'] = -90.0
         shdr['PV1_3a'] = -90.0
     
+    #|------------------------|
+    #|--- Add coord values ---|
+    #|------------------------|
     if doCoords:
         point = get_sunspyce_hpc_point(shdr['DATE-AVG'],'psp', doDeg=True)
         shdr['SC_PITCH'] = point[1]
@@ -482,6 +611,21 @@ def get_wispr_pointing(shdr, wcalpath, doSpice=True, doCoords=False):
 #|--- Get image statistics ---|
 #|----------------------------|
 def wispr_img_stats(hdr, im):
+    """
+    Function to get statistics about the image that we will
+    save in the header
+    
+    Input:    
+        hdr: the corresponding header
+
+        im: a wispr image
+    
+    Output:
+        hdr: the updated header
+
+        im: the unchanged image
+
+    """
     goodIm = im[np.isfinite(im)]
     goodIm = goodIm[np.where(goodIm !=0)]
     if len(goodIm) > 0:
@@ -504,6 +648,26 @@ def wispr_img_stats(hdr, im):
 #|--- Get straylight info ---|
 #|---------------------------|
 def wispr_straylight(hdr, im, dn=False):
+    """
+    Function to perform a simple straylight correction
+    for wispr observations based on dsun_obs from
+    the image header
+    
+    Input:    
+        hdr: a wispr header
+
+        im: a wispr image
+    
+    Optional Input:
+        dn: a flag to use the calfac version of the correction
+            (defaults to false)
+    
+    Output:
+        hdr: the unchanged header
+
+        im: the corrected image
+
+    """
     au = hdr['dsun_obs'] / 1.49578707e11 
     if au <= 0.15:
         sl = 0.75e-14 * au**-3
@@ -522,6 +686,35 @@ def wispr_straylight(hdr, im, dn=False):
 #|--- Main wrapper fuction ---|
 #|----------------------------|
 def wispr_prep(filesIn, wcalpath, outSize=None, silent=False, biasOff=False, biasOffsetOff=False, lin_correct=False, straylightOff=False, pointingOff=False):
+    """
+    Main wrapper function for preparing wispr data
+    
+    Input:
+        filesIn: a list of fits files for wispr images
+    
+        wcalpath: path to where the wispr calibration images live
+    
+    Optional Input:
+        outSize: size of the output image (not implemented but keyword retained from IDL)
+    
+        silent: flag to not print unnecessary information to screen (defaults to False)
+    
+        biasOff: flag to turn off bias correction (defaults to False)
+
+        biasOffsetOff: flag to turn off bias offset correction (defaults to False)
+    
+        lin_correct: flag from IDL that has not been ported
+    
+        straylightOff: flag to turn off straylight correction (defaults to False)
+    
+        pointingOff: flag to turn off pointing correction (defaults to False)
+    
+    Output:
+        images_out: a list of processed wispr images 
+    
+        headers_out: a list of corresponding headers
+
+    """
     # Port of basic functionality of IDL version
     
     # Want filesIn as a list, even if single
@@ -542,14 +735,21 @@ def wispr_prep(filesIn, wcalpath, outSize=None, silent=False, biasOff=False, bia
         if not silent:
             print ('Processing image ', i, ' out of ', num)
                 
-        # Read in the fits aka wispreadfits 
+        #|---------------------|
+        #|--- Read in files ---|
+        #|---------------------|
         im, hdr = wispr_readfits(filesIn[i])
 
-        # Bias subtraction routine
+        #|-----------------------|
+        #|--- Bias sutraction ---|
+        #|-----------------------|
         if ~biasOff & hdr['ipbias'] ==0:
-            sys.exit(' wisrp_ bias needs to be ported')
+            sys.exit(' wispr_ bias needs to be ported')
             # add in bias comment to history
             
+        #|------------------------------|
+        #|--- Bias offset sutraction ---|
+        #|------------------------------|
         # Remove bias offset
         if ~biasOffsetOff & hdr['ipbias'] !=0:
             offset = wispr_bias_offset(im, hdr)
@@ -557,17 +757,23 @@ def wispr_prep(filesIn, wcalpath, outSize=None, silent=False, biasOff=False, bia
             hdr['history'] = 'Subtracted ' + str(offset) +' for image for bias offest'
         # lin_correct not coded bc not called
         
-        # -----------------------
-        #    Begin Calibration
-        # -----------------------
+        #|---------------------------|
+        #|--- General Correction  ---|
+        #|---------------------------|
         im, hdr = wispr_correction(im, hdr, wcalpath)
         
+        #|------------------------------|
+        #|--- Straylight Correction  ---|
+        #|------------------------------|
         if (hdr['detector'] == 2) & (not straylightOff):
             hdr, im = wispr_straylight(hdr, im)
             
         if int(hdr['level'][-1:]) > 1:
             notupdated = False
-            
+        
+        #|------------------------------|
+        #|--- Resizing (not ported)  ---|
+        #|------------------------------|
         full = False    
         if hdr['nbin'] == 1:
             full = True
@@ -576,16 +782,23 @@ def wispr_prep(filesIn, wcalpath, outSize=None, silent=False, biasOff=False, bia
         elif (hdr['detector'] == 2 ) & (hdr['ipmask'] ==0) & ((hdr['naxis1'] != 1920/hdr['nbin1']) or (hdr['naxis2'] != 2048/hdr['nbin2'])):
             sys.exit('Need to port putin/zelensky array for wispr 2')
             
-        # Pointing
+        #|-----------------------------|
+        #|--- Pointing Information  ---|
+        #|-----------------------------|
         if not pointingOff:
             hdr = get_wispr_pointing(hdr, wcalpath, doCoords=True)
         
         im[np.where(im < 0)] = 0
         
+        #|-------------------------|
+        #|--- Image Statistics  ---|
+        #|-------------------------|
         hdr, im = wispr_img_stats(hdr, im)
 
         
-        # Return the things
+        #|--------------------------|
+        #|--- Package to output  ---|
+        #|--------------------------|
         images_out.append(im)
         headers_out.append(hdr)
         
