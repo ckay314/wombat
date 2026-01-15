@@ -36,8 +36,8 @@ should not be edited for funsies.
 
 # Dictionary for the colors of the wireframe objects by type
 # Defaults are an attempt to be color blind friends on black/white backgrounds
-# GCS: standard green, Torus: teal, Spheres/Ellipses: blue, slab: orange
-colorDict = {'GCS':'#9AE630', 'Torus': '#38D5BE', 'Sphere':'#2B7FFF', 'Half Sphere':'#2B7FFF', 'Ellipse':'#2B7FFF', 'Half Ellipse':'#2B7FFF', 'Slab':'#FF8904'}
+# GCS: standard green, Torus: teal, Spheres/Ellipses: blue, slab: orange, Tube:pink
+colorDict = {'GCS':'#9AE630', 'Torus': '#38D5BE', 'Sphere':'#2B7FFF', 'Half Sphere':'#2B7FFF', 'Ellipse':'#2B7FFF', 'Half Ellipse':'#2B7FFF', 'Slab':'#FF8904', 'Tube':'#D858DF'}
 
 # Extra colors to use if plotting more than one of the same type of WF
 # order is maroon, purple, yellow
@@ -48,7 +48,7 @@ bonusColors = ['#FF2056', '#9810FA', '#FFD230']
 # Attempting to keep theta to lon angle and phi to lat angle throughout WOMBAT
 # Everything is defined wrt to CK's Theoryland (which is Cartesian with 'nose' along x-axis
 # and largest non-radial width in the z/vertical direction for antisymmetric shapes)
-gridDict = {'GCS':[5,15,25], 'Torus':[30,25], 'Sphere':[30,25], 'Half Sphere':[20,20], 'Ellipse':[30,25], 'Half Ellipse':[20,20], 'Slab':[10,5,10]}
+gridDict = {'GCS':[5,15,25], 'Torus':[30,25], 'Sphere':[30,25], 'Half Sphere':[20,20], 'Ellipse':[30,25], 'Half Ellipse':[20,20], 'Slab':[10,5,10], 'Tube':[30,20]}
 
 
 
@@ -101,8 +101,8 @@ dtor  = np.pi / 180.
 radeg = 180. / np.pi
 pi    = np.pi 
 
-# Dictionary for the number of points per WF type
-npDict = {'GCS': 6, 'Torus': 8, 'Sphere':4, 'Half Sphere':4, 'Ellipse':7, 'Half Ellipse':7, 'Slab':9}
+# Dictionary for the number of parameters per WF type
+npDict = {'GCS': 6, 'Torus': 8, 'Sphere':4, 'Half Sphere':4, 'Ellipse':7, 'Half Ellipse':7, 'Slab':9, 'Tube':9}
 
 
 
@@ -183,7 +183,8 @@ class wireframe():
         Sphere/Half sphere - height, lon, lat,  AW (4)
         Ellipse/Half ellipsoid - height, lon, lat,  tilt, AW, epp (6)
         Slab - height, lon, lat, roll (~tilt), yaw (~lon), pitch (~lat),  Lx, Ly, Lz,  (9)
-        *** note that the params will be store in this exact order
+        Tube - height, lon, lat, roll (~tilt), yaw (~lon), pitch (~lat),  Lx, Ly, Lz,  (9)
+        *** note that the params will be stored in this exact order
     
     We also include a None type option to make a structure as a placeholder without
     any assigned parameters
@@ -207,6 +208,7 @@ class wireframe():
             Sphere/Half sphere - height, lon, lat,  AW (4)
             Ellipse/Half ellipsoid - height, lon, lat,  tilt, AW, epp (6)
             Slab - height, lon, lat, roll (~tilt), yaw (~lon), pitch (~lat),  Lx, Ly, Lz,  (9)
+            Tube - height, lon, lat, roll (~tilt), yaw (~lon), pitch (~lat),  Lx, Ly, Lz,  (9)
             *** note that the params will be store in this exact order
    
         We also include a None type option to make a structure as a placeholder without
@@ -270,7 +272,7 @@ class wireframe():
             self.labels = np.array(['Height (Rs)', 'Lon (deg)', 'Lat (deg)', 'AW (deg)'])
         elif WFtype in ['Ellipse', 'Half Ellipse']:
             self.labels = np.array(['Height (Rs)', 'Lon (deg)', 'Lat (deg)', 'Tilt (deg)', 'AW (deg)', 'ecc1', 'ecc2'])
-        elif WFtype == 'Slab':
+        elif WFtype in ['Slab', 'Tube']:
             self.labels = np.array(['Height (Rs)', 'Lon (deg)', 'Lat (deg)', 'Roll (deg)', 'Yaw (deg)', 'Pitch (deg)', 'Lx (Rs)', 'Ly (Rs)', 'Lz (Rs)'])
             
     
@@ -543,4 +545,41 @@ class wireframe():
             
             # Move in lat/lon
             self.points = np.transpose(rotz(roty(xyz, -lat), lon))  
+
+            
+        # |---------------------------|
+        # |---------- Tube -----------|
+        # |---------------------------|
+        elif WFtype == 'Tube':
+            h, lon, lat  = ps[0], ps[1], ps[2]
+            roll, yaw, pitch = ps[3], ps[4], ps[5]
+            Lx, Ly, Lz = ps[6], ps[7], ps[8]
+            nt, ny = gps[0], gps[1]
+            
+            # Define the ranges
+            ts = np.linspace(0, 2*pi, nt, endpoint=True)
+            tsMEGA = np.array([ts]*ny).reshape([-1])
+            yrs = np.linspace(-Ly/2,Ly/2, ny, endpoint=True)
+            ys = np.array([yrs[i]*np.ones(nt) for i in range(ny)]).reshape(-1)
+            
+            # Make the ellipse cross section
+            xs =  Lx * np.cos(tsMEGA)
+            zs =  Lz * np.sin(tsMEGA)
+            
+            xyz = np.array([xs, ys, zs])
+            
+            # Rot by roll about x
+            xyz = rotx(xyz,roll)
+            # Rot by yaw about z
+            xyz = rotz(xyz,yaw)
+            # Rot by pitch about y
+            xyz = roty(xyz,pitch)
+            
+            # add in the distance
+            xyz[0] += h
+            xyz = np.array(xyz)
+            
+            # Move in lat/lon
+            self.points = np.transpose(rotz(roty(xyz, -lat), lon))  
+
             
