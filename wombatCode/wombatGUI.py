@@ -27,7 +27,7 @@ External Calls:
 
 import sys, os
 import numpy as np
-from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QLabel, QGridLayout, QTabWidget, QSlider, QComboBox, QLineEdit, QPushButton
+from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QLabel, QGridLayout, QTabWidget, QSlider, QComboBox, QLineEdit, QPushButton, QRadioButton
 from PyQt5 import QtCore
 import pyqtgraph as pg
 import datetime
@@ -176,6 +176,7 @@ class ParamWindow(QMainWindow):
         Tslider1.setRange(2,self.nTsli+2)
         Tslider1.valueChanged.connect(self.update_tidx)
         layout.addWidget(Tslider1, 1,0,1,11)
+        self.Tslider = Tslider1
 
 
         # |------ WF Type Label ------|
@@ -203,16 +204,28 @@ class ParamWindow(QMainWindow):
         layout.addLayout(WFLay, 7,0,25,11)
         
         
+        # |----- Background Diff Button ----|
+        label = QLabel('Background Diff')
+        layout.addWidget(label, 41,0,1,6,alignment=QtCore.Qt.AlignLeft)
+        radBut1 = QRadioButton('Run')
+        radBut1.setChecked(True)
+        layout.addWidget(radBut1, 41,5,1,5,alignment=QtCore.Qt.AlignCenter)
+        radBut2 = QRadioButton('Base')
+        layout.addWidget(radBut2, 41,8,1,5,alignment=QtCore.Qt.AlignCenter)
+        radBut1.toggled.connect(lambda:self.btnstate(radBut1))
+        radBut2.toggled.connect(lambda:self.btnstate(radBut2))
+        self.radButs = [radBut1, radBut2]
+
         # |----- Background Drop Down Box ----|
         # Background mode drop down box
         label = QLabel('Background Scaling')
-        layout.addWidget(label, 41,0,1,6,alignment=QtCore.Qt.AlignCenter)
+        layout.addWidget(label, 42,0,1,6,alignment=QtCore.Qt.AlignLeft)
         cbox = self.bgComboBox()
-        layout.addWidget(cbox,41,5,1,6,alignment=QtCore.Qt.AlignCenter)
+        layout.addWidget(cbox,42,5,1,6,alignment=QtCore.Qt.AlignCenter)
         
         # |----- Happy Little Space Padding ----|
-        label = QLabel('')
-        layout.addWidget(label, 42,0,2,11,alignment=QtCore.Qt.AlignCenter)
+        #label = QLabel('')
+        #layout.addWidget(label, 42,0,2,11,alignment=QtCore.Qt.AlignCenter)
         
 
         # |----- Save Button ----|
@@ -432,14 +445,33 @@ class ParamWindow(QMainWindow):
         Event for key press events. 
         
         Actions (based on key):
-            q = close a window
-            esc = close everything
+            q     = close a window
+            esc   = close everything
+            left  = move time slider to earlier time
+            right = move time slider to later time
+            b     = switch to base difference
+            r     = switch to running difference
+            s     = save 
      
         """
+        #|--- Closing things ---|
         if event.key() == QtCore.Qt.Key_Q: 
-            self.close()
+            self.close()    
         elif event.key() == QtCore.Qt.Key_Escape:
             sys.exit()
+        #|--- Time Slider ---|
+        elif event.key()== QtCore.Qt.Key_Right:
+            Tval = self.Tslider.value()
+            self.Tslider.setValue(Tval+1)
+        elif event.key()== QtCore.Qt.Key_Left:
+            Tval = self.Tslider.value()
+            self.Tslider.setValue(Tval-1)            
+        #|--- Difference mode ---|
+        elif event.key()== QtCore.Qt.Key_B:
+            self.radButs[1].setChecked(True)
+        elif event.key()== QtCore.Qt.Key_R:
+            self.radButs[0].setChecked(True)
+        #|--- Saving ---|
         elif event.key() == QtCore.Qt.Key_S:
             self.SBclicked()
             
@@ -820,7 +852,18 @@ class ParamWindow(QMainWindow):
         
         """
         print('Mass not coded yet')
-            
+    
+    def btnstate(self,b):
+        setidx = 0
+        if b.isChecked():
+            if b.text() == 'Run':
+                setidx = 0
+            elif b.text() == 'Base':
+                setidx = 1
+        for aPW in pws:
+            aPW.didx = setidx
+            aPW.plotBackground()
+                    
     
     #|------------------------------| 
     #|----------- Others -----------|
@@ -960,12 +1003,13 @@ class FigWindow(QWidget):
         self.winidx = myNum # index number for multi mode
         self.labelIt = labelPW # show labels in plot    
         self.satStuff = satStuff 
-        self.satName = satStuff[0]['OBS'] +' '+ satStuff[0]['INST']
+        self.satName = satStuff[0][0]['OBS'] +' '+ satStuff[0][0]['INST']
         self.OGims = myObs[0]
         self.mIms  = massIms
-        self.hdrs = myObs[1]
+        self.hdrs = myObs[2]
         self.myScls2 = myScls
         self.tidx = 0
+        self.didx = 0 # difference index
         self.sclidx = 0
         self.st2obs = tmap # slider time to obs index
         
@@ -1018,13 +1062,13 @@ class FigWindow(QWidget):
         
         #|---- Check for color table ----|
         # (from wombatLoadCTs)
-        hasCT = check4CT(satStuff[0])
+        hasCT = check4CT(satStuff[0][0])
         if type(hasCT) != type(None):
              self.image.setLookupTable(hasCT)
         
         #|---- Add the image ----|
         self.pWindow.addItem(self.image)
-        self.pWindow.setRange(xRange=(0,myObs[0][0].data.shape[0]), yRange=(0,myObs[0][0].data.shape[1]), padding=0)
+        self.pWindow.setRange(xRange=(0,myObs[self.didx][0].data.shape[0]), yRange=(0,myObs[self.didx][0].data.shape[1]), padding=0)
         
         #|---- Hide the axes ----|
         self.pWindow.hideAxis('bottom')
@@ -1052,7 +1096,7 @@ class FigWindow(QWidget):
         self.MinSlider.setOrientation(QtCore.Qt.Horizontal)
         self.MinSlider.setMinimum(0)
         self.MinSlider.setMaximum(255)
-        self.MinSlider.setValue(satStuff[0]['SLIVALS'][0][0])
+        self.MinSlider.setValue(satStuff[self.didx][0]['SLIVALS'][0][0])
         layoutP.addWidget(self.MinSlider, 13,3,1,9)
         self.MinSlider.valueChanged.connect(lambda x: self.s2l(x, minL, 'Min Value: '))  
         
@@ -1063,14 +1107,14 @@ class FigWindow(QWidget):
         self.MaxSlider.setOrientation(QtCore.Qt.Horizontal)
         self.MaxSlider.setMinimum(0)
         self.MaxSlider.setMaximum(255)
-        self.MaxSlider.setValue(satStuff[0]['SLIVALS'][1][0])
+        self.MaxSlider.setValue(satStuff[self.didx][0]['SLIVALS'][1][0])
         layoutP.addWidget(self.MaxSlider, 15,3,1,9)
         self.MaxSlider.valueChanged.connect(lambda x: self.s2l(x, maxL, 'Max Value: '))  
         
         #|---- EUV Dispay Mode ----|
         # If EUV switch to show log at the start. Have to do after
         # we've addded the sliders since will adjust them
-        if self.satStuff[0]['OBSTYPE'] == 'EUV':
+        if self.satStuff[self.didx][0]['OBSTYPE'] == 'EUV':
             self.cbox.setCurrentIndex(1)
         
         #|---- Save button
@@ -1146,16 +1190,36 @@ class FigWindow(QWidget):
         Event for key press events. 
         
         Actions (based on key):
-            q = close a window
-            esc = close everything
+            q     = close a window
+            esc   = close everything
+            left  = move time slider to earlier time
+            right = move time slider to later time
+            b     = switch to base difference
+            r     = switch to running difference
+            s     = save
      
         """
+        #|--- Closing Things ---|
         if event.key() == QtCore.Qt.Key_Q: 
             self.close()
         elif event.key() == QtCore.Qt.Key_Escape:
             sys.exit()
+        #|--- Saving ---|
         elif event.key() == QtCore.Qt.Key_S:
             mainwindow.SBclicked(singleSat=self.winidx)
+        #|--- Time Slider ---|
+        elif event.key()== QtCore.Qt.Key_Right:
+            Tval = mainwindow.Tslider.value()
+            mainwindow.Tslider.setValue(Tval+1)
+        elif event.key()== QtCore.Qt.Key_Left:
+            Tval = mainwindow.Tslider.value()
+            mainwindow.Tslider.setValue(Tval-1)            
+        #|--- Difference mode ---|
+        elif event.key()== QtCore.Qt.Key_B:
+            mainwindow.radButs[1].setChecked(True)
+        elif event.key()== QtCore.Qt.Key_R:
+            mainwindow.radButs[0].setChecked(True)
+            
     
     def back_changed(self,text):
         """
@@ -1171,8 +1235,8 @@ class FigWindow(QWidget):
         
         """
         self.sclidx = text   
-        self.MinSlider.setValue(self.satStuff[0]['SLIVALS'][0][int(text)])  
-        self.MaxSlider.setValue(self.satStuff[0]['SLIVALS'][1][int(text)])  
+        self.MinSlider.setValue(self.satStuff[self.didx][0]['SLIVALS'][0][int(text)])  
+        self.MaxSlider.setValue(self.satStuff[self.didx][0]['SLIVALS'][1][int(text)])  
         self.plotBackground()
                    
     def EBclicked(self):
@@ -1225,7 +1289,7 @@ class FigWindow(QWidget):
         pix = [view_pos.x(), view_pos.y()]
         
         #|---- Print pix ----|
-        prefA = self.satStuff[self.tidx]['MYTAG'].replace('_',' ') + ' pix:'
+        prefA = self.satStuff[self.didx][self.tidx]['MYTAG'].replace('_',' ') + ' pix:'
         print (prefA.rjust(25), str(int(pix[0])).rjust(8), str(int(pix[1])).rjust(8))
         
         #|---- Convert to ra/dec ----| 
@@ -1235,11 +1299,11 @@ class FigWindow(QWidget):
         
         # |---- Convert to proj Rsun/PA  ----| 
         Rarc = np.sqrt(Tx**2 + Ty**2)
-        Rpix = Rarc / self.satStuff[self.tidx]['SCALE']
+        Rpix = Rarc / self.satStuff[self.didx][self.tidx]['SCALE']
         # Adjust unites for HI
-        if self.satStuff[self.tidx]['OBSTYPE'] == 'HI':
+        if self.satStuff[self.didx][self.tidx]['OBSTYPE'] == 'HI':
             Rpix = Rpix / 3600
-        RRSun = Rpix /  self.satStuff[self.tidx]['ONERSUN']
+        RRSun = Rpix /  self.satStuff[self.didx][self.tidx]['ONERSUN']
         # PA define w/ N as 0 and E (left) as 90
         PA = (np.arctan2(-Tx,Ty) * 180 / np.pi) % 360.
         print ('Proj R (Rs), PA (deg):'.rjust(25), '{:8.2f}'.format(RRSun), '{:8.1f}'.format(PA))
@@ -1247,9 +1311,9 @@ class FigWindow(QWidget):
         if type(self.mIms) != type(None):
             px = int(pix[0])
             py = int(pix[1])
-            if self.satStuff[0]['OBSTYPE'] == 'COR':
+            if self.satStuff[self.didx][0]['OBSTYPE'] == 'COR':
                 print('Mass in pixel (1e8 g):'.rjust(25), '{:8.1f}'.format(self.mIms[self.tidx][py,px]/1e8))
-            elif self.satStuff[0]['OBSTYPE'] == 'HI':
+            elif self.satStuff[self.didx][0]['OBSTYPE'] == 'HI':
                 print('Mass in pixel (1e8 g):'.rjust(25), '{:8.1f}'.format(self.mIms[self.tidx][py,px]/1e8))
 
         print ('')
@@ -1290,25 +1354,25 @@ class FigWindow(QWidget):
                 #|----------------------|
                 pos = []
                 # Location
-                obs = self.satStuff[self.tidx]['POS']
+                obs = self.satStuff[self.didx][self.tidx]['POS']
                 # Scale btwn pix and arcsec
-                obsScl = [self.satStuff[self.tidx]['SCALE'], self.satStuff[self.tidx]['SCALE']]
-                if self.satStuff[self.tidx]['OBSTYPE'] == 'HI':
-                    obsScl = [self.satStuff[self.tidx]['SCALE'] * 3600, self.satStuff[self.tidx]['SCALE'] * 3600]
+                obsScl = [self.satStuff[self.didx][self.tidx]['SCALE'], self.satStuff[self.didx][self.tidx]['SCALE']]
+                if self.satStuff[self.didx][self.tidx]['OBSTYPE'] == 'HI':
+                    obsScl = [self.satStuff[self.didx][self.tidx]['SCALE'] * 3600, self.satStuff[self.didx][self.tidx]['SCALE'] * 3600]
                 #cent = self.satStuff[self.tidx]['SUNPIX']
                 # Occulter info
-                if 'OCCRARC' in self.satStuff[self.tidx]:
-                    occultR = self.satStuff[self.tidx]['OCCRARC']
+                if 'OCCRARC' in self.satStuff[self.didx][self.tidx]:
+                    occultR = self.satStuff[self.didx][self.tidx]['OCCRARC']
                 else:
                     occultR = None
                 # WCS info    
-                mywcs  = self.satStuff[self.tidx]['WCS']
+                mywcs  = self.satStuff[self.didx][self.tidx]['WCS']
                 
                 #|---- Set wf aesthetics ----|
                 myColor =wfs[i].WFcolor
                 # change pen wid if HI
                 penwid =1
-                if self.satStuff[self.tidx]['OBSTYPE'] == 'HI':
+                if self.satStuff[self.didx][self.tidx]['OBSTYPE'] == 'HI':
                     penwid = 4
                 
                 
@@ -1319,27 +1383,27 @@ class FigWindow(QWidget):
                 # than the FOV and just project it onto the surface
                 # instead if it is
                 flatEUV = False
-                if self.satStuff[self.tidx]['OBSTYPE'] == 'EUV':
+                if self.satStuff[self.didx][self.tidx]['OBSTYPE'] == 'EUV':
                     pts = wfs[i].points
                     rs = np.sqrt(pts[:,0]**2 + pts[:,1]**2 + pts[:,2]**2)
                     # Compare max wf radius to inst FOV
-                    if np.mean(rs) > 1.5*self.satStuff[self.tidx]['FOV']:
+                    if np.mean(rs) > 1.5*self.satStuff[self.didx][self.tidx]['FOV']:
                         flatEUV = True
                 # Downselect to fewer points for proj EUV
                 toShow = range(len(wfs[i].points[:,0]))
                 if flatEUV:
                     toShow = toShow[::2]
                     myColor = '#C81CDE'
-                    occultR = 1. * self.satStuff[self.tidx]['ONERSUN']
+                    occultR = 1. * self.satStuff[self.didx][self.tidx]['ONERSUN']
                 
                 #|------------------------|
                 #|---- HI Flag Inside ----|
                 #|------------------------|    
                 # Check if the satellite is in the WF for HI bcs points
                 # get weird so at least change color to warn this is the case
-                if self.satStuff[self.tidx]['OBSTYPE'] == 'HI':
+                if self.satStuff[self.didx][self.tidx]['OBSTYPE'] == 'HI':
                     # Get max wf R
-                    myPos = self.satStuff[self.tidx]['POS']
+                    myPos = self.satStuff[self.didx][self.tidx]['POS']
                     myR = myPos[2] / 7e8
                     pts = wfs[i].points
                     maxR = np.max(np.sqrt(pts[:,0]**2 + pts[:,1]**2 + pts[:,2]**2))
@@ -1379,7 +1443,7 @@ class FigWindow(QWidget):
                     # is behind the satellite. The projection code matches IDL so unclear
                     # what the original issue is but not a porting issue. Work around
                     # by just checking if a point is behind the sat lon   
-                    if 'WISPR' in self.satStuff[self.tidx]['MYTAG']:  
+                    if 'WISPR' in self.satStuff[self.didx][self.tidx]['MYTAG']:  
                         dLon = lon - myPos[1]
                         if dLon < -180:
                             dLon +=360
@@ -1405,7 +1469,7 @@ class FigWindow(QWidget):
         
         """
         #|---- Grab data for this time/scaling ----|     
-        myIm = self.myScls2[self.tidx][self.sclidx]
+        myIm = self.myScls2[self.didx][self.tidx][self.sclidx]
         
         #|---- Grab min/max from slider ----|     
         slMin = self.MinSlider.value()
@@ -1415,23 +1479,23 @@ class FigWindow(QWidget):
         self.image.updateImage(image=myIm, levels=(slMin, slMax))
         
         #|---- Draw stuff on top ----|     
-        if self.satStuff[self.tidx]['OBSTYPE'] != 'EUV':
+        if self.satStuff[self.didx][self.tidx]['OBSTYPE'] != 'EUV':
             #|---- Circle at 1 Rs ----|     
-            if 'SUNCIRC' in self.satStuff[self.tidx]:
-                self.pWindow.plot(self.satStuff[self.tidx]['SUNCIRC'][0], self.satStuff[self.tidx]['SUNCIRC'][1])
+            if 'SUNCIRC' in self.satStuff[self.didx][self.tidx]:
+                self.pWindow.plot(self.satStuff[self.didx][self.tidx]['SUNCIRC'][0], self.satStuff[self.didx][self.tidx]['SUNCIRC'][1])
             
             #|---- Line for Solar N ----|         
-            if 'SUNNORTH' in self.satStuff[self.tidx]:
-                self.pWindow.plot(self.satStuff[self.tidx]['SUNNORTH'][0], self.satStuff[self.tidx]['SUNNORTH'][1], symbolSize=3, symbolBrush='w', pen=pg.mkPen(color='w', width=1))
+            if 'SUNNORTH' in self.satStuff[self.didx][self.tidx]:
+                self.pWindow.plot(self.satStuff[self.didx][self.tidx]['SUNNORTH'][0], self.satStuff[self.didx][self.tidx]['SUNNORTH'][1], symbolSize=3, symbolBrush='w', pen=pg.mkPen(color='w', width=1))
                 
         #|---- Add text labels ----|             
         if self.labelIt:
             geom = self.pWindow.visibleRange()
             wid = geom.width()
-            text_item1 = pg.TextItem(self.satStuff[self.tidx]['OBS'] + ' ' + self.satStuff[self.tidx]['INST'], anchor=(0, 1), fill='k')
+            text_item1 = pg.TextItem(self.satStuff[self.didx][self.tidx]['OBS'] + ' ' + self.satStuff[self.didx][self.tidx]['INST'], anchor=(0, 1), fill='k')
             text_item1.setPos(0.001*wid, 0.001*wid)
             self.pWindow.addItem(text_item1)
-            text_item2 = pg.TextItem(self.satStuff[self.tidx]['DATEOBS'], anchor=(1, 1), fill='k')
+            text_item2 = pg.TextItem(self.satStuff[self.didx][self.tidx]['DATEOBS'], anchor=(1, 1), fill='k')
             text_item2.setPos(0.999*wid, 0.001*wid)
             self.pWindow.addItem(text_item2)
             
@@ -1587,14 +1651,35 @@ class OverviewWindow(QWidget):
         Event for key press events. 
         
         Actions (based on key):
-            q = close a window
-            esc = close everything
+            q     = close a window
+            esc   = close everything
+            left  = move time slider to earlier time
+            right = move time slider to later time
+            b     = switch to base difference
+            r     = switch to running difference
+            s     = save
      
         """
+        #|--- Closing Things ---|
         if event.key() == QtCore.Qt.Key_Q: 
             self.close()
         elif event.key() == QtCore.Qt.Key_Escape:
             sys.exit()
+        #|--- Saving ---|
+        elif event.key() == QtCore.Qt.Key_S:
+            mainwindow.SBclicked()
+        #|--- Time Slider ---|
+        elif event.key()== QtCore.Qt.Key_Right:
+            Tval = mainwindow.Tslider.value()
+            mainwindow.Tslider.setValue(Tval+1)
+        elif event.key()== QtCore.Qt.Key_Left:
+            Tval = mainwindow.Tslider.value()
+            mainwindow.Tslider.setValue(Tval-1)            
+        #|--- Difference mode ---|
+        elif event.key()== QtCore.Qt.Key_B:
+            mainwindow.radButs[1].setChecked(True)
+        elif event.key()== QtCore.Qt.Key_R:
+            mainwindow.radButs[0].setChecked(True)
 
 
 # |------------------------------------------------------------|
@@ -1640,116 +1725,121 @@ def makeNiceMMs(obsIn, satStuffs):
     myMM = pMMs[myInst]
     mySliVals = sliVals[myInst]
     
-    #|-------------------------------------| 
-    #|------- Pull/Clean Map data ---------|
-    #|-------------------------------------|
-    #|---- Make empty holder ----|
-    sz = obsIn[0][0].data.shape
-    allObs = np.zeros([len(satStuffs), sz[1], sz[0]])
-    #|---- Fill from map data ----|
-    for i in range(len(satStuffs)):
-        allObs[i,:,:] = np.transpose(obsIn[0][i].data)
+    #|--- Loop through both RD and BD ---|
+    bothScls = []
+    bothSatStuffs = []
+    for k in range(2):
+        #|-------------------------------------| 
+        #|------- Pull/Clean Map data ---------|
+        #|-------------------------------------|
+        #|---- Make empty holder ----|
+        sz = obsIn[k][0].data.shape
+        allObs = np.zeros([len(satStuffs), sz[1], sz[0]])
+        #|---- Fill from map data ----|
+        for i in range(len(satStuffs)):
+            allObs[i,:,:] = np.transpose(obsIn[k][i].data)
         
-    #|---- Get overall median ----|
-    imNonNaN = allObs[~np.isnan(allObs)]   
-    medval  = np.median(np.abs(imNonNaN))
+        #|---- Get overall median ----|
+        imNonNaN = allObs[~np.isnan(allObs)]   
+        medval  = np.median(np.abs(imNonNaN))
     
-    #|---- Check if diff image ----|
-    # Get the median negative value to comp to the median abs
-    # value. If neg med big enough assume that is diff image
-    negmed  = np.abs(np.median(imNonNaN[np.where(imNonNaN < 0)]))
-    diffImg = False
-    if (negmed / medval) > 0.25: # guessing at cutoff of 25%, might tune
-        diffImg = True
+        #|---- Check if diff image ----|
+        # Get the median negative value to comp to the median abs
+        # value. If neg med big enough assume that is diff image
+        negmed  = np.abs(np.median(imNonNaN[np.where(imNonNaN < 0)]))
+        diffImg = False
+        if (negmed / medval) > 0.25: # guessing at cutoff of 25%, might tune
+            diffImg = True
     
-    #|---- Clean out NaNs ----|
-    if not diffImg:
-        allObs[np.isnan(allObs)] = 0
-    else:
-        allObs[np.isnan(allObs)] = -9999
+        #|---- Clean out NaNs ----|
+        if not diffImg:
+            allObs[np.isnan(allObs)] = 0
+        else:
+            allObs[np.isnan(allObs)] = -9999
     
-    #|---- Clean out Infs ----| 
-    if not diffImg:
-        allObs[np.isinf(np.abs(allObs))] = 0
-        imNonNaN[np.isinf(np.abs(imNonNaN))] = 0
-    else:
-        allObs[np.isinf(np.abs(allObs))] = -9999
-        imNonNaN[np.isinf(np.abs(imNonNaN))] = -9999
+        #|---- Clean out Infs ----| 
+        if not diffImg:
+            allObs[np.isinf(np.abs(allObs))] = 0
+            imNonNaN[np.isinf(np.abs(imNonNaN))] = 0
+        else:
+            allObs[np.isinf(np.abs(allObs))] = -9999
+            imNonNaN[np.isinf(np.abs(imNonNaN))] = -9999
     
-    #|-------------------------------------| 
-    #|--------- Process the data ----------|
-    #|-------------------------------------|    
+        #|-------------------------------------| 
+        #|--------- Process the data ----------|
+        #|-------------------------------------|    
+        #|---- Scaled image holder ----|   
+        allScls = []    
     
-    #|---- Scaled image holder ----|   
-    allScls = []    
-    
-    #|---- Process linear imgs ----|   
-    # Get vals at min/max percentile from the config dictionary
-    linMin, linMax = np.percentile(imNonNaN, myMM[0][0]), np.percentile(imNonNaN, myMM[1][0])   
-    # If a diff image reset min to neg val based on max   
-    if diffImg:
-        linMin = - 0.5*linMax
-    # Calc range and scale to 0 - 255
-    rng = linMax- linMin
-    linIm = (allObs - linMin) * 255 / rng
+        #|---- Process linear imgs ----|   
+        # Get vals at min/max percentile from the config dictionary
+        linMin, linMax = np.percentile(imNonNaN, myMM[0][0]), np.percentile(imNonNaN, myMM[1][0])   
+        # If a diff image reset min to neg val based on max   
+        if diffImg:
+            linMin = - 0.5*linMax
+        # Calc range and scale to 0 - 255
+        rng = linMax- linMin
+        linIm = (allObs - linMin) * 255 / rng
 
-    #|---- Process log imgs ----|   
-    # Normalize to keep things in nice ranges
-    tempIm = allObs / medval
-    tempNonNan = imNonNaN / medval
-    # Get min val based on config dict
-    minVal = np.percentile(np.abs(tempNonNan),myMM[0][1])
-    # Separate into positive and negative values
-    pidx = np.where(tempIm > minVal)
-    nidx = np.where(tempIm < -minVal)
-    # Make new img
-    logIm = np.zeros(tempIm.shape)
-    # Set where abs val < min to 1
-    logIm[np.where(np.abs(tempIm) < minVal)] = 1
-    # Positive is just log + 1
-    logIm[pidx] = np.log(tempIm[pidx] - minVal + 1)  
-    # Negative is -log(abs) + 1
-    logIm[nidx] = -np.log(-tempIm[nidx] - minVal + 1)  
-    # Get max val from config dict and rescale
-    percX = np.percentile(logIm, myMM[1][1])
-    logIm = 191 * logIm / percX
+        #|---- Process log imgs ----|   
+        # Normalize to keep things in nice ranges
+        tempIm = allObs / medval
+        tempNonNan = imNonNaN / medval
+        # Get min val based on config dict
+        minVal = np.percentile(np.abs(tempNonNan),myMM[0][1])
+        # Separate into positive and negative values
+        pidx = np.where(tempIm > minVal)
+        nidx = np.where(tempIm < -minVal)
+        # Make new img
+        logIm = np.zeros(tempIm.shape)
+        # Set where abs val < min to 1
+        logIm[np.where(np.abs(tempIm) < minVal)] = 1
+        # Positive is just log + 1
+        logIm[pidx] = np.log(tempIm[pidx] - minVal + 1)  
+        # Negative is -log(abs) + 1
+        logIm[nidx] = -np.log(-tempIm[nidx] - minVal + 1)  
+        # Get max val from config dict and rescale
+        percX = np.percentile(logIm, myMM[1][1])
+        logIm = 191 * logIm / percX
     
-    #|---- Process sqrt imgs ----|   
-    # Normalize to keep things in nice ranges
-    tempIm = allObs / medval
-    # Get min val based on config dict
-    minVal = np.percentile(tempNonNan,myMM[0][2])
-    # Set min val to zero
-    tempIm = tempIm - minVal 
-    # Set all neg to zero
-    tempIm[np.where(tempIm < 0)] = 0
-    # Sqrt now that everyone is positive
-    sqrtIm = np.sqrt(tempIm)
-    # Get max val from config dict and rescale
-    percX = np.percentile(sqrtIm, myMM[1][2])
-    sqrtIm = 191 * sqrtIm / percX
+        #|---- Process sqrt imgs ----|   
+        # Normalize to keep things in nice ranges
+        tempIm = allObs / medval
+        # Get min val based on config dict
+        minVal = np.percentile(tempNonNan,myMM[0][2])
+        # Set min val to zero
+        tempIm = tempIm - minVal 
+        # Set all neg to zero
+        tempIm[np.where(tempIm < 0)] = 0
+        # Sqrt now that everyone is positive
+        sqrtIm = np.sqrt(tempIm)
+        # Get max val from config dict and rescale
+        percX = np.percentile(sqrtIm, myMM[1][2])
+        sqrtIm = 191 * sqrtIm / percX
     
     
-    #|-------------------------------------| 
-    #|--------- Package Results -----------|
-    #|-------------------------------------|
-    for i in range(len(satStuffs)):
-        #|---- Add the slider init values to satStuff ----|
-        satStuffs[i]['SLIVALS'] = mySliVals
+        #|-------------------------------------| 
+        #|--------- Package Results -----------|
+        #|-------------------------------------|
+        for i in range(len(satStuffs)):
+            #|---- Add the slider init values to satStuff ----|
+            satStuffs[i]['SLIVALS'] = mySliVals
     
-        #|---- Package this time step ----|
-        sclIms = [linIm[i], logIm[i],  sqrtIm[i]]
+            #|---- Package this time step ----|
+            sclIms = [linIm[i], logIm[i],  sqrtIm[i]]
         
-        #|---- Add a mask (if needed) ----|
-        if 'MASK' in satStuffs[i]:
-            midx = np.where(satStuffs[i]['MASK'] == 1)
-            for k in range(3):
-                # black out all occulted
-                sclIms[k][midx] = -100. # might need to change if adjust plot ranges
+            #|---- Add a mask (if needed) ----|
+            if 'MASK' in satStuffs[i]:
+                midx = np.where(satStuffs[i]['MASK'] == 1)
+                for k in range(3):
+                    # black out all occulted
+                    sclIms[k][midx] = -100. # might need to change if adjust plot ranges
                 
-        #|---- Append masked/scaled images to out list ----|
-        allScls.append(sclIms)
-    return allScls, satStuffs
+            #|---- Append masked/scaled images to out list ----|
+            allScls.append(sclIms)
+        bothScls.append(allScls)
+        bothSatStuffs.append(satStuffs)
+    return bothScls, bothSatStuffs
 
 # |------------------------------------------------------------|
 # |----------------- Setup up satStuff dicts ------------------|
@@ -2291,7 +2381,7 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, labelPW=True, reloadD
         obsFiles: nested lists of maps and headers that releaseTheWombat uses to
                   set up the background images in the form [inst1, inst2, ...] 
                   where each insts is an array of [[maps], [hdrs]] where maps and 
-                  hdrs are time series of the obs  maps and their corresponding headers 
+                  hdrs are time series of the obs maps and their corresponding headers 
                   (e.g. [[[COR2Amap1, COR2Amap2, ...], [COR2Ahdr1, COR2Ahdr2, ...]]
                          [[C2map1, C2map2, ...], [C2Ahdr1, C2hdr2, ...]]
                          [[AIA171map1, AIA171map2, ...], [AIA171hdr1, AIA171hdr2, ...]]])
@@ -2385,8 +2475,15 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, labelPW=True, reloadD
         for j in range(tNum): 
             mySatStuff = getSatStuff(obsFiles[i][0][j])
             someStuff.append(mySatStuff)
-            #|---- Make mass images ----|
-            massIm, hdrM = wM.TB2mass(obsFiles[i][0][j].data, obsFiles[i][1][j])
+            if mySatStuff['OBSTYPE'] != 'EUV':
+                #|---- Make mass images ----|
+                # Use base difference not running
+                massIm, hdrM = wM.TB2mass(obsFiles[i][1][j].data, obsFiles[i][2][j])
+                #|--- Put mask on the mass im ---|
+                if 'MASK' in mySatStuff:
+                    massIm = (1-mySatStuff['MASK']) * massIm
+            else:
+                massIm = np.zeros(obsFiles[i][0][j].data.shape)
             someMims.append(massIm)
             
         
@@ -2404,7 +2501,7 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, labelPW=True, reloadD
     #|---- Setup time slider vals -----|
     #|---------------------------------|
     if multiTime:
-        nTsli, tlabs, tmaps = sortTimeIndices(satStuff)
+        nTsli, tlabs, tmaps = sortTimeIndices(satStuff[0])
     else:
         nTsli = 0
         tlabs = None
@@ -2417,7 +2514,7 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, labelPW=True, reloadD
     # we have. Take the max corner dist ('FOV') from each inst
     # and convert it to a nice number
     maxFoV = 0
-    for stuff in satStuff:
+    for stuff in satStuff[0]:
         if stuff[0]['FOV'] > maxFoV: maxFoV = stuff[0]['FOV']
     # pad it a bit then round to a nice number
     maxFoV = int((1.1 * maxFoV) / 5) * 5

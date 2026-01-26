@@ -194,7 +194,7 @@ def processReload(fileIn, reloadFold='wbfits/reloads/'):
 # |------------------------------------------------------------|
 # |--------------- Convert fits files to maps -----------------|
 # |------------------------------------------------------------|
-def fits2maps(filesIn, names, diffMode='RD', diffEUV=False):
+def fits2maps(filesIn, names, diffEUV=False):
     """
     Function to convert a list of fits files into an array of maps and headers
     
@@ -213,9 +213,6 @@ def fits2maps(filesIn, names, diffMode='RD', diffEUV=False):
                requirements, it currently just looks for EUVI or AIA to flag those cases
     
     Optional Inputs:
-        diffMode: choice between running difference ('RD') or base difference ('BD')
-                  defaults to RD
-    
         diffEUV: whether or not to difference EUV images (True/False)
                  defaults for False
            
@@ -250,7 +247,7 @@ def fits2maps(filesIn, names, diffMode='RD', diffEUV=False):
         # Otherwise need to make sure more than one file
         if (len(allFH0[i][0]) > 1) or (('EUVI' in names[i]) & (not diffEUV)) or (('AIA' in names[i]) & (not diffEUV)):
             # Create a holder for this inst in the output 
-            allFH.append([[], []])
+            allFH.append([[], [], []])
             
             # Is EUVI and haven't flagged diffEUV so just pass along
             if (('EUVI' in names[i]) & (not diffEUV)) or (('AIA' in names[i]) & (not diffEUV)):            
@@ -259,7 +256,8 @@ def fits2maps(filesIn, names, diffMode='RD', diffEUV=False):
                     myHdr  = allFH0[i][1][j]
                     myMap  = sunpy.map.Map(myData, myHdr)
                     allFH[i][0].append(myMap)
-                    allFH[i][1].append(myHdr)
+                    allFH[i][1].append(myMap)
+                    allFH[i][2].append(myHdr)
             
             # Process any form of difference
             else:
@@ -267,24 +265,27 @@ def fits2maps(filesIn, names, diffMode='RD', diffEUV=False):
                     # Get the data for a time step
                     myData = allFH0[i][0][j+1]
                     myHdr  = allFH0[i][1][j+1]
-                    # Get the values to subtract
-                    # Base difference
-                    if diffMode == 'BD':
-                        myBase = allFH0[i][0][0]
-                        hdr0   = allFH0[i][1][0]
-                    # Running difference
-                    else:
-                        myBase = allFH0[i][0][j]
-                        hdr0   = allFH0[i][1][j]
+                    
+                    # Get the bases
+                    runBase  = allFH0[i][0][j]
+                    baseBase = allFH0[i][0][0]
                     
                     # Make sure files are same shape and diff    
-                    if (myData.shape == myBase.shape):
-                        diffData = myData - myBase
+                    if (myData.shape == runBase.shape) & (myData.shape == baseBase.shape):
+                        # Run diff
+                        diffData = myData - runBase
                         diffMap = sunpy.map.Map(diffData, myHdr)
                         allFH[i][0].append(diffMap)
-                        allFH[i][1].append(myHdr)
+                        # Base diff
+                        diffData = myData - baseBase
+                        diffMap = sunpy.map.Map(diffData, myHdr)
+                        allFH[i][1].append(diffMap)
+                        # Add hdr
+                        allFH[i][2].append(myHdr)
+
                     else:
-                        print ('Skipping file -- mismatch in size for ' + names[i] + allFH0[i][1][j+1]['DATE-OBS'])
+                        print('Size mismatch for ' +names[i] + allFH0[i][1][j+1]['DATE-OBS'])
+
         elif len(allFH0[i][0]) == 0:
             print ('No files found for ' +  names[i] )
                         
@@ -304,7 +305,7 @@ def fits2maps(filesIn, names, diffMode='RD', diffEUV=False):
 # |------------------------------------------------------------|
 # |----------------- Pull Processed From List -----------------|
 # |------------------------------------------------------------|
-def pullProcFiles(theFile, diffMode='RD', diffEUV=False):
+def pullProcFiles(theFile, diffEUV=False):
     """
     Function to process a sat list file
     
@@ -320,9 +321,6 @@ def pullProcFiles(theFile, diffMode='RD', diffEUV=False):
     
     
     Optional Inputs:
-        diffMode: choice between running difference ('RD') or base difference ('BD')
-                  defaults to RD
-    
         diffEUV: whether or not to difference EUV images (True/False)
                  defaults for False
            
@@ -361,14 +359,14 @@ def pullProcFiles(theFile, diffMode='RD', diffEUV=False):
     # |-------------------------------------|
     # |------------ Pass along -------------|
     # |-------------------------------------|
-    allFH = fits2maps(allFH0, names, diffMode=diffMode, diffEUV=diffEUV)
+    allFH = fits2maps(allFH0, names, diffEUV=diffEUV)
     
     return allFH
 
 # |------------------------------------------------------------|
 # |----------------- Look for Matching Files ------------------|
 # |------------------------------------------------------------|
-def findFiles(timesIn, insts, nMax=20, obsFold='wbFits/', diffMode='RD', diffEUV=False, tRes=None):
+def findFiles(timesIn, insts, nMax=20, obsFold='wbFits/', diffEUV=False, tRes=None):
     """
     Function to look for processed files in a given time range for specifc insts
     
@@ -414,10 +412,7 @@ def findFiles(timesIn, insts, nMax=20, obsFold='wbFits/', diffMode='RD', diffEUV
     
         obsFold:  the top folder where the processed files are stored (in subfolders)
                   defaults to wbFits/
-        
-        diffMode: choice between running difference ('RD') or base difference ('BD')
-                  defaults to RD
-    
+            
         diffEUV:  whether or not to difference EUV images (True/False)
                   defaults for False
     
@@ -571,7 +566,7 @@ def findFiles(timesIn, insts, nMax=20, obsFold='wbFits/', diffMode='RD', diffEUV
                 grabFiles[i] = grabFiles[i][::downSel]
 
     # Send to fits2maps                      
-    allFH = fits2maps(grabFiles, names, diffMode=diffMode, diffEUV=diffEUV)
+    allFH = fits2maps(grabFiles, names, diffEUV=diffEUV)
     
     return allFH
 
@@ -612,10 +607,9 @@ def runWombat(args):
         where time1/2 are the start/end time formated anyway accepted by Sunpy parse_time
         and inst1->instN are N instrument tags, selecting from the options below with no
         requirements on capital/lowercase letters. You can also pass up to five extra keywords
-        (represented by the  EXTRA) but these are not required. The  options are the difference
-        mode (either RD or BD), T#,  the time resolution in minutes to use for pulling (processed)
-        observations, n#, the number of wireframes, diffEUV to flag to take EUV differences, and
-        ovw to include the overview panel.
+        (represented by the  EXTRA) but these are not required. The  options are T#, the time 
+        resolution in minutes to use for pulling (processed) observations, n#, the number of 
+        wireframes, diffEUV to flag to take EUV differences, and ovw to include the overview panel.
 
         Available inst tags:
             AIAnum  = SDO AIA where num represents a wavelength from [94, 131, 171*, 
@@ -741,7 +735,7 @@ def runWombat(args):
         while j < len(args):
             insts.append(args[j])
             j += 1
-        allFH = findFiles(times, insts, diffMode=diffMode,tRes=tRes, diffEUV=diffEUV)
+        allFH = findFiles(times, insts, tRes=tRes, diffEUV=diffEUV)
         
     # Exit if haven't been passed anything
     else:
