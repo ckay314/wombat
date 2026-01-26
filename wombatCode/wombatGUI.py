@@ -20,7 +20,7 @@ Outputs:
     a png file for each observation panel and one for the overview panel (if present)
 
 External Calls:
-    everything from wombatWF, wombatLoadCTs
+    everything from wombatWF, wombatLoadCTs, wombatMass
     fitshead2wcs, wcs_get_pixel, wcs_get_coord from wcs_funs in the prep code
 
 """
@@ -37,9 +37,9 @@ from astropy.io import fits
 from astropy import units as u
 
 import wombatWF as wf
+import wombatMass as wM
 from wombatLoadCTs import *
 
-# This will need to be updated to local folder eventually
 sys.path.append('prepCode/') 
 from wcs_funs import fitshead2wcs, wcs_get_pixel, wcs_get_coord
 
@@ -895,6 +895,9 @@ class FigWindow(QWidget):
     
         satStuff: the header like structure created by getSatStuff.
     
+        massIms:  the data converted into mass imgs
+                  e.g. [mIm1, mIm2, ...]
+    
     Optional Inputs:
         myNum:    an index number for this plot window, useful when creating
                   multiple windows, but unnecessary for single window
@@ -914,7 +917,7 @@ class FigWindow(QWidget):
     
      
     """
-    def __init__(self, myObs, myScls, satStuff, myNum=0, labelPW=True, tmap=[0], screenXY=None):
+    def __init__(self, myObs, myScls, satStuff, massIms, myNum=0, labelPW=True, tmap=[0], screenXY=None):
         """
         Intial setup for the figure window class.
     
@@ -959,6 +962,7 @@ class FigWindow(QWidget):
         self.satStuff = satStuff 
         self.satName = satStuff[0]['OBS'] +' '+ satStuff[0]['INST']
         self.OGims = myObs[0]
+        self.mIms  = massIms
         self.hdrs = myObs[1]
         self.myScls2 = myScls
         self.tidx = 0
@@ -1239,8 +1243,16 @@ class FigWindow(QWidget):
         # PA define w/ N as 0 and E (left) as 90
         PA = (np.arctan2(-Tx,Ty) * 180 / np.pi) % 360.
         print ('Proj R (Rs), PA (deg):'.rjust(25), '{:8.2f}'.format(RRSun), '{:8.1f}'.format(PA))
+        # |---- Get mass per pixel  ----| 
+        if type(self.mIms) != type(None):
+            px = int(pix[0])
+            py = int(pix[1])
+            if self.satStuff[0]['OBSTYPE'] == 'COR':
+                print('Mass in pixel (1e8 g):'.rjust(25), '{:8.1f}'.format(self.mIms[self.tidx][py,px]/1e8))
+            elif self.satStuff[0]['OBSTYPE'] == 'HI':
+                print('Mass in pixel (1e8 g):'.rjust(25), '{:8.1f}'.format(self.mIms[self.tidx][py,px]/1e8))
+
         print ('')
-        
 
     #|------------------------------| 
     #|----------- Others -----------|
@@ -2338,7 +2350,6 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, labelPW=True, reloadD
     
     #|---- Pull sat number from obsFiles ----|
     nSats = len(obsFiles)
-    
 
     #|------------------------------| 
     #|---- Initiate Wireframes -----|
@@ -2357,12 +2368,14 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, labelPW=True, reloadD
     #|---- Setup observations -----|
     #|-----------------------------|
     sclIms = []    
+    massIms = []   
     satStuff = []
     multiTime = False
     #|---- Loop through insts ----|
     for i in range(nSats):
         satScls = []
         someStuff = []
+        someMims = []
         tNum = len(obsFiles[i][0])
         # If anyone has more than 1 then multitime mode
         if tNum > 1:
@@ -2372,13 +2385,19 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, labelPW=True, reloadD
         for j in range(tNum): 
             mySatStuff = getSatStuff(obsFiles[i][0][j])
             someStuff.append(mySatStuff)
+            #|---- Make mass images ----|
+            massIm, hdrM = wM.TB2mass(obsFiles[i][0][j].data, obsFiles[i][1][j])
+            someMims.append(massIm)
+            
         
         #|---- Get scaled versions of the data ----|     
-        mySclIms, someStuff = makeNiceMMs(obsFiles[i], someStuff)    
+        mySclIms, someStuff = makeNiceMMs(obsFiles[i], someStuff) 
+        
         
         #|---- Stuff in array ----|                 
         sclIms.append(mySclIms)
         satStuff.append(someStuff)
+        massIms.append(someMims)
     
 
     #|---------------------------------| 
@@ -2431,7 +2450,7 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, labelPW=True, reloadD
             myTmap = tmaps[i]
         else:
             myTmap = [0]
-        pw = FigWindow(obsFiles[i], sclIms[i], satStuff[i], myNum=i, labelPW=labelPW, tmap=myTmap, screenXY=screenXY)
+        pw = FigWindow(obsFiles[i], sclIms[i], satStuff[i], massIms[i], myNum=i, labelPW=labelPW, tmap=myTmap, screenXY=screenXY)
         pw.show()
         pws.append(pw) 
     
