@@ -790,6 +790,14 @@ def wispr_prep(filesIn, wcalpath, outSize=None, silent=False, biasOff=False, bia
         
         im[np.where(im < 0)] = 0
         
+        #|--------------------------|
+        #|--- Convert DN to MSB  ---|
+        #|--------------------------|
+        if (hdr['detector'] == 1 ):
+            im = im / 3.93e-14 
+        elif (hdr['detector'] == 2 ):
+            im = im / 5.78e-14
+
         #|-------------------------|
         #|--- Image Statistics  ---|
         #|-------------------------|

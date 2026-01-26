@@ -1041,11 +1041,8 @@ def wcs_get_coord(my_wcs, pixels=None):
                 (defaults to None and does full grid calc)
 
     Output:
-        im: the total brightness calculated from the pol images 
-            if doPB is flagged it returns the polarization brightness
-            if doPolAng is flagged it returns the polarized angle
-    
-        hdr: the corresponding header 
+        coord: the coordinates of each point in the grid (or for set pixels)
+               in the projection specified by my_wcs
     
     Notes:
         The code assumes an appropriate set of images are passed
