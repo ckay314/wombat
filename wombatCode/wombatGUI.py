@@ -213,7 +213,7 @@ class ParamWindow(QMainWindow):
         radBut2 = QRadioButton('Base')
         layout.addWidget(radBut2, 41,8,1,5,alignment=QtCore.Qt.AlignCenter)
         radBut1.toggled.connect(lambda:self.btnstate(radBut1))
-        radBut2.toggled.connect(lambda:self.btnstate(radBut2))
+        #radBut2.toggled.connect(lambda:self.btnstate(radBut2))
         self.radButs = [radBut1, radBut2]
 
         # |----- Background Drop Down Box ----|
@@ -222,6 +222,7 @@ class ParamWindow(QMainWindow):
         layout.addWidget(label, 42,0,1,6,alignment=QtCore.Qt.AlignLeft)
         cbox = self.bgComboBox()
         layout.addWidget(cbox,42,5,1,6,alignment=QtCore.Qt.AlignCenter)
+        self.Bcbox = cbox
         
         # |----- Happy Little Space Padding ----|
         #label = QLabel('')
@@ -471,6 +472,13 @@ class ParamWindow(QMainWindow):
             self.radButs[1].setChecked(True)
         elif event.key()== QtCore.Qt.Key_R:
             self.radButs[0].setChecked(True)
+        #|--- Scaling mode ---|
+        elif event.key()== QtCore.Qt.Key_1:
+            self.Bcbox.setCurrentIndex(0)
+        elif event.key()== QtCore.Qt.Key_2:
+            self.Bcbox.setCurrentIndex(1)
+        elif event.key()== QtCore.Qt.Key_3:
+            self.Bcbox.setCurrentIndex(2)
         #|--- Saving ---|
         elif event.key() == QtCore.Qt.Key_S:
             self.SBclicked()
@@ -827,14 +835,21 @@ class ParamWindow(QMainWindow):
         print('Mass not coded yet')
     
     def btnstate(self,b):
-        setidx = 0
         if b.isChecked():
-            if b.text() == 'Run':
-                setidx = 0
-            elif b.text() == 'Base':
-                setidx = 1
-        for aPW in pws:
+            setidx = 0
+            oidx = 1
+        else:
+            setidx = 1
+            oidx = 0
+        for aPW in pws:            
+            
+            aPW.slidervals[oidx,aPW.sclidx,0] = aPW.MinSlider.value()
+            aPW.slidervals[oidx,aPW.sclidx,1] = aPW.MaxSlider.value()
+            
             aPW.didx = setidx
+            aPW.MinSlider.setValue(aPW.slidervals[setidx,aPW.sclidx,0])  
+            aPW.MaxSlider.setValue(aPW.slidervals[setidx,aPW.sclidx,1])  
+            
             aPW.plotBackground()
                     
     
@@ -980,11 +995,12 @@ class FigWindow(QWidget):
         self.OGims = myObs[0]
         self.mIms  = massIms
         self.hdrs = myObs[2]
-        self.myScls2 = myScls
+        self.myScls2 = myScls # the scaled images
         self.tidx = 0
         self.didx = 0 # difference index
         self.sclidx = 0
         self.st2obs = tmap # slider time to obs index
+        self.slidervals = np.zeros([2,3,2], dtype=int) # diff, scale time, min/max
         
         #|---- Set up/name window ----|
         if type(screenXY) == type(None):
@@ -1061,6 +1077,12 @@ class FigWindow(QWidget):
         layoutP.addWidget(label, 12,0,1,5,alignment=QtCore.Qt.AlignCenter)
         self.cbox = self.bgComboBox()
         layoutP.addWidget(self.cbox,12,5,1,5,alignment=QtCore.Qt.AlignCenter)
+        
+        
+        #|---- Fill slider defaults ----|
+        for i in range(3):
+            self.slidervals[:,i,0] = satStuff[self.didx][0]['SLIVALS'][0][i]
+            self.slidervals[:,i,1] = satStuff[self.didx][0]['SLIVALS'][1][i]
         
         #|---- Min brightness label/slider ----|
         minL = QLabel('Min Value:     ')
@@ -1155,6 +1177,10 @@ class FigWindow(QWidget):
             Replots background using update min/max values
      
         """
+        if 'Min' in pref:
+            self.slidervals[self.didx,self.sclidx,0] = x
+        elif 'Max' in pref:
+            self.slidervals[self.didx,self.sclidx,1] = x
         l.setText(pref + str(x))
         self.plotBackground()
 
@@ -1192,8 +1218,14 @@ class FigWindow(QWidget):
             mainwindow.radButs[1].setChecked(True)
         elif event.key()== QtCore.Qt.Key_R:
             mainwindow.radButs[0].setChecked(True)
-            
-    
+        #|--- Scaling mode ---|
+        elif event.key()== QtCore.Qt.Key_1:
+            mainwindow.Bcbox.setCurrentIndex(0)
+        elif event.key()== QtCore.Qt.Key_2:
+            mainwindow.Bcbox.setCurrentIndex(1)
+        elif event.key()== QtCore.Qt.Key_3:
+            mainwindow.Bcbox.setCurrentIndex(2)
+                
     def back_changed(self,text):
         """
         Event for background combo box changes
@@ -1207,9 +1239,10 @@ class FigWindow(QWidget):
             Replots background
         
         """
+        # Switch to the new mode
         self.sclidx = text   
-        self.MinSlider.setValue(self.satStuff[self.didx][0]['SLIVALS'][0][int(text)])  
-        self.MaxSlider.setValue(self.satStuff[self.didx][0]['SLIVALS'][1][int(text)])  
+        self.MinSlider.setValue(self.slidervals[self.didx,self.sclidx,0])  
+        self.MaxSlider.setValue(self.slidervals[self.didx,self.sclidx,1])  
         self.plotBackground()
                    
     def EBclicked(self):
