@@ -753,7 +753,7 @@ class ParamWindow(QMainWindow):
         #|------------------------------------|
         fileName = 'wombatSummaryFile.txt'        
         outFile = open('wbOutputs/'+fileName, 'w')
-        print ('Saving results in wbOutputs/'+fileName)
+        print ('Saving results in wboutputs/'+fileName)
         
         # |----- Save the wireframe parameters ----|
         for j in range(nwfs):
@@ -769,6 +769,7 @@ class ParamWindow(QMainWindow):
                     else:
                         outStr = thisLab+str(j+1)+': ' + str(aWF.params[i])
                     outFile.write(outStr+'\n')
+                
                     
         # |----- Save the background parameters ----|
         # Check if doing single sat or all
@@ -781,18 +782,19 @@ class ParamWindow(QMainWindow):
             aPW = pws[j]
             tidx = aPW.tidx
             # Add the names of all time steps
-            for tidx in range(len(aPW.satStuff)):
-                outStr = 'ObsTime'+str(j+1)+': ' + aPW.satStuff[tidx]['DATEOBS']
+            for tidx in range(len(aPW.satStuff[0])):
+                outStr = 'ObsFile'+str(j+1)+': ' + aPW.satStuff[0][tidx]['MYFITS']
                 outFile.write(outStr+'\n')
             # Scaling parameters
-            outStr = 'ObsType'+str(j+1)+': ' + aPW.satStuff[tidx]['MYTAG'].replace(' ','_')
+            outStr = 'ObsType'+str(j+1)+': ' + aPW.satStuff[0][tidx]['MYTAG'].replace(' ','_')
             outFile.write(outStr+'\n')            
             outStr = 'Scaling'+str(j+1)+': ' +str(aPW.sclidx)
             outFile.write(outStr+'\n')
             outStr = 'MinVal'+str(j+1)+': ' +str(aPW.MinSlider.value())
             outFile.write(outStr+'\n')
             outStr = 'MaxVal'+str(j+1)+': ' +str(aPW.MaxSlider.value())
-            outFile.write(outStr+'\n')        
+            outFile.write(outStr+'\n') 
+                               
         outFile.close()
 
         #|------------------------------------| 
@@ -803,7 +805,7 @@ class ParamWindow(QMainWindow):
         for j in toDo:
             aPW = pws[j]
             tidx = aPW.tidx
-            figName = 'wombat_'+ aPW.satStuff[tidx]['DATEOBS'].replace(':','') + '_' +  aPW.satStuff[tidx]['MYTAG'].replace(' ','_') +'.png'
+            figName = 'wombat_'+ aPW.satStuff[0][tidx]['DATEOBS'].replace(':','') + '_' +  aPW.satStuff[0][tidx]['MYTAG'].replace(' ','_') +'.png'
             figGrab = aPW.pWindow.grab()
             figGrab.save('wbOutputs/'+figName)
             print ('Saving figure in wbOutputs/'+figName )
@@ -814,35 +816,6 @@ class ParamWindow(QMainWindow):
             figGrab.save('wbOutputs/'+figName)
             print ('Saving figure in wbOutputs/'+figName )
             
-        
-        #|------------------------------------| 
-        #|-------- Save Fits Files -----------|
-        #|------------------------------------|        
-        # Make sure dir exists first
-        if not os.path.exists('wbFits/reloads/'):
-            os.mkdir('wbFits/reloads/')
-            
-        for j in toDo:
-            aPW = pws[j]
-            
-            # Save a fits file for each time step
-            for tidx in range(len(aPW.satStuff)):
-                # Make the name
-                fitsName = 'wombat_'+ aPW.satStuff[tidx]['DATEOBS'].replace(':','') + '_' +  aPW.satStuff[tidx]['MYTAG'].replace(' ','_') +'.fits'
-                # Check that it doesn't already exist
-                if not os.path.exists('wbFits/reloads/'+fitsName):
-                    fitsdata = aPW.OGims[tidx].data               
-                    fitshdr  = aPW.hdrs[tidx]
-                
-                    # Special thing just for LASCO. Gets angry about 
-                    # format even though nothing we touched.
-                    if 'OBT_TIME' in fitshdr:
-                        fitshdr['OBT_TIME'] = str(fitshdr['OBT_TIME'])
-                    
-                    # Write it    
-                    print ('Saving fits file as wbfits/reloads/'+fitsName)
-                    hdu = fits.PrimaryHDU(fitsdata, header=fitshdr)
-                    hdu.writeto('wbFits/reloads/'+fitsName, overwrite=True)
         
     def MBclicked(self):
         """
@@ -1874,6 +1847,7 @@ def getSatStuff(imMap):
                         OCCRARC:   radius of occulter in arcsecs
                         SUNCIRC:   array with the xy pixels for an outline of the sun
                         SUNNORTH:  array with xy pixels to indicate solar north direction
+                        MYFITS:    the name/path of the original fits file
     
     External Calls:
         fitshead2wcs from wcs_funs                       
@@ -2089,6 +2063,11 @@ def getSatStuff(imMap):
         skyPt = SkyCoord(x=0, y=0, z=1, unit='R_sun', representation_type='cartesian', frame='heliographic_stonyhurst')
         myPt2 = imMap.world_to_pixel(skyPt)
         satDict['SUNNORTH'] = [[sx, myPt2[0].to_value()], [sy, myPt2[1].to_value()]]
+
+        # |----------------------------|
+        # |---- Add fits file/path ----|    
+        # |----------------------------|
+        satDict['MYFITS'] = myhdr['myFits']
 
     return satDict
     
@@ -2565,6 +2544,9 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, labelPW=True, reloadD
     #|---- Launch Parameter Window -----|
     #|----------------------------------|
     mainwindow = ParamWindow(nwfs, tlabs=tlabs)
+    # Set time slider to highlight bc reload will
+    # shift focus onto text box
+    mainwindow.Tslider.setFocus()
     mainwindow.show()
     
 
