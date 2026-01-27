@@ -150,7 +150,7 @@ def processReload(fileIn, reloadFold='wbfits/reloads/'):
             if 'ObsType' in mykey: nSats += 1
             # Will have multiple ObsTimes for each panel
             # Collect into a single array
-            if 'ObsTime' in mykey:
+            if 'ObsFile' in mykey:
                 thisKey = str(mykey).replace(':','')
                 if thisKey not in reloadDict:
                     reloadDict[thisKey] = [data[i,1]]
@@ -164,28 +164,17 @@ def processReload(fileIn, reloadFold='wbfits/reloads/'):
         # |-----------------------------------------------|
         # |-------- Process the observation files --------|
         # |-----------------------------------------------|       
-        allFH = []
+        allTypes = []
+        allTimes = []
         for i in range(nSats):
             # Build the reload file name from ObsType/ObsTime
             # wombat will save in a systematic manner of 
             # wombat_YYYY-MM-DDTHHMMSS_Sat_Inst.fits
-            myType = reloadDict['ObsType'+str(i+1)]
-            myTimes = reloadDict['ObsTime'+str(i+1)]
-            diffs, hdrs = [], [] 
-            for j in range(len(myTimes)):
-                fitsname = 'wombat_'+myTimes[j]+'_' + myType+ '.fits'
-                if os.path.exists(reloadFold+fitsname.replace(':','')):
-                    hdul = fits.open(reloadFold+fitsname.replace(':',''))
-                    im = np.asarray(hdul[0].data)
-                    hdr = hdul[0].header
-                    hdul.close()
-                    # Saved maps are already diff'ed
-                    diff = sunpy.map.Map(im, hdr)
-                    diffs.append(diff)
-                    hdrs.append(hdr)
-                else:
-                    sys.exit('processReload cannot find '+reloadFold+fitsname.replace(':','')+' Make sure it is in the correct folder.')
-            allFH.append([diffs, hdrs])
+            allTypes.append(reloadDict['ObsType'+str(i+1)])
+            allTimes.append(reloadDict['ObsFile'+str(i+1)])
+            
+        allFH = fits2maps(allTimes, allTypes)    
+        
         return allFH, reloadDict
         
     else:
@@ -235,6 +224,7 @@ def fits2maps(filesIn, names, diffEUV=False):
             with fits.open(aF) as hdulist:
                 im  = hdulist[0].data
                 hdr = hdulist[0].header
+                hdr['myFits'] = aF
             allFH0[i][0].append(im)
             allFH0[i][1].append(hdr)
             
