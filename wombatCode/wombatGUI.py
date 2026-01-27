@@ -1686,6 +1686,13 @@ class OverviewWindow(QWidget):
             mainwindow.radButs[1].setChecked(True)
         elif event.key()== QtCore.Qt.Key_R:
             mainwindow.radButs[0].setChecked(True)
+        #|--- Scaling mode ---|
+        elif event.key()== QtCore.Qt.Key_1:
+            mainwindow.Bcbox.setCurrentIndex(0)
+        elif event.key()== QtCore.Qt.Key_2:
+            mainwindow.Bcbox.setCurrentIndex(1)
+        elif event.key()== QtCore.Qt.Key_3:
+            mainwindow.Bcbox.setCurrentIndex(2)    
 
 
 # |------------------------------------------------------------|
