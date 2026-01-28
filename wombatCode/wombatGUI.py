@@ -35,6 +35,10 @@ from itertools import pairwise
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
 from astropy import units as u
+from scipy.spatial import ConvexHull
+from skimage.draw import polygon
+
+
 
 import wombatWF as wf
 import wombatMass as wM
@@ -479,9 +483,14 @@ class ParamWindow(QMainWindow):
             self.Bcbox.setCurrentIndex(1)
         elif event.key()== QtCore.Qt.Key_3:
             self.Bcbox.setCurrentIndex(2)
+        #|--- Mass ---|
+        elif event.key() == QtCore.Qt.Key_M:
+            self.MBclicked()
+        
         #|--- Saving ---|
         elif event.key() == QtCore.Qt.Key_S:
             self.SBclicked()
+        
             
     def s2b(self, x=None, b=None, dx=None, x0=None, myWF=None, widges=None):
         """
@@ -829,10 +838,31 @@ class ParamWindow(QMainWindow):
         """
         Event for clicking the mass button
         
-        Does nothing yet but working on that
+        Work in progress. Not useful yet
         
         """
-        print('Mass not coded yet')
+        # Check if wireframes are turned on
+        for aPW in pws:
+            for j in range(len(aPW.scatters)):
+                aScat = aPW.scatters[j]
+                x_positions, y_positions = aScat.getData()
+                # Make sure we have a wf, and also enough of a wf
+                if len(x_positions) > 50: 
+                    points = np.transpose(np.array([x_positions, y_positions]))
+                    hull = ConvexHull(points)
+                    vertices = points[hull.vertices]
+                    
+                    mask = np.zeros(aPW.mIms[0].shape, dtype=int)
+                    rr, cc = polygon(vertices[:, 1], vertices[:, 0], shape=(aPW.mIms[0].shape))   
+                    mask[cc,rr] = 1
+                    aPW.WFmasks[j] = mask
+                    
+            if aPW.nowMass:
+                aPW.nowMass = False
+            else:
+                aPW.nowMass = True
+            aPW.plotBackground()
+        print('Mass calc not coded yet')
     
     def btnstate(self,b):
         if b.isChecked():
@@ -1001,6 +1031,8 @@ class FigWindow(QWidget):
         self.sclidx = 0
         self.st2obs = tmap # slider time to obs index
         self.slidervals = np.zeros([2,3,2], dtype=int) # diff, scale time, min/max
+        self.nowMass = False # show the region used to calc mass
+        self.WFmasks = [np.zeros(self.mIms[0].shape, dtype=int) for i in range(nwfs)]
         
         #|---- Set up/name window ----|
         if type(screenXY) == type(None):
@@ -1048,6 +1080,9 @@ class FigWindow(QWidget):
         
         #|---- Make an image item ----|
         self.image = pg.ImageItem()
+
+        #|---- Mass contour image item ----|
+        self.MCimage = pg.ImageItem()
         
         #|---- Check for color table ----|
         # (from wombatLoadCTs)
@@ -1057,6 +1092,7 @@ class FigWindow(QWidget):
         
         #|---- Add the image ----|
         self.pWindow.addItem(self.image)
+        self.pWindow.addItem(self.MCimage)
         self.pWindow.setRange(xRange=(0,myObs[self.didx][0].data.shape[0]), yRange=(0,myObs[self.didx][0].data.shape[1]), padding=0)
         
         #|---- Hide the axes ----|
@@ -1462,6 +1498,7 @@ class FigWindow(QWidget):
                     else:
                         myPt = pts2proj(pt, obs, obsScl, mywcs, occultR=occultR)
                     
+                    
                     # If the point is in the FoV add it to draw    
                     if len(myPt) > 0:          
                         pos.append({'pos': [myPt[0][0], myPt[0][1]], 'pen':{'color':myColor, 'width':penwid}, 'brush':pg.mkBrush(myColor)})
@@ -1483,6 +1520,20 @@ class FigWindow(QWidget):
         
         #|---- Update image ----|     
         self.image.updateImage(image=myIm, levels=(slMin, slMax))
+        
+        
+        #|---- Show mass contour ----|   
+        # Use fake data for now 
+        #fakeIm = np.zeros(myIm.shape)
+        #fakeIm[250:350] = 1
+        if self.nowMass: 
+            
+            bigMask = np.zeros(myIm.shape)
+            for i in range(nwfs):
+                bigMask += self.WFmasks[i]
+            self.MCimage.updateImage(image= bigMask, opacity=0.5, levels=(0,nwfs-0.5))
+        else:
+            self.MCimage.updateImage(image= self.WFmasks[0], opacity=0.0, levels=(0,1))
         
         #|---- Draw stuff on top ----|     
         if self.satStuff[self.didx][self.tidx]['OBSTYPE'] != 'EUV':
