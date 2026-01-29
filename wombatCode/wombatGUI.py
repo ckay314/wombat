@@ -837,32 +837,32 @@ class ParamWindow(QMainWindow):
     def MBclicked(self):
         """
         Event for clicking the mass button
-        
-        Work in progress. Not useful yet
-        
+                
         """
         # Check if wireframes are turned on
         for aPW in pws:
-            for j in range(len(aPW.scatters)):
-                aScat = aPW.scatters[j]
-                x_positions, y_positions = aScat.getData()
-                # Make sure we have a wf, and also enough of a wf
-                if len(x_positions) > 50: 
-                    points = np.transpose(np.array([x_positions, y_positions]))
-                    hull = ConvexHull(points)
-                    vertices = points[hull.vertices]
+            if not (aPW.satStuff[aPW.didx][0]['OBSTYPE'] == 'EUV'):
+                for j in range(len(aPW.scatters)):
+                    aScat = aPW.scatters[j]
+                    x_positions, y_positions = aScat.getData()
+                    # Make sure we have a wf, and also enough of a wf
+                    if len(x_positions) > 50: 
+                        points = np.transpose(np.array([x_positions, y_positions]))
+                        hull = ConvexHull(points)
+                        vertices = points[hull.vertices]
                     
-                    mask = np.zeros(aPW.mIms[0].shape, dtype=int)
-                    rr, cc = polygon(vertices[:, 1], vertices[:, 0], shape=(aPW.mIms[0].shape))   
-                    mask[cc,rr] = 1
-                    aPW.WFmasks[j] = mask
+                        mask = np.zeros(aPW.mIms[0].shape, dtype=int)
+                        rr, cc = polygon(vertices[:, 0], vertices[:, 1], shape=(aPW.mIms[0].shape))   
+                        mask[rr,cc] = 1
+                        aPW.WFmasks[j] = mask
                     
-            if aPW.nowMass:
-                aPW.nowMass = False
+                if aPW.nowMass:
+                    aPW.nowMass = False
+                else:
+                    aPW.nowMass = True
+                aPW.plotBackground()
             else:
-                aPW.nowMass = True
-            aPW.plotBackground()
-        print('Mass calc not coded yet')
+                print ('No mass calc for EUV images')
     
     def btnstate(self,b):
         if b.isChecked():
@@ -1527,11 +1527,12 @@ class FigWindow(QWidget):
         #fakeIm = np.zeros(myIm.shape)
         #fakeIm[250:350] = 1
         if self.nowMass: 
-            
             bigMask = np.zeros(myIm.shape)
             for i in range(nwfs):
                 bigMask += self.WFmasks[i]
+                print (self.satName + ' WF' + str(i+1) + ' mass (g): ' + "{:.3e}".format(np.sum(self.WFmasks[i]* self.mIms[i])))
             self.MCimage.updateImage(image= bigMask, opacity=0.5, levels=(0,nwfs-0.5))
+            self.nowMass = False
         else:
             self.MCimage.updateImage(image= self.WFmasks[0], opacity=0.0, levels=(0,1))
         
@@ -1555,6 +1556,10 @@ class FigWindow(QWidget):
             text_item2 = pg.TextItem(self.satStuff[self.didx][self.tidx]['DATEOBS'], anchor=(1, 1), fill='k')
             text_item2.setPos(0.999*wid, 0.001*wid)
             self.pWindow.addItem(text_item2)
+        
+        # Make slider highlighted so key shortcuts work
+        if 'mainwindow' in globals():
+            mainwindow.Tslider.setFocus()
             
 
 # |------------------------------------------------------------|
@@ -2155,10 +2160,10 @@ def getSatStuff(imMap):
         myPt2 = imMap.world_to_pixel(skyPt)
         satDict['SUNNORTH'] = [[sx, myPt2[0].to_value()], [sy, myPt2[1].to_value()]]
 
-        # |----------------------------|
-        # |---- Add fits file/path ----|    
-        # |----------------------------|
-        satDict['MYFITS'] = myhdr['myFits']
+    # |----------------------------|
+    # |---- Add fits file/path ----|    
+    # |----------------------------|
+    satDict['MYFITS'] = myhdr['myFits']
 
     return satDict
     
@@ -2554,9 +2559,7 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, labelPW=True, reloadD
                     massIm = (1-mySatStuff['MASK']) * massIm
             else:
                 massIm = np.zeros(obsFiles[i][0][j].data.shape)
-            someMims.append(massIm)
-            
-        
+            someMims.append(np.transpose(massIm))            
         #|---- Get scaled versions of the data ----|     
         mySclIms, someStuff = makeNiceMMs(obsFiles[i], someStuff) 
         

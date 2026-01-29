@@ -99,6 +99,9 @@ def elTheory(Rin,theta, center=False, limb=0.63, returnAll=False):
     else:
         return R,B
         
+#|----------------------------------|
+#|---- Total Brightness to Mass ----|
+#|----------------------------------|
 def TB2mass(img, hdr, onlyNe=False, doPB=False):
     """
     Function that will convert a total brightness image into a mass (density)
@@ -179,10 +182,27 @@ def TB2mass(img, hdr, onlyNe=False, doPB=False):
         mass = img / B
     
     mass = conv * mass     
-    
     # Not doing ROI here
+    
+    # Clean out NaNs
+    mass[~np.isfinite(mass)] = 0
   
     # add a tag into header
     hdr['history'] = 'Converted to mass units using calcCMEmass.py'
     
     return mass, hdr
+
+#|------------------------|
+#|---- Points to Mask ----|
+#|------------------------|
+def pts2mask(pts, imsize):
+    """
+    Function that will take a list of the projected wireframe points and
+    convert it to a mask to be used in the mass summing
+    
+    Inputs:
+    
+    Outputs: 
+        mask: the mask
+
+    """
