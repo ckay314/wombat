@@ -91,6 +91,8 @@ defDict = {'Height (Rs)':10, 'Lon (deg)':0, 'Lat (deg)':0, 'Tilt (deg)':0, 'AW (
 import numpy as np
 import sys
 
+from scipy.spatial import ConvexHull
+from skimage.draw import polygon
 
 #|-----------------|
 #|---- Globals ----|
@@ -582,4 +584,33 @@ class wireframe():
             # Move in lat/lon
             self.points = np.transpose(rotz(roty(xyz, -lat), lon))  
 
-            
+#|------------------------|
+#|---- Points to Mask ----|
+#|------------------------|
+def pts2mask(imShape, scats):
+    """
+    Function that will take a list of the projected wireframe points and
+    convert it to a mask represeting the projection of the wireframe
+    
+    Inputs: 
+        imShape: the shape of the image on which the pts are projected (from im.shape)
+    
+        scats: the projected scatter points as [x_positions, y_positions]
+    
+    Outputs: 
+        mask: a mask of the wireframe (same shape as im)
+
+    """
+    x_positions, y_positions = scats[0], scats[1]
+    # Make sure we have a wf, and also enough of a wf
+    if len(x_positions) > 50: 
+        points = np.transpose(np.array([x_positions, y_positions]))
+        hull = ConvexHull(points)
+        vertices = points[hull.vertices]
+    
+        mask = np.zeros(imShape, dtype=int)
+        rr, cc = polygon(vertices[:, 0], vertices[:, 1], shape=(imShape))   
+        mask[rr,cc] = 1
+        return mask
+    else:
+        return None            

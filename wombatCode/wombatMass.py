@@ -9,8 +9,6 @@ External calls:
 
 import numpy as np
 import sys
-from scipy.spatial import ConvexHull
-from skimage.draw import polygon
 
 sys.path.append('prepCode/') 
 from wcs_funs import fitshead2wcs, wcs_get_coord
@@ -141,13 +139,7 @@ def TB2mass(img, hdr, onlyNe=False, doPB=False):
     dist = wcs_get_coord(wcs) #[2,naxis,naxis] with axis having usual swap from idl
     if hdr['cunit1'] == 'deg':
         dist = dist * 3600.
-    # SECCHI Version
-    if 'rsun' in hdr:
-        dist = np.sqrt(dist[0,:,:]**2 + dist[1,:,:]**2) / hdr['rsun']
-    # PSP version
-    elif 'RSUN_ARC' in hdr:
-        hdr['rsun'] = hdr['RSUN_ARC']
-        dist = (np.sqrt(dist[0,:,:]**2 + dist[1,:,:]**2) / hdr['RSUN_ARC'])
+    dist = np.sqrt(dist[0,:,:]**2 + dist[1,:,:]**2) / hdr['rsun']
         
     # |---------------------------------------|
     # |----------- Apply el Theory -----------|
@@ -194,33 +186,3 @@ def TB2mass(img, hdr, onlyNe=False, doPB=False):
     
     return mass, hdr
 
-#|------------------------|
-#|---- Points to Mask ----|
-#|------------------------|
-def pts2mask(imShape, scats):
-    """
-    Function that will take a list of the projected wireframe points and
-    convert it to a mask to be used in the mass summing
-    
-    Inputs: 
-        imShape: the shape of the image on which the pts are projected
-    
-        scats: the projected scatter points as [x_positions, y_positions]
-    
-    Outputs: 
-        mask: a mask of the wireframe (same shape as im)
-
-    """
-    x_positions, y_positions = scats[0], scats[1]
-    # Make sure we have a wf, and also enough of a wf
-    if len(x_positions) > 50: 
-        points = np.transpose(np.array([x_positions, y_positions]))
-        hull = ConvexHull(points)
-        vertices = points[hull.vertices]
-    
-        mask = np.zeros(imShape, dtype=int)
-        rr, cc = polygon(vertices[:, 0], vertices[:, 1], shape=(imShape))   
-        mask[rr,cc] = 1
-        return mask
-    else:
-        return None

@@ -160,7 +160,7 @@ def processReload(fileIn, reloadFold='wbfits/reloads/'):
                 reloadDict[str(mykey).replace(':','')] = str(data[i,1]).replace('Half', 'Half ')
         reloadDict['nWFs'] = nWFs
         reloadDict['nSats'] = nSats
-        
+
         # |-----------------------------------------------|
         # |-------- Process the observation files --------|
         # |-----------------------------------------------|       
@@ -170,8 +170,8 @@ def processReload(fileIn, reloadFold='wbfits/reloads/'):
             # Build the reload file name from ObsType/ObsTime
             # wombat will save in a systematic manner of 
             # wombat_YYYY-MM-DDTHHMMSS_Sat_Inst.fits
-            allTypes.append(reloadDict['ObsType'+str(i+1)])
-            allTimes.append(reloadDict['ObsFile'+str(i+1)])
+            allTypes.append(np.array(reloadDict['ObsType'+str(i+1)]))
+            allTimes.append(np.array(reloadDict['ObsFile'+str(i+1)]))
             
         allFH = fits2maps(allTimes, allTypes)    
         
@@ -218,7 +218,7 @@ def fits2maps(filesIn, names, diffEUV=False):
     # |----------- Open up the fits files ------------|
     # |-----------------------------------------------|
     allFH0 = [[[], []] for i in range(len(names))]
-    
+    print (filesIn)
     for i in range(len(names)):
         for aF in filesIn[i]:
             with fits.open(aF) as hdulist:
@@ -730,7 +730,7 @@ def runWombat(args):
     # Exit if haven't been passed anything
     else:
         sys.exit('Need to pass either a file or list of times+insts to wombatWrapper.py') 
-    
+
     # |-----------------------------------------------|
     # |----------- Launch the WOMBAT GUI -------------|
     # |-----------------------------------------------|    

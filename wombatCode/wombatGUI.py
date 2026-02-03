@@ -35,9 +35,6 @@ from itertools import pairwise
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
 from astropy import units as u
-from scipy.spatial import ConvexHull
-from skimage.draw import polygon
-
 
 
 import wombatWF as wf
@@ -450,17 +447,26 @@ class ParamWindow(QMainWindow):
         Event for key press events. 
         
         Actions (based on key):
-            q     = close a window
-            esc   = close everything
-            left  = move time slider to earlier time
-            right = move time slider to later time
-            b     = switch to base difference
-            r     = switch to running difference
-            s     = save 
+            return = replot (pulls out of param text box)
+            q      = close a window
+            esc    = close everything
+            left   = move time slider to earlier time
+            right  = move time slider to later time
+            b      = switch to base difference
+            r      = switch to running difference
+            s      = save 
+            m      = calculate mass
      
         """
+        #|--- Pull Params/Plot ---|
+        if event.key() == QtCore.Qt.Key_Return:
+            for iii in range(nwfs):
+                self.updateWFpoints(wfs[iii], self.widges[iii])
+                focused_widget = self.focusWidget()
+                focused_widget.deselect()
+                self.Tslider.setFocus()
         #|--- Closing things ---|
-        if event.key() == QtCore.Qt.Key_Q: 
+        elif event.key() == QtCore.Qt.Key_Q: 
             self.close()    
         elif event.key() == QtCore.Qt.Key_Escape:
             sys.exit()
@@ -844,25 +850,18 @@ class ParamWindow(QMainWindow):
             if not (aPW.satStuff[aPW.didx][0]['OBSTYPE'] == 'EUV'):
                 for j in range(len(aPW.scatters)):
                     aScat = aPW.scatters[j]
-                    x_positions, y_positions = aScat.getData()
-                    # Make sure we have a wf, and also enough of a wf
-                    if len(x_positions) > 50: 
-                        points = np.transpose(np.array([x_positions, y_positions]))
-                        hull = ConvexHull(points)
-                        vertices = points[hull.vertices]
-                    
-                        mask = np.zeros(aPW.mIms[0].shape, dtype=int)
-                        rr, cc = polygon(vertices[:, 0], vertices[:, 1], shape=(aPW.mIms[0].shape))   
-                        mask[rr,cc] = 1
-                        aPW.WFmasks[j] = mask
-                    
+                    xs, ys = aScat.getData()
+                    mask = wf.pts2mask(aPW.mIms[0].shape, [xs,ys])
+                    aPW.WFmasks[j] = mask
+                     
                 if aPW.nowMass:
                     aPW.nowMass = False
                 else:
-                    aPW.nowMass = True
+                    aPW.nowMass = True                     
                 aPW.plotBackground()
             else:
                 print ('No mass calc for EUV images')
+                
     
     def btnstate(self,b):
         if b.isChecked():
@@ -1225,42 +1224,63 @@ class FigWindow(QWidget):
         Event for key press events. 
         
         Actions (based on key):
-            q     = close a window
-            esc   = close everything
-            left  = move time slider to earlier time
-            right = move time slider to later time
-            b     = switch to base difference
-            r     = switch to running difference
-            s     = save
+            return = replot (pulls out of param text box)
+            q      = close a window
+            esc    = close everything
+            left   = move time slider to earlier time
+            right  = move time slider to later time
+            b      = switch to base difference
+            r      = switch to running difference
+            s      = save
+            m      = calculate mass
      
         """
+        #|--- Pull Params/Plot ---|
+        if event.key() == QtCore.Qt.Key_Return:
+            if 'mainwindow' in globals():
+                for iii in range(nwfs):
+                    mainwindow.updateWFpoints(wfs[iii], mainwindow.widges[iii])
+                    focused_widget = mainwindow.focusWidget()
+                    focused_widget.deselect()
+                    mainwindow.Tslider.setFocus()
         #|--- Closing Things ---|
-        if event.key() == QtCore.Qt.Key_Q: 
+        elif event.key() == QtCore.Qt.Key_Q: 
             self.close()
         elif event.key() == QtCore.Qt.Key_Escape:
             sys.exit()
         #|--- Saving ---|
         elif event.key() == QtCore.Qt.Key_S:
-            mainwindow.SBclicked(singleSat=self.winidx)
+            if 'mainwindow' in globals():
+                mainwindow.SBclicked(singleSat=self.winidx)
         #|--- Time Slider ---|
         elif event.key()== QtCore.Qt.Key_Right:
-            Tval = mainwindow.Tslider.value()
-            mainwindow.Tslider.setValue(Tval+1)
+            if 'mainwindow' in globals():
+                Tval = mainwindow.Tslider.value()
+                mainwindow.Tslider.setValue(Tval+1)
         elif event.key()== QtCore.Qt.Key_Left:
-            Tval = mainwindow.Tslider.value()
-            mainwindow.Tslider.setValue(Tval-1)            
+            if 'mainwindow' in globals():
+                Tval = mainwindow.Tslider.value()
+                mainwindow.Tslider.setValue(Tval-1)            
         #|--- Difference mode ---|
         elif event.key()== QtCore.Qt.Key_B:
-            mainwindow.radButs[1].setChecked(True)
+            if 'mainwindow' in globals():
+                mainwindow.radButs[1].setChecked(True)
         elif event.key()== QtCore.Qt.Key_R:
-            mainwindow.radButs[0].setChecked(True)
+            if 'mainwindow' in globals():
+                mainwindow.radButs[0].setChecked(True)
         #|--- Scaling mode ---|
         elif event.key()== QtCore.Qt.Key_1:
-            mainwindow.Bcbox.setCurrentIndex(0)
+            if 'mainwindow' in globals():
+                mainwindow.Bcbox.setCurrentIndex(0)
         elif event.key()== QtCore.Qt.Key_2:
-            mainwindow.Bcbox.setCurrentIndex(1)
+            if 'mainwindow' in globals():
+                mainwindow.Bcbox.setCurrentIndex(1)
         elif event.key()== QtCore.Qt.Key_3:
-            mainwindow.Bcbox.setCurrentIndex(2)
+            if 'mainwindow' in globals():
+                mainwindow.Bcbox.setCurrentIndex(2)
+        #|--- Mass ---|
+        elif event.key() == QtCore.Qt.Key_M:
+            self.MBclicked()
                 
     def back_changed(self,text):
         """
@@ -1308,8 +1328,9 @@ class FigWindow(QWidget):
         
         Does nothing yet but working on that
         
-        """
-        print('Mass not coded yet')
+        """        
+        if 'mainwindow' in globals():
+            mainwindow.MBclicked()
     
     def mouse_clicked(self,event):
         """
@@ -1530,9 +1551,23 @@ class FigWindow(QWidget):
             bigMask = np.zeros(myIm.shape)
             for i in range(nwfs):
                 bigMask += self.WFmasks[i]
-                print (self.satName + ' WF' + str(i+1) + ' mass (g): ' + "{:.3e}".format(np.sum(self.WFmasks[i]* self.mIms[i])))
+                # Get the separation 
+                seps = np.abs(wfs[i].params[1]-self.satStuff[self.didx][self.tidx]['POSLON'])
+                seps[np.where(seps > 90)] = 180 - seps[np.where(seps > 90)]
+                mySep = np.min(np.abs(seps))
+                if mySep > 80:
+                    print ('!!!--- Warning PoS separation large, capping at 80 deg ---!!!')
+                    mySep = 80
+                # Prob need to convert the h to projected...
+                rpos, Bpos = wM.elTheory([wfs[i].params[0]], 0)
+                rsep, Bsep = wM.elTheory([wfs[i].params[0]], mySep)
+                sclfct = Bsep / Bpos
+                print ((self.satName + ' PoS WF' + str(i+1) + ' mass (g): ').rjust(50) + "{:.3e}".format(np.sum(self.WFmasks[i]* self.mIms[i])))
+                print ((self.satName + ' deProj WF' + str(i+1) + ' mass (g): ').rjust(50) + "{:.3e}".format(np.sum(self.WFmasks[i]* self.mIms[i]/sclfct)), ' (scale factor ', "{:.1f}".format(1/sclfct[0]), ')')
+            print ('')
             self.MCimage.updateImage(image= bigMask, opacity=0.5, levels=(0,nwfs-0.5))
-            self.nowMass = False
+
+            
         else:
             self.MCimage.updateImage(image= self.WFmasks[0], opacity=0.0, levels=(0,1))
         
@@ -1713,42 +1748,65 @@ class OverviewWindow(QWidget):
         Event for key press events. 
         
         Actions (based on key):
-            q     = close a window
-            esc   = close everything
-            left  = move time slider to earlier time
-            right = move time slider to later time
-            b     = switch to base difference
-            r     = switch to running difference
-            s     = save
+            return = replot (pulls out of param text box)
+            q      = close a window
+            esc    = close everything
+            left   = move time slider to earlier time
+            right  = move time slider to later time
+            b      = switch to base difference
+            r      = switch to running difference
+            s      = save
+            m      = calculate mass
      
         """
+        #|--- Pull Params/Plot ---|
+        if event.key() == QtCore.Qt.Key_Return:
+            if 'mainwindow' in globals():
+                for iii in range(nwfs):
+                    mainwindow.updateWFpoints(wfs[iii], mainwindow.widges[iii])
+                    focused_widget = mainwindow.focusWidget()
+                    focused_widget.deselect()
+                    mainwindow.Tslider.setFocus()
         #|--- Closing Things ---|
-        if event.key() == QtCore.Qt.Key_Q: 
+        elif event.key() == QtCore.Qt.Key_Q: 
             self.close()
         elif event.key() == QtCore.Qt.Key_Escape:
             sys.exit()
         #|--- Saving ---|
         elif event.key() == QtCore.Qt.Key_S:
-            mainwindow.SBclicked()
+            if 'mainwindow' in globals():
+                mainwindow.SBclicked()
         #|--- Time Slider ---|
         elif event.key()== QtCore.Qt.Key_Right:
-            Tval = mainwindow.Tslider.value()
-            mainwindow.Tslider.setValue(Tval+1)
+            if 'mainwindow' in globals():
+                Tval = mainwindow.Tslider.value()
+                mainwindow.Tslider.setValue(Tval+1)
         elif event.key()== QtCore.Qt.Key_Left:
-            Tval = mainwindow.Tslider.value()
-            mainwindow.Tslider.setValue(Tval-1)            
+            if 'mainwindow' in globals():
+                Tval = mainwindow.Tslider.value()
+                mainwindow.Tslider.setValue(Tval-1)            
         #|--- Difference mode ---|
         elif event.key()== QtCore.Qt.Key_B:
-            mainwindow.radButs[1].setChecked(True)
+            if 'mainwindow' in globals():
+                mainwindow.radButs[1].setChecked(True)
         elif event.key()== QtCore.Qt.Key_R:
-            mainwindow.radButs[0].setChecked(True)
+            if 'mainwindow' in globals():
+                mainwindow.radButs[0].setChecked(True)
         #|--- Scaling mode ---|
         elif event.key()== QtCore.Qt.Key_1:
-            mainwindow.Bcbox.setCurrentIndex(0)
+            if 'mainwindow' in globals():
+                mainwindow.Bcbox.setCurrentIndex(0)
         elif event.key()== QtCore.Qt.Key_2:
-            mainwindow.Bcbox.setCurrentIndex(1)
+            if 'mainwindow' in globals():
+                mainwindow.Bcbox.setCurrentIndex(1)
         elif event.key()== QtCore.Qt.Key_3:
-            mainwindow.Bcbox.setCurrentIndex(2)    
+            if 'mainwindow' in globals():
+                mainwindow.Bcbox.setCurrentIndex(2) 
+        #|--- Mass ---|
+        elif event.key() == QtCore.Qt.Key_M:
+            if 'mainwindow' in globals():
+                mainwindow.MBclicked()
+           
 
 
 # |------------------------------------------------------------|
@@ -1932,6 +1990,8 @@ def getSatStuff(imMap):
                         SHORTNAME: shorter version of MYTAG
                         DATEOBS:   string for the date as YYYYMMDDTHH:MM:SS
                         POS:       postion of sat [lat, lon, R] in [deg, deg, m]
+                        POINTING:  unit vector pointing from sat to sun center (in Stony Cart)
+                        POSLON:    longitudes of the plane of sky (in equitorial plane, Stony deg)
                         SCALE:     plate scale in arcsec/pix (or deg/pix for HI)
                         CRPIX:     pixel location of the reference pixel
                         WCS:       wcs structure
@@ -2046,6 +2106,15 @@ def getSatStuff(imMap):
     obsLat = imMap.observer_coordinate.lat.degree
     obsR = imMap.observer_coordinate.radius.m
     satDict['POS'] = [obsLat, obsLon,  obsR]
+    # Get sat to sun direction
+    latd = obsLat * np.pi / 180.
+    lond = obsLon * np.pi / 180.
+    xyz = [np.cos(latd)*np.cos(lond), np.cos(latd)*np.sin(lond), np.sin(latd)]
+    satDict['POINTING'] = -np.array(xyz)
+    pointLon = np.arctan2(satDict['POINTING'][1], satDict['POINTING'][0]) * 180 / np.pi
+    PoSlon1 = (pointLon - 90) % 360
+    PoSlon2 = (pointLon + 90) % 360
+    satDict['POSLON'] = [PoSlon1, PoSlon2]
     
     # |-------------------|
     # |---- Get SCALE ----|    
@@ -2460,6 +2529,7 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, labelPW=True, reloadD
                   (e.g. [[[COR2Amap1, COR2Amap2, ...], [COR2Ahdr1, COR2Ahdr2, ...]]
                          [[C2map1, C2map2, ...], [C2Ahdr1, C2hdr2, ...]]
                          [[AIA171map1, AIA171map2, ...], [AIA171hdr1, AIA171hdr2, ...]]])
+                **** need to updated this text for pass mass mode? ***
     Optional Inputs:
         nWFs:         number of wireframes. Currently set an upper limit of 10 to keep
                       GUI from becoming overloaded
@@ -2522,6 +2592,8 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, labelPW=True, reloadD
     # To Reload
     if type(reloadDict) != type(None):
         nwfs = reloadDict['nWFs']
+        if nwfs < 1:
+            nwfs = 1
     # Or not to reload
     else:
         nwfs = nWFs
@@ -2549,6 +2621,15 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, labelPW=True, reloadD
         #|---- Process each time step header ----|    
         for j in range(tNum): 
             mySatStuff = getSatStuff(obsFiles[i][0][j])
+            if ('rsun' not in obsFiles[i][2][j]):
+                 if 'RSUN_ARC' in obsFiles[i][2][j]:
+                     obsFiles[i][2][j]['rsun'] =  obsFiles[i][2][j]['RSUN_ARC']
+                 else:
+                    calcRsun = mySatStuff['ONERSUN']*mySatStuff['SCALE']
+                    if mySatStuff['OBSTYPE'] == 'HI':
+                        calcRsun *= 3600
+                    obsFiles[i][2][j]['rsun'] = calcRsun
+                 
             someStuff.append(mySatStuff)
             if mySatStuff['OBSTYPE'] != 'EUV':
                 #|---- Make mass images ----|
@@ -2562,7 +2643,6 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, labelPW=True, reloadD
             someMims.append(np.transpose(massIm))            
         #|---- Get scaled versions of the data ----|     
         mySclIms, someStuff = makeNiceMMs(obsFiles[i], someStuff) 
-        
         
         #|---- Stuff in array ----|                 
         sclIms.append(mySclIms)
@@ -2601,7 +2681,6 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, labelPW=True, reloadD
     elif maxFoV < 5:
         wf.defDict['Height (Rs)'] = 1.5
             
-    
     #|-----------------------------| 
     #|---- Launch Application -----|
     #|-----------------------------|
@@ -2619,7 +2698,7 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, labelPW=True, reloadD
         if multiTime:
             myTmap = tmaps[i]
         else:
-            myTmap = [0]
+            myTmap = [0] 
         pw = FigWindow(obsFiles[i], sclIms[i], satStuff[i], massIms[i], myNum=i, labelPW=labelPW, tmap=myTmap, screenXY=screenXY)
         pw.show()
         pws.append(pw) 
