@@ -218,7 +218,6 @@ def fits2maps(filesIn, names, diffEUV=False):
     # |----------- Open up the fits files ------------|
     # |-----------------------------------------------|
     allFH0 = [[[], []] for i in range(len(names))]
-    print (filesIn)
     for i in range(len(names)):
         for aF in filesIn[i]:
             with fits.open(aF) as hdulist:
@@ -258,16 +257,20 @@ def fits2maps(filesIn, names, diffEUV=False):
                     
                     # Get the bases
                     runBase  = allFH0[i][0][j]
+                    runFile  = filesIn[i][j]
                     baseBase = allFH0[i][0][0]
+                    baseFile = filesIn[i][0]
                     
                     # Make sure files are same shape and diff    
                     if (myData.shape == runBase.shape) & (myData.shape == baseBase.shape):
                         # Run diff
                         diffData = myData - runBase
+                        myHdr['diffFile'] = runFile
                         diffMap = sunpy.map.Map(diffData, myHdr)
                         allFH[i][0].append(diffMap)
                         # Base diff
                         diffData = myData - baseBase
+                        myHdr['diffFile'] = baseFile
                         diffMap = sunpy.map.Map(diffData, myHdr)
                         allFH[i][1].append(diffMap)
                         # Add hdr

@@ -7,12 +7,14 @@ one would need to call in an external program
 Inputs:
     obsFiles: nested lists of maps and headers that releaseTheWombat uses to
               set up the background images in the form [inst1, inst2, ...] 
-              where each insts is an array of [[maps], [hdrs]] where maps and 
-              hdrs are time series of the obs  maps and their corresponding headers 
-              (e.g. [[[COR2Amap1, COR2Amap2, ...], [COR2Ahdr1, COR2Ahdr2, ...]]
-                     [[C2map1, C2map2, ...], [C2Ahdr1, C2hdr2, ...]]
-                     [[AIA171map1, AIA171map2, ...], [AIA171hdr1, AIA171hdr2, ...]]])
-
+              where each insts is an array of [[RDmaps], [BDmaps], [hdrs]] where maps and 
+              hdrs are time series of the obs maps and their corresponding headers 
+              (e.g. [[[COR2A_RDmap1, COR2A_RDmap2, ...], [COR2A_BDmaps..] [COR2Ahdr1, 
+                     COR2Ahdr2, ...]] [[C2_RDmaps], [C2_BDmaps], [C2 hdrs]]
+                     [[AIA171maps], [AIA171maps] [AIA171hdrs]]])
+              *** note we will pass two sets of EUV maps that are most often the same 
+                  since we default to not taking a difference but this makes it easier
+                  to run consistent code across all instruments
 Outputs:
     No outputs unless the save button is clicked. If clicked, it will save fits files
     for the backgrounds (processed as RD/BD) in wbFits/reloads and in wbOutputs it
@@ -804,6 +806,9 @@ class ParamWindow(QMainWindow):
         for j in toDo:
             aPW = pws[j]
             tidx = aPW.tidx
+            # Add the base background file
+            outStr = 'ObsFile'+str(j+1)+': ' + aPW.satStuff[0][0]['DIFFFITS']
+            outFile.write(outStr+'\n')
             # Add the names of all time steps
             for tidx in range(len(aPW.satStuff[0])):
                 outStr = 'ObsFile'+str(j+1)+': ' + aPW.satStuff[0][tidx]['MYFITS']
@@ -977,7 +982,7 @@ class FigWindow(QWidget):
     
      
     """
-    def __init__(self, myObs, myScls, satStuff, massIms, myNum=0, labelPW=True, tmap=[0], screenXY=None):
+    def __init__(self, myObs, myScls, satStuff, massIms, myNum=0, labelPW=True, tmap=[0], screenXY=None, mouseEnabled=False):
         """
         Intial setup for the figure window class.
     
@@ -1009,6 +1014,9 @@ class FigWindow(QWidget):
                       time resolution for different instruments.
         
             screenXY: resolution of the computer monitor. used to place windows nicer
+        
+            mouseEnabled: allow for scrolling and dragging of the plot data within a window.
+                          Defaults to disabled because tends to cause more harm than good.
         
         External Calls:
             check4CT from wombatLoadCTs
@@ -1075,8 +1083,9 @@ class FigWindow(QWidget):
         self.pWindow = pg.PlotWidget()
         self.pWindow.setMinimumSize(400, 400)
         self.pWindow.scene().sigMouseClicked.connect(self.mouse_clicked)
+        if not mouseEnabled:
+            self.pWindow.getPlotItem().getViewBox().setMouseEnabled(x=False, y=False)
         layoutP.addWidget(self.pWindow,0,0,11,11,alignment=QtCore.Qt.AlignCenter)
-        
         #|---- Make an image item ----|
         self.image = pg.ImageItem()
 
@@ -1532,7 +1541,7 @@ class FigWindow(QWidget):
         Function for updating the background image 
         
         """
-        #|---- Grab data for this time/scaling ----|     
+        #|---- Grab data for this time/scaling ----|
         myIm = self.myScls2[self.didx][self.tidx][self.sclidx]
         
         #|---- Grab min/max from slider ----|     
@@ -2004,6 +2013,7 @@ def getSatStuff(imMap):
                         SUNCIRC:   array with the xy pixels for an outline of the sun
                         SUNNORTH:  array with xy pixels to indicate solar north direction
                         MYFITS:    the name/path of the original fits file
+                        DIFFFITS:  the name/path of the file used to calc a difference img
     
     External Calls:
         fitshead2wcs from wcs_funs                       
@@ -2233,6 +2243,7 @@ def getSatStuff(imMap):
     # |---- Add fits file/path ----|    
     # |----------------------------|
     satDict['MYFITS'] = myhdr['myFits']
+    satDict['DIFFFITS'] = myhdr['diffFile']
 
     return satDict
     
@@ -2511,7 +2522,6 @@ def sortTimeIndices(satStuff, tRes=20):
             mygenidx = np.where(myDTdiff == np.min(myDTdiff))[0]
             st2obs[i] = mygenidx[0]
         tmaps.append(st2obs)
-  
     return nTimes, tlabs, tmaps
 
 # |------------------------------------------------------------|
@@ -2524,12 +2534,14 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, labelPW=True, reloadD
     Inputs:
         obsFiles: nested lists of maps and headers that releaseTheWombat uses to
                   set up the background images in the form [inst1, inst2, ...] 
-                  where each insts is an array of [[maps], [hdrs]] where maps and 
+                  where each insts is an array of [[RDmaps], [BDmaps], [hdrs]] where maps and 
                   hdrs are time series of the obs maps and their corresponding headers 
-                  (e.g. [[[COR2Amap1, COR2Amap2, ...], [COR2Ahdr1, COR2Ahdr2, ...]]
-                         [[C2map1, C2map2, ...], [C2Ahdr1, C2hdr2, ...]]
-                         [[AIA171map1, AIA171map2, ...], [AIA171hdr1, AIA171hdr2, ...]]])
-                **** need to updated this text for pass mass mode? ***
+                  (e.g. [[[COR2A_RDmap1, COR2A_RDmap2, ...], [COR2A_BDmaps..] [COR2Ahdr1, 
+                         COR2Ahdr2, ...]] [[C2_RDmaps], [C2_BDmaps], [C2 hdrs]]
+                         [[AIA171maps], [AIA171maps] [AIA171hdrs]]])
+                  *** note we will pass two sets of EUV maps that are most often the same 
+                      since we default to not taking a difference but this makes it easier
+                      to run consistent code across all instruments
     Optional Inputs:
         nWFs:         number of wireframes. Currently set an upper limit of 10 to keep
                       GUI from becoming overloaded
@@ -2617,7 +2629,7 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, labelPW=True, reloadD
         # If anyone has more than 1 then multitime mode
         if tNum > 1:
             multiTime = True
-            
+
         #|---- Process each time step header ----|    
         for j in range(tNum): 
             mySatStuff = getSatStuff(obsFiles[i][0][j])
@@ -2631,6 +2643,7 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, labelPW=True, reloadD
                     obsFiles[i][2][j]['rsun'] = calcRsun
                  
             someStuff.append(mySatStuff)
+            
             if mySatStuff['OBSTYPE'] != 'EUV':
                 #|---- Make mass images ----|
                 # Use base difference not running
@@ -2640,21 +2653,21 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, labelPW=True, reloadD
                     massIm = (1-mySatStuff['MASK']) * massIm
             else:
                 massIm = np.zeros(obsFiles[i][0][j].data.shape)
-            someMims.append(np.transpose(massIm))            
+            someMims.append(np.transpose(massIm))   
+
         #|---- Get scaled versions of the data ----|     
-        mySclIms, someStuff = makeNiceMMs(obsFiles[i], someStuff) 
+        mySclIms, someStuffx2 = makeNiceMMs(obsFiles[i], someStuff) 
         
         #|---- Stuff in array ----|                 
         sclIms.append(mySclIms)
-        satStuff.append(someStuff)
+        satStuff.append(someStuffx2)
         massIms.append(someMims)
     
-
     #|---------------------------------| 
     #|---- Setup time slider vals -----|
     #|---------------------------------|
     if multiTime:
-        nTsli, tlabs, tmaps = sortTimeIndices(satStuff[0])
+        nTsli, tlabs, tmaps = sortTimeIndices([satStuff[i][0] for i in range(len(satStuff))])
     else:
         nTsli = 0
         tlabs = None
