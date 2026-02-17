@@ -1203,7 +1203,7 @@ def scc_sebip(img, hdr):
 #|----------------------------|
 #|--- Get background image ---|
 #|----------------------------|
-def scc_getbkgimg(hdr, secchi_bkg ='STEREObackgrounds/', doRot=False):
+def scc_getbkgimg(hdr, secchi_bkg ='STEREObackgrounds/', doRot=False, match=False):
     """
     Function that grabs the appropriate background file for a given header.
     It matches the image size of the input but does not currently correct
@@ -1218,6 +1218,8 @@ def scc_getbkgimg(hdr, secchi_bkg ='STEREObackgrounds/', doRot=False):
     
         doRot: rotate to correct for a roll diff between input and 
                background file (not implemented, defaults false)
+    
+        match: TBD
     
     Output:
         bim: the processed background image
@@ -1367,7 +1369,6 @@ def scc_getbkgimg(hdr, secchi_bkg ='STEREObackgrounds/', doRot=False):
     # Look for the correct or closest file. IDL makes this a headache
     # This is equiv to 531-662 but ignoring interp and other stuff
     exactFile = rootdir + sdir + delim + fchar + cam + sc.upper() + polstr + sfil + postd + '.fts'
-    #print (exactFile)
     if os.path.exists(exactFile):
         bkgFile = exactFile
     else:
@@ -1417,6 +1418,7 @@ def scc_getbkgimg(hdr, secchi_bkg ='STEREObackgrounds/', doRot=False):
         with fits.open(bkgFile) as hdulist:
             bim  = hdulist[0].data
             bhdr = hdulist[0].header
+
     # Skipping median keyword
     btags = np.array([key for key in bhdr])
     date_avg = ''
@@ -1448,7 +1450,7 @@ def scc_getbkgimg(hdr, secchi_bkg ='STEREObackgrounds/', doRot=False):
         
     if (i_reduce != 1) or (j_reduce != 1):
         bim = rebinIDL(bIm, [hdr['naxis1'], hdr['naxis2']])
-  
+    
     # Copy header info for some reason (prob rebin?)
     if not isL1:
         bhdr['dstop1'] = hdr['dstop1']
@@ -1475,8 +1477,31 @@ def scc_getbkgimg(hdr, secchi_bkg ='STEREObackgrounds/', doRot=False):
     
     # skipping another shift thing 856-859
     
-    # skipping match check 864
-    
+    if match:
+        sumdif = hdr['ipsum'] - bhdr['ipsum']
+        binfac = 1
+        if sumdif != 0:
+            binfac = 4 ** int(sumdif)
+        bim = bim * binfac
+        bhdr['ipsum'] = hdr['ipsum']
+        
+        # match exptime
+        bim = bim * np.abs(hdr['exptime']/bhdr['exptime'])
+        
+        # match bias state
+        # subtract bias
+        if ( hdr['offsetcr'] > 0) and (bhdr['offsetcr'] < 0):
+            bim = bim - bhdr['biasmean'] * 4**sumdif
+            bhdr['offsetcr'] = bhdr['biasmean'] * 4**sumdif
+        # add bias
+        if (hdr['offsetcr'] < 0) and (bhdr['offsetcr'] > 0):
+            bim = bim + bhdr['biasmean'] * 4**sumdif
+            bhdr['offsetcr'] = bhdr['offsetcr'] - bhdr['biasmean'] * 4**sumdif
+        
+        bhdr['summed'] = hdr['summed']
+        bhdr['exptime'] = hdr['exptime']
+        
+            
     # skipping header correction
     
     # Check for rotate correction

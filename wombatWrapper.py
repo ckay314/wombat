@@ -78,6 +78,9 @@ import numpy as np
 import sunpy.map
 from sunpy.time import parse_time
 import sys, os
+import pickle
+import sunpy
+
 
 sys.path.append('wombatCode/') 
 from wombatGUI import releaseTheWombat
@@ -185,6 +188,10 @@ def processReload(fileIn, reloadFold='wbfits/reloads/'):
 # |------------------------------------------------------------|
 def fits2maps(filesIn, names, diffEUV=False):
     """
+    
+    ***** Replaced this with arr2maps in wombayProcessObs *****
+    
+    
     Function to convert a list of fits files into an array of maps and headers
     
     This will take an array of file names, open them up and convert them to
@@ -566,7 +573,7 @@ def findFiles(timesIn, insts, nMax=20, obsFold='wbFits/', diffEUV=False, tRes=No
 # |------------------------------------------------------------|
 # |----------------------- Main Wrapper -----------------------|
 # |------------------------------------------------------------|
-def runWombat(args):
+def runWombatOLD(args):
     """
     Main wrapper to run the wombat gui from a list of arguments, either from an external
     program or by calling wombatPullObs.py at the command line
@@ -738,6 +745,31 @@ def runWombat(args):
     # |----------- Launch the WOMBAT GUI -------------|
     # |-----------------------------------------------|    
     releaseTheWombat(allFH, reloadDict=reloadDict, overviewPlot=overviewPlot, nWFs=nWFs)   
+
+def runWombat(args):
+    theFile = args[1]
+    doReload     = False
+    overviewPlot = False
+    
+    # Assume reload file not pickle if name includes SummaryFile
+    if 'SummaryFile' in theFile:
+        doReload = True
+        sys.exit("Need to redo loading reload")
+    # Assume its a pickle. Might want to add check 
+    else:
+        reloadDict = None
+        # Open the pickle
+        with open(theFile, 'rb') as file:
+            bkgData = pickle.load(file)
+        
+    nWFs = 1
+    if len(args) == 3:
+        nWFs = int(args[2])
+    elif len(args) > 3:
+        sys.exit('Too many arguments given, syntax is python3 wombatWrapper.py file nWFs where file is a background pickle or reload file and nWFs is the number of wireframes')    
+        
+    releaseTheWombat(bkgData, reloadDict=reloadDict, overviewPlot=overviewPlot, nWFs=nWFs)   
+        
         
 if __name__ == '__main__':
     runWombat(sys.argv)

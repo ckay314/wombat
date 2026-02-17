@@ -479,7 +479,7 @@ def pullSTEREO(times, insts, EUVtime=10, CORtime=20, HItime=30, outFolder='pullF
             #whichC[2].append(i)
         elif ('/hi_2/' in result[0]['fileid'][i]) & (result[0]['Size'][i].to_value() > 2.4):
             mySpot = 3
-            #whichC[3].append(i)
+             #whichC[3].append(i)
         if '/a/' in result[0]['fileid'][i]:
             mySat = 0
         if '/b/' in result[0]['fileid'][i]:

@@ -4,7 +4,7 @@ of the IDL functions of the same names.
 
 """
 import numpy as np
-import sunpy.map
+#import sunpy.map
 import sys
 from scc_funs import scc_make_array, scc_zelensky_array, rebinIDL
 from astropy.io import fits
@@ -733,7 +733,7 @@ def wispr_prep(filesIn, wcalpath, outSize=None, silent=False, biasOff=False, bia
     headers_out = []
     for i in range(num):
         if not silent:
-            print ('Processing image ', i, ' out of ', num)
+            print ('Processing image ', i+1, ' out of ', num)
                 
         #|---------------------|
         #|--- Read in files ---|

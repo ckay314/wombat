@@ -53,7 +53,7 @@ def aia_prep(filesIn, downSize=1024):
 
     # Assume were working from files and not something loaded from read_sdo
     for i in range(num):
-        #print ('Processing AIA image '+str(i+1) + ' out of '+str(num))
+        print ('Processing AIA image '+str(i+1) + ' out of '+str(num))
         # aia files are compressed/different from secchi so doensn't work with
         # straight up fits read, but using sunpy map equiv to read_sdo
         aia_map = sunpy.map.Map(filesIn[i])

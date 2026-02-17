@@ -1031,7 +1031,7 @@ class FigWindow(QWidget):
         self.satName = satStuff[0][0]['OBS'] +' '+ satStuff[0][0]['INST']
         self.OGims = myObs[0]
         self.mIms  = massIms
-        self.hdrs = myObs[2]
+        self.hdrs = myObs[1]
         self.myScls2 = myScls # the scaled images
         self.tidx = 0
         self.didx = 0 # difference index
@@ -1557,9 +1557,10 @@ class FigWindow(QWidget):
         #fakeIm = np.zeros(myIm.shape)
         #fakeIm[250:350] = 1
         if self.nowMass: 
-            bigMask = np.zeros(myIm.shape)
+            bigMask = np.zeros(myIm.shape, dtype=float)
             for i in range(nwfs):
-                bigMask += self.WFmasks[i]
+                if type(self.WFmasks[i]) != type(None):
+                    bigMask += self.WFmasks[i]
                 # Get the separation 
                 seps = np.abs(wfs[i].params[1]-self.satStuff[self.didx][self.tidx]['POSLON'])
                 seps[np.where(seps > 90)] = 180 - seps[np.where(seps > 90)]
@@ -1856,6 +1857,7 @@ def makeNiceMMs(obsIn, satStuffs):
     # Where the background sliders start (between 0 and 255)
     sliVals = {'AIA':[[0,0,0], [191,191,191]], 'SECCHI_EUVI':[[0,32,0], [191,191,191]], 'LASCO_C2':[[0,0,21],[191,191,191]], 'LASCO_C3':[[37,0,37],[191,191,191]], 'SECCHI_COR1':[[63,0,21],[191,191,191]], 'SECCHI_COR2':[[63,0,21],[191,191,191]], 'SECCHI_HI1':[[63,0,21],[128,191,191]], 'SECCHI_HI2':[[63,0,21],[128,191,191]],  'WISPR_HI1':[[0,0,21],[128,191,191]], 'WISPR_HI2':[[0,0,21],[128,191,191]], 'SoloHI':[[0,0,21],[128,191,191]]}
     
+   
     # Pull the configuration based on instrument
     myInst = satStuffs[0]['INST']
     myMM = pMMs[myInst]
@@ -1863,7 +1865,8 @@ def makeNiceMMs(obsIn, satStuffs):
     
     #|--- Loop through both RD and BD ---|
     bothScls = []
-    bothSatStuffs = []
+    bothSatStuffs = []   
+     
     for k in range(2):
         #|-------------------------------------| 
         #|------- Pull/Clean Map data ---------|
@@ -2595,9 +2598,42 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, labelPW=True, reloadD
     #|-----------------------------|
     global mainwindow, pws, nSats, wfs, nwfs, bmodes, ovw
     
+    
+    #|----------------------------------------| 
+    #|--- Pull apart background data input ---|
+    #|----------------------------------------|
+    # OG build had most of this calculated below but now we do beforehand
+    # so take it and slot things into the existing architecture
+    WBinfo = obsFiles['WBinfo']
+    proIms0 = obsFiles['proIms0']
+    proIms = obsFiles['proIms']
+    massIms = obsFiles['massIms']
+    sclIms = obsFiles['scaledIms']
+    satStuff = obsFiles['satStuff']
+    
+    
     #|---- Pull sat number from obsFiles ----|
-    nSats = len(obsFiles)
-
+    nSats = len(WBinfo['Insts'])
+    
+    #|-----------------------------| 
+    #|---- Remap keys to ints -----|
+    #|-----------------------------|
+    # Check multi time at same time
+    multiTime = False
+    i2inst = {}
+    for i in range(nSats):
+        key = WBinfo['Insts'][i]
+        i2inst[i] = key
+        if len(proIms[i2inst[i]]) > 1:
+            multiTime = True
+        proIms0[i] = proIms0.pop(key)
+        proIms[i]  = proIms.pop(key)
+        massIms[i] = massIms.pop(key)
+        sclIms[i]  = sclIms.pop(key)
+        satStuff[i] = satStuff.pop(key)
+    # Rename this
+    obsFiles = proIms
+         
     #|------------------------------| 
     #|---- Initiate Wireframes -----|
     #|------------------------------|
@@ -2612,16 +2648,15 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, labelPW=True, reloadD
     # Load up noneType WFs
     wfs = [wf.wireframe(None) for i in range(nwfs)]
     
-
     #|-----------------------------| 
     #|---- Setup observations -----|
-    #|-----------------------------|
-    sclIms = []    
-    massIms = []   
-    satStuff = []
-    multiTime = False
+    #|-----------------------------|    
+    
+    #sclIms = []    
+    #massIms = []   
+    #satStuff = []
     #|---- Loop through insts ----|
-    for i in range(nSats):
+    '''for i in range(nSats):
         satScls = []
         someStuff = []
         someMims = []
@@ -2661,7 +2696,7 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, labelPW=True, reloadD
         #|---- Stuff in array ----|                 
         sclIms.append(mySclIms)
         satStuff.append(someStuffx2)
-        massIms.append(someMims)
+        massIms.append(someMims)'''
     
     #|---------------------------------| 
     #|---- Setup time slider vals -----|
