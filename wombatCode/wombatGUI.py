@@ -169,7 +169,7 @@ class ParamWindow(QMainWindow):
         else:
             Tlabel = QLabel('Single Time Given')
         self.Tlabel = Tlabel
-        layout.addWidget(Tlabel,0,0,1,10,alignment=QtCore.Qt.AlignLeft)
+        layout.addWidget(Tlabel,0,0,1,12,alignment=QtCore.Qt.AlignLeft)
         
         # |------ Time Slider ------|
         Tslider1 = QSlider()
@@ -2606,7 +2606,7 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, labelPW=True, reloadD
     # so take it and slot things into the existing architecture
     WBinfo = obsFiles['WBinfo']
     proIms0 = obsFiles['proIms0']
-    proIms = obsFiles['proIms']
+    proIms = obsFiles['proImMaps']
     massIms = obsFiles['massIms']
     sclIms = obsFiles['scaledIms']
     satStuff = obsFiles['satStuff']
@@ -2715,7 +2715,8 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, labelPW=True, reloadD
     # we have. Take the max corner dist ('FOV') from each inst
     # and convert it to a nice number
     maxFoV = 0
-    for stuff in satStuff[0]:
+    for i in range(nSats):
+        stuff = satStuff[i][0]
         if stuff[0]['FOV'] > maxFoV: maxFoV = stuff[0]['FOV']
     # pad it a bit then round to a nice number
     maxFoV = int((1.1 * maxFoV) / 5) * 5

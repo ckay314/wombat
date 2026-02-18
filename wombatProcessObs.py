@@ -1297,7 +1297,8 @@ def thePickler(proIms, fnames, pickleJar='wbPickles/', name='temp'):
     bigDill['WBinfo'] = {}
     # |--- (sub) Dictionary with standard processed data ---|
     bigDill['proIms0'] = {} # base images
-    bigDill['proIms']  = {} # rest of images (so indexing matches mass/scaled)
+    bigDill['proIms']  = {} # all images 
+    bigDill['proImMaps'] = {} # images 1 - end, converted to maps. matches mass/diff indexing
     # |--- (sub) Dictionary with mass image data ---|
     bigDill['massIms'] = {}
     # |--- (sub) Dictionary with difference images scaled for display ---|
@@ -1333,9 +1334,9 @@ def thePickler(proIms, fnames, pickleJar='wbPickles/', name='temp'):
             bigDill['proIms0'][key] = [proIms[key][0][0], proIms[key][1][0]]
         
         bigDill['proIms'][key] = [[], []]    
-        for i in range(len(proIms[key][0])-1):
-            bigDill['proIms'][key][0].append(proIms[key][0][i+1])
-            bigDill['proIms'][key][1].append(proIms[key][1][i+1])
+        for i in range(len(proIms[key][0])):
+            bigDill['proIms'][key][0].append(proIms[key][0][i])
+            bigDill['proIms'][key][1].append(proIms[key][1][i])
         
         # |--------------------------------------|
         # |---- Make running difference maps ----|
@@ -1391,6 +1392,16 @@ def thePickler(proIms, fnames, pickleJar='wbPickles/', name='temp'):
         sclIms, satstuff2 = scaleIt(tempMaps[key], mySatStuff)
         bigDill['scaledIms'][key] = sclIms
         bigDill['satStuff'][key] = satstuff2
+        
+        # |---------------------------------|
+        # |---- Make min processed maps ----|
+        # |---------------------------------|
+        bigDill['proImMaps'][key] = [[], []]
+        for j in range(len(bigDill['proIms'][key][0])-1):
+            myMap = sunpy.map.Map(bigDill['proIms'][key][0][j], bigDill['proIms'][key][1][j])
+            bigDill['proImMaps'][key][0].append(myMap)
+            bigDill['proImMaps'][key][1].append(bigDill['proIms'][key][1][j])
+        
         
     # |-------------------------|
     # |---- Save the pickle ----|

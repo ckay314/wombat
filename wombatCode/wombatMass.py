@@ -152,7 +152,6 @@ def TB2mass(img, hdr, onlyNe=False, doPB=False):
         R,B,Bt,Br,Pol = elTheory(dist,0, returnAll=True)
     B[np.where(B == 0)] = 1   
     
-    
     # |---------------------------------------|
     # |--------- Various Conversions ---------|
     # |---------------------------------------|

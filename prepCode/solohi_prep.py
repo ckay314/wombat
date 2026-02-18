@@ -394,8 +394,8 @@ def solohi_fits2grid(filesIn, doFull=False):
         mhdr['CDELT1A'] =  mhdr['CDELT1A']*(binN)
         mhdr['CDELT2A'] =  mhdr['CDELT2A']*(binN)
         
-        mhdr['naxis1'] = sz[0]
-        mhdr['naxis2'] = sz[1]
+        mhdr['naxis1'] = int(sz[1] / binN) # python oppo order
+        mhdr['naxis2'] = int(sz[0] / binN)
         mhdr['dstop1'] = np.min([mhdr['dstop1'], sz[0]]) # think this equiv of IDL
         mhdr['dstop2'] = np.min([mhdr['dstop2'], sz[1]])
         return binIm, mhdr
