@@ -97,7 +97,6 @@ from wombatPullObs import setupFolderStructure
 from sunspyce import load_common_kernels, load_psp_kernels, load_solo_kernels
 import wombatMass as wM
 
-import matplotlib.pyplot as plt
 # |-------------------------------|
 # |------- Setup Time Stuff ------|
 # |-------------------------------|
@@ -833,11 +832,11 @@ def processSTEREO(times, insts, inFolder='pullFolder/STEREO/', outFolder='wbFits
     print ('|---- Processing STEREO ----|')
     for i in range(nInsts):
         inst = insts[i]
-        proIms[inst] = [[], []]
-        outLines[inst] = []
         # Anyone thats not a pB triplet
         if inst != 'COR1':
             for j in ABtoDo[i]:
+                proIms[inst+AB[j]] = [[], []]
+                outLines[inst+AB[j]] = []
                 if len(goodFiles[i][j]) > 0:
                     print ('|--- Processing STEREO '+inst+' '+AB[j]+' ---|')                   
                     #outLines.append(fronts[j]+inst.replace('EUVI','EUVI_')+'\n')
@@ -853,16 +852,17 @@ def processSTEREO(times, insts, inFolder='pullFolder/STEREO/', outFolder='wbFits
                             fullName = nowFold + '/' + fitsName   
                             fits.writeto(fullName, ims[k], hdrs[k], overwrite=True)
                             #outLines.append(fullName+'\n')
-                        proIms[inst][0].append(ims[k])
-                        proIms[inst][1].append(hdrs[k])
-                        outLines[inst].append(goodFiles[i][j])
+                        proIms[inst+AB[j]][0].append(ims[k])
+                        proIms[inst+AB[j]][1].append(hdrs[k])
+                        outLines[inst+AB[j]].append(goodFiles[i][j])
                         
 
         # Process the triplets
         else:
             for j in ABtoDo[i]:
                 myCOR = 'COR1'+AB[j]
-                
+                proIms[inst+AB[j]] = [[], []]
+                outLines[inst+AB[j]] = []
                 # Need to check on making triples, missing files will cause isses
                 fileYMDs = []
                 for aF in goodFiles[i][j]:
@@ -901,10 +901,10 @@ def processSTEREO(times, insts, inFolder='pullFolder/STEREO/', outFolder='wbFits
                             fullName = nowFold + '/' + fitsName   
                             fits.writeto(fullName, ims[k], hdrs[k], overwrite=True)
                             #outLines.append(fullName+'\n')
-                        proIms[inst][0].append(ims[k])
-                        proIms[inst][1].append(hdrs[k])
-                        outLines[inst].append(goodTrips[k])
-
+                        proIms[inst+AB[j]][0].append(ims[k])
+                        proIms[inst+AB[j]][1].append(hdrs[k])
+                        outLines[inst+AB[j]].append(goodTrips[k])
+                        
     return proIms, outLines
     
 
@@ -1188,8 +1188,10 @@ def processObs(times, insts, inFolder='pullFolder/', outFolder='wbFits/', outFil
     if len(doSTEREO) > 0:
         proIms, outLines = processSTEREO(times, doSTEREO)
         for key in proIms:
-            allProIms[key] = proIms[key]
-            allfnames[key] = outLines[key]
+            # Check for lack of STB
+            if len(proIms[key][0]) > 0:
+                allProIms[key] = proIms[key]
+                allfnames[key] = outLines[key]
             
         #if type(outLines) != type(None):
         #    for line in outLines:
@@ -1341,7 +1343,10 @@ def thePickler(proIms, fnames, pickleJar='wbPickles/', name='temp'):
         # |--------------------------------------|
         # |---- Make running difference maps ----|
         # |--------------------------------------|
-        tempMaps[key] = arr2maps(bigDill['proIms'][key][0], bigDill['proIms'][key][1])           
+        if bigDill['WBinfo']['isEUV'][key]:
+            tempMaps[key] = arr2maps(bigDill['proIms'][key][0], bigDill['proIms'][key][1], doDiff=False)           
+        else:
+            tempMaps[key] = arr2maps(bigDill['proIms'][key][0], bigDill['proIms'][key][1])           
         
         # |---------------------------------------|
         # |---- Process headers into satStuff ----|
@@ -1398,17 +1403,13 @@ def thePickler(proIms, fnames, pickleJar='wbPickles/', name='temp'):
         # |---- Make min processed maps ----|
         # |---------------------------------|
         bigDill['proImMaps'][key] = [[], []]
-        for j in range(len(bigDill['proIms'][key][0])-1):
+        maxlen = len(bigDill['proIms'][key][0])-1
+        if bigDill['WBinfo']['isEUV'][key]: maxlen += 1
+        for j in range(maxlen):
             myMap = sunpy.map.Map(bigDill['proIms'][key][0][j], bigDill['proIms'][key][1][j])
             bigDill['proImMaps'][key][0].append(myMap)
             bigDill['proImMaps'][key][1].append(bigDill['proIms'][key][1][j])
-        print (key)
-          
-    # testing mass stuff 
-    fig, ax = plt.subplots(1, 2)
-    ax[0].imshow(bigDill['proImMaps'][key][0][10].data, vmin=-50, vmax=100)
-    ax[1].imshow(bigDill['massIms'][key][10], vmin=-5e9, vmax=5e9)
-    plt.show()
+
     
         
     # |-------------------------|
@@ -1494,10 +1495,9 @@ def arr2maps(dataIn, hdrIn, doDiff=True):
             myData = dataIn[j]
             myHdr  = hdrIn[j]
             myMap  = sunpy.map.Map(myData, myHdr)
-            allFH[i][0].append(myMap)
-            allFH[i][1].append(myMap)
-            allFH[i][2].append(myHdr)
-    
+            rds.append(myMap)
+            bds.append(myMap)
+            hdrs.append(myHdr)
     return [rds, bds, hdrs]
     
     
