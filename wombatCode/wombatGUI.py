@@ -856,8 +856,7 @@ class ParamWindow(QMainWindow):
                 for j in range(len(aPW.scatters)):
                     aScat = aPW.scatters[j]
                     xs, ys = aScat.getData()
-                    print (aPW.mIms[0].shape)
-                    mask = wf.pts2mask(np.transpose(aPW.mIms[0]).shape, [xs,ys])
+                    mask = wf.pts2mask(aPW.mIms[0].shape, [xs,ys])
                     aPW.WFmasks[j] = mask
                      
                 if aPW.nowMass:
@@ -1088,10 +1087,10 @@ class FigWindow(QWidget):
             self.pWindow.getPlotItem().getViewBox().setMouseEnabled(x=False, y=False)
         layoutP.addWidget(self.pWindow,0,0,11,11,alignment=QtCore.Qt.AlignCenter)
         #|---- Make an image item ----|
-        self.image = pg.ImageItem()
+        self.image = pg.ImageItem(axisOrder='row-major')
 
         #|---- Mass contour image item ----|
-        self.MCimage = pg.ImageItem()
+        self.MCimage = pg.ImageItem(axisOrder='row-major')
         
         #|---- Check for color table ----|
         # (from wombatLoadCTs)
@@ -1102,6 +1101,7 @@ class FigWindow(QWidget):
         #|---- Add the image ----|
         self.pWindow.addItem(self.image)
         self.pWindow.addItem(self.MCimage)
+        # shape is [rows, columns] = [y,x]
         self.pWindow.setRange(xRange=(0,myObs[self.didx][0].data.shape[1]), yRange=(0,myObs[self.didx][0].data.shape[0]), padding=0)
         
         #|---- Hide the axes ----|
@@ -1549,18 +1549,16 @@ class FigWindow(QWidget):
         slMax = self.MaxSlider.value()
         
         #|---- Update image ----|     
-        #self.image.updateImage(image=myIm, levels=(slMin, slMax))
-        self.image.updateImage(image=np.transpose(self.mIms[self.tidx]), levels=(-5e9, 5e9))
+        self.image.updateImage(image=myIm, levels=(slMin, slMax))
+        #self.image.updateImage(image=self.mIms[self.tidx], levels=(-5e9, 5e9))
         #|---- Show mass contour ----|   
         # Use fake data for now 
         #fakeIm = np.zeros(myIm.shape)
         #fakeIm[250:350] = 1
         if self.nowMass: 
-            bigMask = np.zeros(np.transpose(self.mIms[self.tidx]).shape, dtype=float)
-            print (' bigMask', bigMask.shape)
+            bigMask = np.zeros(self.mIms[self.tidx].shape, dtype=float)
             for i in range(nwfs):
                 if type(self.WFmasks[i]) != type(None):
-                    print ('WF ', self.WFmasks[i].shape)
                     bigMask += self.WFmasks[i]
                     # Get the separation 
                     seps = np.abs(wfs[i].params[1]-self.satStuff[self.didx][self.tidx]['POSLON'])
@@ -1573,8 +1571,8 @@ class FigWindow(QWidget):
                     rpos, Bpos = wM.elTheory([wfs[i].params[0]], 0)
                     rsep, Bsep = wM.elTheory([wfs[i].params[0]], mySep)
                     sclfct = Bsep / Bpos
-                    print ((self.satName + ' PoS WF' + str(i+1) + ' mass (g): ').rjust(50) + "{:.3e}".format(np.sum(self.WFmasks[i]* np.transpose(self.mIms[self.tidx]))))
-                    print ((self.satName + ' deProj WF' + str(i+1) + ' mass (g): ').rjust(50) + "{:.3e}".format(np.sum(self.WFmasks[i]* np.transpose(self.mIms[self.tidx])/sclfct)), ' (scale factor ', "{:.1f}".format(1/sclfct[0]), ')')
+                    print ((self.satName + ' PoS WF' + str(i+1) + ' mass (g): ').rjust(50) + "{:.3e}".format(np.sum(self.WFmasks[i]* self.mIms[self.tidx])))
+                    print ((self.satName + ' deProj WF' + str(i+1) + ' mass (g): ').rjust(50) + "{:.3e}".format(np.sum(self.WFmasks[i]* self.mIms[self.tidx]/sclfct)), ' (scale factor ', "{:.1f}".format(1/sclfct[0]), ')')
                 print ('')
             self.MCimage.updateImage(image= bigMask, opacity=0.5, levels=(0,nwfs-0.5))
 

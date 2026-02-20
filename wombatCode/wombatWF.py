@@ -609,7 +609,7 @@ def pts2mask(imShape, scats):
         vertices = points[hull.vertices]
         
         mask = np.zeros(imShape, dtype=int)
-        rr, cc = polygon(vertices[:, 0], vertices[:, 1], shape=(imShape))   
+        rr, cc = polygon(vertices[:, 1], vertices[:, 0], shape=(imShape))   
         mask[rr,cc] = 1
         return mask
     else:

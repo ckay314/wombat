@@ -1829,10 +1829,11 @@ def scaleIt(obsIn, satStuffs):
         #|-------------------------------------|
         #|---- Make empty holder ----|
         sz = obsIn[k][0].data.shape
-        allObs = np.zeros([len(satStuffs), sz[1], sz[0]])
+        allObs = np.zeros([len(satStuffs), sz[0], sz[1]])
         #|---- Fill from map data ----|
         for i in range(len(satStuffs)):
-            allObs[i,:,:] = np.transpose(obsIn[k][i].data)
+            #allObs[i,:,:] = np.transpose(obsIn[k][i].data)
+            allObs[i,:,:] = obsIn[k][i].data
         
         #|---- Get overall median ----|
         imNonNaN = allObs[~np.isnan(allObs)]   
