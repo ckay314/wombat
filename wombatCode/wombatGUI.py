@@ -856,7 +856,8 @@ class ParamWindow(QMainWindow):
                 for j in range(len(aPW.scatters)):
                     aScat = aPW.scatters[j]
                     xs, ys = aScat.getData()
-                    mask = wf.pts2mask(aPW.mIms[0].shape, [xs,ys])
+                    print (aPW.mIms[0].shape)
+                    mask = wf.pts2mask(np.transpose(aPW.mIms[0]).shape, [xs,ys])
                     aPW.WFmasks[j] = mask
                      
                 if aPW.nowMass:
@@ -1101,7 +1102,7 @@ class FigWindow(QWidget):
         #|---- Add the image ----|
         self.pWindow.addItem(self.image)
         self.pWindow.addItem(self.MCimage)
-        self.pWindow.setRange(xRange=(0,myObs[self.didx][0].data.shape[0]), yRange=(0,myObs[self.didx][0].data.shape[1]), padding=0)
+        self.pWindow.setRange(xRange=(0,myObs[self.didx][0].data.shape[1]), yRange=(0,myObs[self.didx][0].data.shape[0]), padding=0)
         
         #|---- Hide the axes ----|
         self.pWindow.hideAxis('bottom')
@@ -1380,7 +1381,7 @@ class FigWindow(QWidget):
         PA = (np.arctan2(-Tx,Ty) * 180 / np.pi) % 360.
         print ('Proj R (Rs), PA (deg):'.rjust(25), '{:8.2f}'.format(RRSun), '{:8.1f}'.format(PA))
         # |---- Get mass per pixel  ----| 
-        if type(self.mIms) != type(None):
+        if type(self.mIms) != type(None):           
             px = int(pix[0])
             py = int(pix[1])
             if self.satStuff[self.didx][0]['OBSTYPE'] == 'COR':
@@ -1497,7 +1498,6 @@ class FigWindow(QWidget):
                             if np.abs(satLon - wflon) < AW:
                                 myColor = '#C81CDE'
                                 
-                                
                 #|------------------------|
                 #|---- Project Points ----|
                 #|------------------------|            
@@ -1549,32 +1549,33 @@ class FigWindow(QWidget):
         slMax = self.MaxSlider.value()
         
         #|---- Update image ----|     
-        self.image.updateImage(image=myIm, levels=(slMin, slMax))
-        
-        
+        #self.image.updateImage(image=myIm, levels=(slMin, slMax))
+        self.image.updateImage(image=np.transpose(self.mIms[self.tidx]), levels=(-5e9, 5e9))
         #|---- Show mass contour ----|   
         # Use fake data for now 
         #fakeIm = np.zeros(myIm.shape)
         #fakeIm[250:350] = 1
         if self.nowMass: 
-            bigMask = np.zeros(myIm.shape, dtype=float)
+            bigMask = np.zeros(np.transpose(self.mIms[self.tidx]).shape, dtype=float)
+            print (' bigMask', bigMask.shape)
             for i in range(nwfs):
                 if type(self.WFmasks[i]) != type(None):
+                    print ('WF ', self.WFmasks[i].shape)
                     bigMask += self.WFmasks[i]
-                # Get the separation 
-                seps = np.abs(wfs[i].params[1]-self.satStuff[self.didx][self.tidx]['POSLON'])
-                seps[np.where(seps > 90)] = 180 - seps[np.where(seps > 90)]
-                mySep = np.min(np.abs(seps))
-                if mySep > 80:
-                    print ('!!!--- Warning PoS separation large, capping at 80 deg ---!!!')
-                    mySep = 80
-                # Prob need to convert the h to projected...
-                rpos, Bpos = wM.elTheory([wfs[i].params[0]], 0)
-                rsep, Bsep = wM.elTheory([wfs[i].params[0]], mySep)
-                sclfct = Bsep / Bpos
-                print ((self.satName + ' PoS WF' + str(i+1) + ' mass (g): ').rjust(50) + "{:.3e}".format(np.sum(self.WFmasks[i]* self.mIms[i])))
-                print ((self.satName + ' deProj WF' + str(i+1) + ' mass (g): ').rjust(50) + "{:.3e}".format(np.sum(self.WFmasks[i]* self.mIms[i]/sclfct)), ' (scale factor ', "{:.1f}".format(1/sclfct[0]), ')')
-            print ('')
+                    # Get the separation 
+                    seps = np.abs(wfs[i].params[1]-self.satStuff[self.didx][self.tidx]['POSLON'])
+                    seps[np.where(seps > 90)] = 180 - seps[np.where(seps > 90)]
+                    mySep = np.min(np.abs(seps))
+                    if mySep > 80:
+                        print ('!!!--- Warning PoS separation large, capping at 80 deg ---!!!')
+                        mySep = 80
+                    # Prob need to convert the h to projected...
+                    rpos, Bpos = wM.elTheory([wfs[i].params[0]], 0)
+                    rsep, Bsep = wM.elTheory([wfs[i].params[0]], mySep)
+                    sclfct = Bsep / Bpos
+                    print ((self.satName + ' PoS WF' + str(i+1) + ' mass (g): ').rjust(50) + "{:.3e}".format(np.sum(self.WFmasks[i]* np.transpose(self.mIms[self.tidx]))))
+                    print ((self.satName + ' deProj WF' + str(i+1) + ' mass (g): ').rjust(50) + "{:.3e}".format(np.sum(self.WFmasks[i]* np.transpose(self.mIms[self.tidx])/sclfct)), ' (scale factor ', "{:.1f}".format(1/sclfct[0]), ')')
+                print ('')
             self.MCimage.updateImage(image= bigMask, opacity=0.5, levels=(0,nwfs-0.5))
 
             

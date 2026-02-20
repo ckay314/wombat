@@ -97,7 +97,7 @@ from wombatPullObs import setupFolderStructure
 from sunspyce import load_common_kernels, load_psp_kernels, load_solo_kernels
 import wombatMass as wM
 
-
+import matplotlib.pyplot as plt
 # |-------------------------------|
 # |------- Setup Time Stuff ------|
 # |-------------------------------|
@@ -1384,7 +1384,8 @@ def thePickler(proIms, fnames, pickleJar='wbPickles/', name='temp'):
                 massIm, hdrM = wM.TB2mass(tempMaps[key][1][j].data, tempMaps[key][2][j])
                 if 'MASK' in mySatStuff[j]:
                     massIm = (1-mySatStuff[j]['MASK']) * massIm
-                bigDill['massIms'][key].append(np.transpose(massIm))
+                #bigDill['massIms'][key].append(np.transpose(massIm))
+                bigDill['massIms'][key].append(massIm)
 
         # |-------------------------------------------|
         # |---- Calculate scaled images and store ----|
@@ -1401,7 +1402,14 @@ def thePickler(proIms, fnames, pickleJar='wbPickles/', name='temp'):
             myMap = sunpy.map.Map(bigDill['proIms'][key][0][j], bigDill['proIms'][key][1][j])
             bigDill['proImMaps'][key][0].append(myMap)
             bigDill['proImMaps'][key][1].append(bigDill['proIms'][key][1][j])
-        
+        print (key)
+          
+    # testing mass stuff 
+    fig, ax = plt.subplots(1, 2)
+    ax[0].imshow(bigDill['proImMaps'][key][0][10].data, vmin=-50, vmax=100)
+    ax[1].imshow(bigDill['massIms'][key][10], vmin=-5e9, vmax=5e9)
+    plt.show()
+    
         
     # |-------------------------|
     # |---- Save the pickle ----|
