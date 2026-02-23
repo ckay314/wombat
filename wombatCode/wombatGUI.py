@@ -798,6 +798,15 @@ class ParamWindow(QMainWindow):
                     
         # |----- Save the background parameters ----|
         # Check if doing single sat or all
+        outStr = 'BkgPickle: ' + bkgpkl + '\n'
+        outFile.write(outStr)
+        outStr = 'TimeIdx: ' +str(self.Tslider.value())
+        outFile.write(outStr+'\n')
+        if ovw:
+            outStr = 'OVWindow:  True'
+        else:
+            outStr = 'OVWindow:  False'
+        outFile.write(outStr+'\n')
         if type(singleSat) != type(None):
             toDo = [singleSat]
         else:
@@ -806,17 +815,12 @@ class ParamWindow(QMainWindow):
         for j in toDo:
             aPW = pws[j]
             tidx = aPW.tidx
-            # Add the base background file
-            outStr = 'ObsFile'+str(j+1)+': ' + aPW.satStuff[0][0]['DIFFFITS']
-            outFile.write(outStr+'\n')
-            # Add the names of all time steps
-            for tidx in range(len(aPW.satStuff[0])):
-                outStr = 'ObsFile'+str(j+1)+': ' + aPW.satStuff[0][tidx]['MYFITS']
-                outFile.write(outStr+'\n')
+
             # Scaling parameters
-            outStr = 'ObsType'+str(j+1)+': ' + aPW.satStuff[0][tidx]['MYTAG'].replace(' ','_')
-            outFile.write(outStr+'\n')            
-            outStr = 'Scaling'+str(j+1)+': ' +str(aPW.sclidx)
+            # Toss obs type since using pkl now?
+            #outStr = 'ObsType'+str(j+1)+': ' + aPW.satStuff[0][tidx]['MYTAG'].replace(' ','_')
+            #outFile.write(outStr+'\n')            
+            outStr = 'ScaleIdx'+str(j+1)+': ' +str(aPW.sclidx)
             outFile.write(outStr+'\n')
             outStr = 'MinVal'+str(j+1)+': ' +str(aPW.MinSlider.value())
             outFile.write(outStr+'\n')
@@ -839,7 +843,7 @@ class ParamWindow(QMainWindow):
             print ('Saving figure in wbOutputs/'+figName )
         #|------- Save overview window -------|   
         if ovw:
-            figName = 'wombat_'+ pws[0].satStuff[0]['DATEOBS'].replace(':','') + '_overview.png'
+            figName = 'wombat_'+ pws[0].satStuff[0][0]['DATEOBS'].replace(':','') + '_overview.png'
             figGrab = ovw.pWindow.grab()
             figGrab.save('wbOutputs/'+figName)
             print ('Saving figure in wbOutputs/'+figName )
@@ -1039,7 +1043,7 @@ class FigWindow(QWidget):
         self.st2obs = tmap # slider time to obs index
         self.slidervals = np.zeros([2,3,2], dtype=int) # diff, scale time, min/max
         self.nowMass = False # show the region used to calc mass
-        self.WFmasks = [np.zeros(self.mIms[0].shape, dtype=int) for i in range(nwfs)]
+        self.WFmasks = [np.zeros(myObs[self.didx][0].data.shape, dtype=int) for i in range(nwfs)]
         
         #|---- Set up/name window ----|
         if type(screenXY) == type(None):
@@ -1103,6 +1107,8 @@ class FigWindow(QWidget):
         self.pWindow.addItem(self.MCimage)
         # shape is [rows, columns] = [y,x]
         self.pWindow.setRange(xRange=(0,myObs[self.didx][0].data.shape[1]), yRange=(0,myObs[self.didx][0].data.shape[0]), padding=0)
+        self.pWindow_circle = None
+        self.pWindow_north  = None
         
         #|---- Hide the axes ----|
         self.pWindow.hideAxis('bottom')
@@ -1584,11 +1590,15 @@ class FigWindow(QWidget):
         if self.satStuff[self.didx][self.tidx]['OBSTYPE'] != 'EUV':
             #|---- Circle at 1 Rs ----|     
             if 'SUNCIRC' in self.satStuff[self.didx][self.tidx]:
-                self.pWindow.plot(self.satStuff[self.didx][self.tidx]['SUNCIRC'][0], self.satStuff[self.didx][self.tidx]['SUNCIRC'][1])
+                if self.pWindow_circle:
+                    self.pWindow.removeItem(self.pWindow_circle)
+                self.pWindow_circle = self.pWindow.plot(self.satStuff[self.didx][self.tidx]['SUNCIRC'][0], self.satStuff[self.didx][self.tidx]['SUNCIRC'][1])
             
             #|---- Line for Solar N ----|         
             if 'SUNNORTH' in self.satStuff[self.didx][self.tidx]:
-                self.pWindow.plot(self.satStuff[self.didx][self.tidx]['SUNNORTH'][0], self.satStuff[self.didx][self.tidx]['SUNNORTH'][1], symbolSize=3, symbolBrush='w', pen=pg.mkPen(color='w', width=1))
+                if self.pWindow_north:
+                    self.pWindow.removeItem(self.pWindow_north)
+                self.pWindow_north = self.pWindow.plot(self.satStuff[self.didx][self.tidx]['SUNNORTH'][0], self.satStuff[self.didx][self.tidx]['SUNNORTH'][1], symbolSize=3, symbolBrush='w', pen=pg.mkPen(color='w', width=1))
                 
         #|---- Add text labels ----|             
         if self.labelIt:
@@ -1670,8 +1680,8 @@ class OverviewWindow(QWidget):
         L1counter = 0
         for i in range(nSats):
             #|---- Get a proj sat loc ----|
-            myPos = satStuff[i][pws[i].tidx]['POS']
-            myName = satStuff[i][0]['OBS']
+            myPos = satStuff[i][0][pws[i].tidx]['POS']
+            myName = satStuff[i][0][0]['OBS']
             myR = myPos[2] / 1.496e+11 
             myLon = myPos[1] * np.pi / 180.
             y = - myR * np.cos(myLon)
@@ -1689,7 +1699,7 @@ class OverviewWindow(QWidget):
             
             #|---- Label each sat ----|
             # Labeling sats not insts to avoid overload
-            myName = satStuff[i][0]['SHORTNAME']
+            myName = satStuff[i][0][0]['SHORTNAME']
             
             if myName not in self.satStrings:
                 text_item = pg.TextItem(myName, anchor=(0.5, 0.5))
@@ -2421,12 +2431,13 @@ def reloadIt(rD):
     # |-----------------------------------|
     for i in range(nSats):
         ii = str(i+1)
-        myscl = int(rD['Scaling'+ii])
+        myscl = int(rD['ScaleIdx'+ii])
         myMin = int(rD['MinVal'+ii])
         myMax = int(rD['MaxVal'+ii])
         pws[i].cbox.setCurrentIndex(myscl)
         pws[i].MinSlider.setValue(myMin)
         pws[i].MaxSlider.setValue(myMax)
+    mainwindow.Tslider.setValue(int(rD['TimeIdx']))
     
 # |------------------------------------------------------------|
 # |-------------------- Setup Time Indices --------------------|
@@ -2595,7 +2606,7 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, labelPW=True, reloadD
     #|-----------------------------| 
     #|---- Other Global Setup -----|
     #|-----------------------------|
-    global mainwindow, pws, nSats, wfs, nwfs, bmodes, ovw
+    global mainwindow, pws, nSats, wfs, nwfs, bmodes, ovw, bkgpkl
     
     
     #|----------------------------------------| 
@@ -2609,7 +2620,7 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, labelPW=True, reloadD
     massIms = obsFiles['massIms']
     sclIms = obsFiles['scaledIms']
     satStuff = obsFiles['satStuff']
-    
+    bkgpkl = obsFiles['pickleSource']
     
     #|---- Pull sat number from obsFiles ----|
     nSats = len(WBinfo['Insts'])

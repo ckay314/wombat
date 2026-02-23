@@ -151,34 +151,25 @@ def processReload(fileIn, reloadFold='wbfits/reloads/'):
             if 'WFtype' in mykey: nWFs += 1
             # Add an obs panel
             if 'ObsType' in mykey: nSats += 1
-            # Will have multiple ObsTimes for each panel
-            # Collect into a single array
-            if 'ObsFile' in mykey:
-                thisKey = str(mykey).replace(':','')
-                if thisKey not in reloadDict:
-                    reloadDict[thisKey] = [data[i,1]]
-                else:
-                    reloadDict[thisKey].append(data[i,1])
-            else:
-                reloadDict[str(mykey).replace(':','')] = str(data[i,1]).replace('Half', 'Half ')
+            reloadDict[str(mykey).replace(':','')] = str(data[i,1]).replace('Half', 'Half ')
         reloadDict['nWFs'] = nWFs
         reloadDict['nSats'] = nSats
 
-        # |-----------------------------------------------|
-        # |-------- Process the observation files --------|
-        # |-----------------------------------------------|       
-        allTypes = []
-        allTimes = []
-        for i in range(nSats):
-            # Build the reload file name from ObsType/ObsTime
-            # wombat will save in a systematic manner of 
-            # wombat_YYYY-MM-DDTHHMMSS_Sat_Inst.fits
-            allTypes.append(np.array(reloadDict['ObsType'+str(i+1)]))
-            allTimes.append(np.array(reloadDict['ObsFile'+str(i+1)]))
+        # |------------------------------------------------|
+        # |-------- Process the observation pickle --------|
+        # |------------------------------------------------|               
+        if 'BkgPickle' in reloadDict:
+            theFile = reloadDict['BkgPickle']
+        else:
+            sys.exit('Missing background pickle in reload file')
             
-        allFH = fits2maps(allTimes, allTypes)    
+        with open(theFile, 'rb') as file:
+            bkgData = pickle.load(file)
+        bkgData['pickleSource'] = theFile  
         
-        return allFH, reloadDict
+        overviewPlot = reloadDict['OVWindow']
+        
+        return bkgData, reloadDict, nWFs, overviewPlot
         
     else:
         sys.exit('Reload file not found by processReload, cannot launch')
@@ -754,19 +745,36 @@ def runWombat(args):
     # Assume reload file not pickle if name includes SummaryFile
     if 'SummaryFile' in theFile:
         doReload = True
-        sys.exit("Need to redo loading reload")
+        bkgData, reloadDict, nWFs, overviewPlot = processReload(theFile)
+        #sys.exit("Need to redo loading reload")
     # Assume its a pickle. Might want to add check 
     else:
         reloadDict = None
         # Open the pickle
         with open(theFile, 'rb') as file:
             bkgData = pickle.load(file)
+        bkgData['pickleSource'] = theFile
         
     nWFs = 1
-    if len(args) == 3:
-        nWFs = int(args[2])
-    elif len(args) > 3:
-        sys.exit('Too many arguments given, syntax is python3 wombatWrapper.py file nWFs where file is a background pickle or reload file and nWFs is the number of wireframes')    
+    if len(args) > 4:
+        sys.exit('Too many arguments given, syntax is python3 wombatWrapper.py file nWFs ovw -  where file is a background pickle or reload file and nWFs is the number of wireframes')    
+    elif len(args) >= 3:
+        arg = args[2]
+        if arg in ['ovw', 'OVW', 'overviewplot']:
+            overviewPlot = True
+            nWFs = 1
+        else:
+            try:
+                nWFs = int(arg)
+            except:
+                sys.exit('Last arguement not understood, should be integer for number of WFs or ovw to turn on overview plot')
+    if len(args) == 4:
+        arg = args[3]
+        if arg not in ['ovw', 'OVW', 'overviewplot']:
+            sys.exit('Last argument not understood, currently available option is only ovw to turn on overview window')
+        else:
+            overviewPlot = True
+        
         
     releaseTheWombat(bkgData, reloadDict=reloadDict, overviewPlot=overviewPlot, nWFs=nWFs)   
         

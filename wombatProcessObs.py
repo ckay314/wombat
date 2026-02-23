@@ -1577,7 +1577,8 @@ def getSatStuff(imMap):
     elif myhdr['telescop'] == 'STEREO':
         satDict['OBS'] =  myhdr['obsrvtry'] 
         satDict['INST'] = myhdr['instrume'] + '_' + myhdr['detector']
-        myTag   = myhdr['telescop'] + '_' + myhdr['instrume'] + '_' + myhdr['detector']
+        myTag   = myhdr['telescop'] + '_' + myhdr['instrume'] + '_' + myhdr['detector']+satDict['OBS'][-1]
+        print (myTag)
     elif myhdr['obsrvtry'] == 'SDO':
         satDict['OBS'] =  myhdr['obsrvtry'] 
         satDict['INST'] = myhdr['detector']
@@ -2028,7 +2029,7 @@ def commandLineWrapper():
             if os.path.isdir(val):
                 inFolder = val
             else:
-                sys.exit(val + 'is not inst tag or exisiting intput folder. Exiting... ')
+                sys.exit(val + ' is not inst tag or exisiting intput folder. Exiting... ')
         else:
             insts.append(val.upper().replace('SOLO', 'Solo'))
      
