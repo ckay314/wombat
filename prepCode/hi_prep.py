@@ -620,19 +620,41 @@ def hi_prep(im, hdr, prepDir, calfac_off=False, calimg_off=False):
     
     return im, hdr
     
-def srem(files, side='a', tel='hi_2'):
-    # will need monthly min, can pull from https://stereo-ssc.nascom.nasa.gov/pub/ins_data/secchi_backgrounds/a/monthly_min/201207/
-    # using the correct YYYYMM format
+
+#|-------------------------|
+#|--- Main RDif Routine ---|
+#|-------------------------|
+def rdifhi_wrapper(files, side='a', tel='hi_1'):
+    """
+    Wrapper for the rdefhi function to be used by wombatProcessObs. Based on
+    srem from IDL but a very partial port of only what is needed
+
+    Input:
+        files: the list of files to process
+        
+        im2: the second image (later time)
     
-    # skipping keywords stuff 134 - 150
-    ndy = 1
+        hdr: the header for the second image
+       
+    Optional Input:   
+        side: whether we're doing STEREO A or B (pick from 'a' or 'b')
+              defaults to a
+     
+        tel: the telescope name ('hi_1' or 'hi_2')
+             defaults to hi_1
+    
+    Output:
+        allIms: an array of the rdifhi processed images
+    
+        allHdrs: the corresponding headers
+
+    """
     # Check keywords
     side = side.lower()
     if side not in ['a', 'ahead', 'sta', 'b', 'behind', 'stb']:
         sys.exit('Unknown side passed to srem, pick a or b')
     
     nim = len(files)
-    # Skipping part that sorts a/b
     
     # Load the files
     ims, hdrs = [], []
@@ -640,76 +662,47 @@ def srem(files, side='a', tel='hi_2'):
         with fits.open(files[i]) as hdulist:
             ims.append(hdulist[0].data.astype(np.int64))
             hdrs.append(hdulist[0].header)
-        #im, hdr = hi_prep(ims[i], hdrs[i], '/Users/kaycd1/wombat/prepFiles/stereo/')
-        #ims[i], hdrs[i] = im, hdr
+            
+    hdrs0 = hdrs[0]
     
-    # Starting at 189
-    # Pull first header and check roll
-    i0 = 0
-    with fits.open(files[i0]) as hdulist:
-        #im  = hdulist[0].data#.astype(np.int64)
-        hdrs0 = hdulist[0].header
+    #|-----------------------------------|
+    #|---- Check if first img rolled ----|
+    #|-----------------------------------|
     maxroll = 10
     if hdrs0['crota'] > 180:
         rota = 360 - hdrs0['crota']
     else:
         rota = np.abs(hdrs0['crota'])
     if rota > maxroll:
-        sys.exit('First image in srem has crota above maxval. Check next not ported yet')
-    
-    # Unclear what 204-209 doing, loading things piece by piece for IDL happiness?
-    
+        sys.exit('First image in rdifhi has crota above maxval. Try different start time for '+inst+side)
+        
+        
+    #|-------------------------------------|
+    #|---- Get model bkg for first img ----|
+    #|-------------------------------------|
+    # will need monthly min, can pull from https://stereo-ssc.nascom.nasa.gov/pub/ins_data/secchi_backgrounds/a/monthly_min/201207/
+    # using the correct YYYYMM format
     modelim, mhdr = scc_getbkgimg(hdrs0, secchi_bkg ='/Users/kaycd1/wombat/STEREObackgrounds/', match=True)
     
-    # Dont hit expcorr keyword
-    
-    # no bmin/max keywords, just take defaults
-    bmin = -1000. * (mhdr['exptime'] / hdrs0['exptime'])
-    bmax =  1000. * (mhdr['exptime'] / hdrs0['exptime'])
-    
-    if (tel == 'hi_2'): mfilt = 1 
-    
-    date = hdrs[0]['date-obs']
-    
-    if tel in ['hi_1', 'hi_2']:
-        t = tel.replace('_', '')
-    else:
-        t = tel
-    
-    fid = date[:10].replace('-','') + '_'+t
-    sdir = fid + side + '/' # default save directory
-    path = 'tmp/' + fid + side
-
-    # Back out corners to mitigate flickering
+    # Black out corners to mitigate flickering
     if (tel == 'hi_2') and (side == 'b'):
-        print ("haven't checked this ")
-        mask = np.zeros([hdrs[0]['naxis1'], hdrs[0]['naxis2']])
-        s = mask.shape()
-        xcen = hdrs[0]['naxis1']/2
-        ycen = hdrs[0]['naxis2']/2
+        mask = np.zeros([hdrs[0]['naxis2'], hdrs[0]['naxis1']])
+        s = mask.shape
+        xcen = hdrs[0]['naxis2']/2
+        ycen = hdrs[0]['naxis1']/2
         dist = 1.2 * (hdrs[0]['naxis1']/2)**2
-        for i in range (s[0]):
-            for j in range(s[1]):
-                if ((i - xcen)**2 + (j -ycen)**2) < dist:
+        for i in range (s[1]):
+            for j in range(s[0]):
+                if ((i - ycen)**2 + (j -xcen)**2) < dist:
                     mask[i,j] = 1
-                    
-    # not doing the usebase loop
     
-    # also not doing base skip
-    
-    # starting at 389
-    j = 0
-    i = i0
-    
-    # Might skip some files in the list so need to have separate indices with 
-    # i for list subscript and j for loop-action 
-    
-    # need to loop this... tbd
-    # not sure about mod switching indices between 1/0 come back to this
+    #|-------------------------------------|
+    #|---- Get all shifted diff images ----|
+    #|-------------------------------------|
     allIms = []
     allHdrs = []
     for j in range(nim-1):
-        print('Making frame', j+1, 'of ', nim)
+        print('Running rdifhi for image ', j+1, 'of ', nim)
         hdr1 = hdrs[j]
         hdr2 = hdrs[j+1]
         im1  = ims[j]
@@ -718,16 +711,12 @@ def srem(files, side='a', tel='hi_2'):
         if np.abs(hdr['crota'] - hdrs0['crota'] > maxroll):
             print ('Skipping ', hdr['filename'], ' because exceeds max roll')
             sys.exit('Need to make it skip to next file, tbd') 
-    
-        # not doing pos keyword
-    
+        
         srem_img, shifts = rdif_hi(im1, im2, hdr, side=side, tel=tel, model=modelim)
     
         # hdr filename not actually being changed...
         hdr['polar'] = 0
-    
-        # skipping crop
-    
+        
         # do B mask, not using pos or deproj keys so will hit
         if (tel == 'hi_2') and (side == 'b'):
             srem_img = mask * srem_img
@@ -737,19 +726,53 @@ def srem(files, side='a', tel='hi_2'):
         
         allIms.append(srem_img)
         allHdrs.append(hdr)
-    # skipping nosnow keyword 431-439
     
-    fig = plt.figure()
-    for j in range(nim-1):
-        #aIm, hdr = hi_prep(allIms[j], allHdrs[j], '/Users/kaycd1/wombat/prepFiles/stereo/')
-        calfac = get_calfac(allHdrs[i])
-        plt.imshow(allIms[j]*calfac, vmin=-5e-11, vmax=5e-11, origin='lower', cmap='Greys_r')
-        plt.show()
+    return allIms, allHdrs
+    
 
+#|------------------------|
+#|--- Actual RDif Code ---|
+#|------------------------|
+def rdif_hi(im1, im2, hdr, side='a', tel='hi_1', model=None, mfilt=True):
+    """
+    Port of IDL HI specific running difference calculation. This calculates a cross correlation
+    to determine the shift in star locations then uses that value when calculating the running 
+    difference. 
 
-def rdif_hi(im1, im2, hdr, side='a', tel='hi_1', model=None, min=False, shift=True, mfilt=True):
+    Input:
+        im1: the first image (earlier time)
+        
+        im2: the second image (later time)
+    
+        hdr: the header for the second image
+       
+    Optional Input:   
+        side: whether we're doing STEREO A or B (pick from 'a' or 'b')
+              defaults to a
+     
+        tel: the telescope name ('hi_1' or 'hi_2')
+             defaults to hi_1
+
+        model: an image/model of the background emission used to correct im1/im2
+               defaults to None but not yet coded to run without
+        
+        mfilt: flag to do a median filter
+               defaults to True but can run without
+    
+    Output:
+        imgOut: the shifted difference image 
+        
+        shifts: an array [x,y] with the calculated shifts 
+
+    """
+    
+    # Not doing any of the IDL regions stuff since we do 
+    # not need it for simple cases
     nreg = 1
     
+    # |-------------------|
+    # |--- Check names ---|
+    # |-------------------|    
     side = side.lower()
     tel  = tel.lower()
     if side not in ['a', 'b']:
@@ -761,14 +784,19 @@ def rdif_hi(im1, im2, hdr, side='a', tel='hi_1', model=None, min=False, shift=Tr
     elif tel not in ['hi_1', 'hi_2']:
         sys.exit('Exiting rdif_hi, side must be either hi_1 or hi_2') 
         
-    # Doesn't hit secchi prep, just assigns A/B to img1/img2
-    
+    # |-------------------|
+    # |--- Secchi prep ---|
+    # |-------------------|
+    #  (if not doing model)
     if type(model) == type(None):
         sys.exit('Need to port secchi background part in rdif_hi')
         
     s = im1.shape
     nx1, nx2 = s[1], s[0] # shape is [nrows, ncols]
     
+    # |-----------------------|
+    # |--- Compare medians ---|
+    # |-----------------------|
     # not using pos, model2 = model
     med = np.median(model)
     med1 = np.median(im1)
@@ -782,6 +810,9 @@ def rdif_hi(im1, im2, hdr, side='a', tel='hi_1', model=None, min=False, shift=Tr
         med1 = med / med1
         med2 = med / med2
     
+    # |---------------------|
+    # |--- Prepping data ---|
+    # |---------------------|
     if tel == 'hi_2':
         # skipping deproj
         frame1 = im1 * med1 - model
@@ -793,108 +824,135 @@ def rdif_hi(im1, im2, hdr, side='a', tel='hi_1', model=None, min=False, shift=Tr
         dum_ant = frame1
         dum_act = frame2
     else:
-        print ('hitting non hi2 untested part of rdif_hi')
+        frame1 = im1*med1
         szf = frame1.shape
         nx1, nx2 = szf[1], szf[0]
-        frame1 = img1*med1
         dum1 = np.log10(frame1)
-        frame2 = img2*med2
+        frame2 = im2*med2
         dum2 = np.log10(frame2)
         dum_ant = frame1 - model
         dum_act = frame2 - model
         
-    if shift:
-        ant = dum1 - np.roll(dum1, 3, axis=0)
-        act = dum2 - np.roll(dum2, 3, axis=0)
+    ant = dum1 - np.roll(dum1, 3, axis=0)
+    act = dum2 - np.roll(dum2, 3, axis=0)
 
     rawdif = dum_act - dum_ant
     
+    # |------------------------|
+    # |--- Set up CC region ---|
+    # |------------------------|
     # not doing debug
     scale, scl, split = 1, 1, 1
     x, y = 0., 0.
     regx, regy = 0, 0
     x1,y1 = 0, 0
-    a2 = np.zeros([nx2, nx1]) # nrows, ncols
-    shifts = np.zeros([nreg,nreg,2]) # assuming nreg = 1
+    #a2 = np.zeros([nx2, nx1]) # nrows, ncols
+    #shifts = np.zeros([nreg,nreg,2]) # assuming nreg = 1
     
-    if shift:
-        # ignoring for loops bc nreg = 1
-        x2 = int(float(nx1) / nreg - 1)
-        y2 = int(float(nx2) / nreg - 1)
+    # ignoring for loops bc nreg = 1
+    x2 = int(float(nx1) / nreg - 1)
+    y2 = int(float(nx2) / nreg - 1)
         
-        reg1 = ant[y1:y2+1, x1:x2+1] # switching indexing
-        reg2 = act[y1:y2+1, x1:x2+1]        
-        regx = x2 - x1 + 1
-        regy = y2 - y1 + 1 
+    reg1 = ant[y1:y2+1, x1:x2+1] # switching indexing
+    reg2 = act[y1:y2+1, x1:x2+1]        
+    regx = x2 - x1 + 1
+    regy = y2 - y1 + 1 
         
-        # skipping scale 207-210
-        # skipping box
-        
-        if side == 'a':
-            if tel == 'hi_2':
-                r1=230*2 # 512->1024 means x2 (sure)
-                r2=450*2
-                s1=130*2
-                s2=400*2
-            else:
-                r1=0
-                r2=500
-                s1=700
-                s2=1000
+    # skipping scale 207-210
+    # skipping box
+    
+    #|--- Hardcoded nice region for CC ---|    
+    if side == 'a':
+        if tel == 'hi_2':
+            r1=230*2 # 512->1024 means x2 (sure)
+            r2=450*2
+            s1=130*2
+            s2=400*2
         else:
-            if tel == 'hi_2':
-                r1=139*2 # 512->1024 means x2 (sure)
-                r2=311*2
-                s1= 44*2
-                s2=473*2
-            else:
-                r1=500
-                r2=1000
-                s1=700
-                s2=1000
-        
-        # get cross correlation region
-        if (nreg > 1) or (nx1 < 1024) or (nx2 < 1024):
-            ccreg1 = reg1
-            ccreg2 = reg2
+            r1=0
+            r2=500
+            s1=700
+            s2=1000
+    else:
+        if tel == 'hi_2':
+            r1=139*2 # 512->1024 means x2 (sure)
+            r2=311*2
+            s1= 44*2
+            s2=473*2
         else:
-            ccreg1 = reg1[s1:s2+1, r1:r2+1]
-            ccreg2 = reg2[s1:s2+1, r1:r2+1]
+            r1=500
+            r2=1000
+            s1=700
+            s2=1000
         
-        w1 = ~ np.isfinite(ccreg1)
-        ccreg1[w1] = 0
-        w2 = ~ np.isfinite(ccreg2)
-        ccreg2[w2] = 0
-        h, xmax, ymax = test_crosscorr(ccreg1,ccreg2,x,y, doGauss=True)
+    #|--- Select cross correlation region ---|
+    if (nreg > 1) or (nx1 < 1024) or (nx2 < 1024):
+        ccreg1 = reg1
+        ccreg2 = reg2
+    else:
+        ccreg1 = reg1[s1:s2+1, r1:r2+1]
+        ccreg2 = reg2[s1:s2+1, r1:r2+1]
         
-        x = xmax * scl/scale
-        y = ymax * scl/scale
+    # |-------------------------|
+    # |--- Get shift from CC ---|
+    # |-------------------------|
+    w1 = ~ np.isfinite(ccreg1)
+    ccreg1[w1] = 0
+    w2 = ~ np.isfinite(ccreg2)
+    ccreg2[w2] = 0
+    h, xmax, ymax = test_crosscorr(ccreg1,ccreg2,doGauss=True)
         
-        reg1 = dum_ant[y1:y2+1, x1:x2+1]
-        reg2 = dum_act[y1:y2+1, x1:x2+1]
+    x = xmax * scl/scale
+    y = ymax * scl/scale
+        
+    reg1 = dum_ant[y1:y2+1, x1:x2+1]
+    reg2 = dum_act[y1:y2+1, x1:x2+1]
 
-        if scl != 1:
-            sys.exit('Scl != 1 portion of rdif_hi not ported')
+    if scl != 1:
+        sys.exit('Scl != 1 portion of rdif_hi not ported')
         
-        # shift isnt exact but order=1 is closest match to idl
-        temp = scipy.ndimage.shift(reg2, shift=(y, x), order=1, mode='constant', cval=0.0)
-        d = temp - reg1
+    # |---------------------------|
+    # |--- Shift and take diff ---|
+    # |---------------------------|
+    # shift isnt exact but order=1 is closest match to idl
+    temp = scipy.ndimage.shift(reg2, shift=(y, x), order=1, mode='constant', cval=0.0)
+    d = temp - reg1
         
-        if mfilt:
-            d = scipy.ndimage.median_filter(d, size=7, mode='constant', cval=0.0)
+    if mfilt:
+        d = scipy.ndimage.median_filter(d, size=7, mode='constant', cval=0.0)
             
-        a2 = d # haven't done any regions so assume is fine? without indexing
-        
-        xout = x
-        yout = y  
-        shifts[0,0,0] = x
-        shifts[0,0,1] = y
+    imgOut = d # haven't done any regions so assume is fine? without indexing
+    shifts = [x, y]
     
     # Might want to pass more things, not certain how much of the passed variables
     # in IDL are used later on...
-    return a2, shifts
+    return imgOut, shifts
     
-def test_crosscorr(arr1, arr2, xmax, ymax, doGauss=False):
+#|------------------------------|
+#|--- Find Cross Correlation ---|
+#|------------------------------|
+def test_crosscorr(arr1, arr2, doGauss=False):
+    """
+    Function using the cross correlation to get the optimal pixel shift between two
+    images. This is intended for use in rdif_hi and where it enables star removal 
+    since the CC is maxed when the stars align.
+
+    Input:
+        arr1: the first image (earlier time)
+        
+        arr2: the second image (later time)
+           
+    Optional Input:   
+        doGauss: 
+    
+    Output:
+        result: the results of the cross correlation
+        
+        xmax: the x shift that maximizes the correlation
+    
+        ymax: the y shift that maximizes the correlation
+
+    """
     # Trying to keep var names same as idl and switching indexing as needed
     if arr1.shape != arr2.shape:
         sys.exit('Shape mismatch in test_crosscorr')
@@ -919,6 +977,7 @@ def test_crosscorr(arr1, arr2, xmax, ymax, doGauss=False):
     whereMax = np.where(result == np.max(result))
     xmax = whereMax[1][0] % xdim
     ymax = int(whereMax[1][0] / xdim) # IDL seems to round down so take int
+    # The above line seems sus in matching xmax= for y but it matches IDL
     
     xshift = int(xdim / 2) - xmax
     yshift = int(ydim / 2) - ymax
@@ -944,6 +1003,9 @@ def test_crosscorr(arr1, arr2, xmax, ymax, doGauss=False):
 
     return result, xmax, ymax
     
+#|--------------------------|
+#|--- Helper Gaussian fn ---|
+#|--------------------------|
 def gaussian_2d(xy, amplitude, x_mean, y_mean, x_stddev, y_stddev, theta, offset):
     """
     Returns a 2D Gaussian function (elliptical, with rotation).
@@ -961,12 +1023,4 @@ def gaussian_2d(xy, amplitude, x_mean, y_mean, x_stddev, y_stddev, theta, offset
     )
     return g.ravel() # curve_fit expects a 1D array of data
     
-files = ['/Users/kaycd1/wombat/pullFolder/STEREO/HI2A/HI2A_20120712_020921_s4h2A.fts',	'/Users/kaycd1/wombat/pullFolder/STEREO/HI2A/HI2A_20120712_040921_s4h2A.fts','/Users/kaycd1/wombat/pullFolder/STEREO/HI2A/HI2A_20120712_060921_s4h2A.fts',	'/Users/kaycd1/wombat/pullFolder/STEREO/HI2A/HI2A_20120712_080921_s4h2A.fts','/Users/kaycd1/wombat/pullFolder/STEREO/HI2A/HI2A_20120712_100921_s4h2A.fts',	'/Users/kaycd1/wombat/pullFolder/STEREO/HI2A/HI2A_20120712_120921_s4h2A.fts',	'/Users/kaycd1/wombat/pullFolder/STEREO/HI2A/HI2A_20120712_140921_s4h2A.fts',	'/Users/kaycd1/wombat/pullFolder/STEREO/HI2A/HI2A_20120712_160921_s4h2A.fts',	'/Users/kaycd1/wombat/pullFolder/STEREO/HI2A/HI2A_20120712_180921_s4h2A.fts',	'/Users/kaycd1/wombat/pullFolder/STEREO/HI2A/HI2A_20120712_200921_s4h2A.fts',	'/Users/kaycd1/wombat/pullFolder/STEREO/HI2A/HI2A_20120712_220921_s4h2A.fts',	'/Users/kaycd1/wombat/pullFolder/STEREO/HI2A/HI2A_20120713_020921_s4h2A.fts',	'/Users/kaycd1/wombat/pullFolder/STEREO/HI2A/HI2A_20120713_040921_s4h2A.fts',	'/Users/kaycd1/wombat/pullFolder/STEREO/HI2A/HI2A_20120713_060921_s4h2A.fts',	'/Users/kaycd1/wombat/pullFolder/STEREO/HI2A/HI2A_20120713_080921_s4h2A.fts',	'/Users/kaycd1/wombat/pullFolder/STEREO/HI2A/HI2A_20120713_100921_s4h2A.fts','/Users/kaycd1/wombat/pullFolder/STEREO/HI2A/HI2A_20120713_120921_s4h2A.fts','/Users/kaycd1/wombat/pullFolder/STEREO/HI2A/HI2A_20120713_140921_s4h2A.fts','/Users/kaycd1/wombat/pullFolder/STEREO/HI2A/HI2A_20120713_180921_s4h2A.fts','/Users/kaycd1/wombat/pullFolder/STEREO/HI2A/HI2A_20120713_220921_s4h2A.fts','/Users/kaycd1/wombat/pullFolder/STEREO/HI2A/HI2A_20120714_020921_s4h2A.fts','/Users/kaycd1/wombat/pullFolder/STEREO/HI2A/HI2A_20120714_040921_s4h2A.fts','/Users/kaycd1/wombat/pullFolder/STEREO/HI2A/HI2A_20120714_060921_s4h2A.fts','/Users/kaycd1/wombat/pullFolder/STEREO/HI2A/HI2A_20120714_080921_s4h2A.fts','/Users/kaycd1/wombat/pullFolder/STEREO/HI2A/HI2A_20120714_100921_s4h2A.fts','/Users/kaycd1/wombat/pullFolder/STEREO/HI2A/HI2A_20120714_120921_s4h2A.fts','/Users/kaycd1/wombat/pullFolder/STEREO/HI2A/HI2A_20120714_140921_s4h2A.fts','/Users/kaycd1/wombat/pullFolder/STEREO/HI2A/HI2A_20120714_160921_s4h2A.fts','/Users/kaycd1/wombat/pullFolder/STEREO/HI2A/HI2A_20120714_180921_s4h2A.fts','/Users/kaycd1/wombat/pullFolder/STEREO/HI2A/HI2A_20120714_200921_s4h2A.fts']
-
-lessfiles = ['/Users/kaycd1/wombat/pullFolder/STEREO/HI2A/HI2A_20120712_020921_s4h2A.fts',	'/Users/kaycd1/wombat/pullFolder/STEREO/HI2A/HI2A_20120712_040921_s4h2A.fts','/Users/kaycd1/wombat/pullFolder/STEREO/HI2A/HI2A_20120712_060921_s4h2A.fts',	'/Users/kaycd1/wombat/pullFolder/STEREO/HI2A/HI2A_20120712_080921_s4h2A.fts','/Users/kaycd1/wombat/pullFolder/STEREO/HI2A/HI2A_20120712_100921_s4h2A.fts',	'/Users/kaycd1/wombat/pullFolder/STEREO/HI2A/HI2A_20120712_120921_s4h2A.fts',	'/Users/kaycd1/wombat/pullFolder/STEREO/HI2A/HI2A_20120712_140921_s4h2A.fts',	'/Users/kaycd1/wombat/pullFolder/STEREO/HI2A/HI2A_20120712_160921_s4h2A.fts',	'/Users/kaycd1/wombat/pullFolder/STEREO/HI2A/HI2A_20120712_180921_s4h2A.fts',	'/Users/kaycd1/wombat/pullFolder/STEREO/HI2A/HI2A_20120712_200921_s4h2A.fts']
-
-profiles = ['../wbFits/STEREO/HI2A/wbpro_stahi2_20120712T020921.fits', '../wbFits/STEREO/HI2A/wbpro_stahi2_20120712T040921.fits',  '../wbFits/STEREO/HI2A/wbpro_stahi2_20120712T060921.fits',  '../wbFits/STEREO/HI2A/wbpro_stahi2_20120712T080921.fits',  '../wbFits/STEREO/HI2A/wbpro_stahi2_20120712T100921.fits', '../wbFits/STEREO/HI2A/wbpro_stahi2_20120712T120921.fits', '../wbFits/STEREO/HI2A/wbpro_stahi2_20120712T140921.fits', '../wbFits/STEREO/HI2A/wbpro_stahi2_20120712T160921.fits', '../wbFits/STEREO/HI2A/wbpro_stahi2_20120712T180921.fits', '../wbFits/STEREO/HI2A/wbpro_stahi2_20120712T200921.fits']
-
-if __name__ == '__main__':
-    srem(files, side='a')
     

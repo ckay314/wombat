@@ -92,6 +92,7 @@ from wispr_prep import wispr_prep
 from lasco_prep import c2_prep, c3_prep, reduce_level_1
 from solohi_prep import solohi_fits2grid
 from aia_prep import aia_prep
+from hi_prep import rdifhi_wrapper
 from wcs_funs import fitshead2wcs, wcs_get_pixel, wcs_get_coord
 from wombatPullObs import setupFolderStructure
 from sunspyce import load_common_kernels, load_psp_kernels, load_solo_kernels
@@ -1261,7 +1262,7 @@ def processObs(times, insts, inFolder='pullFolder/', outFolder='wbFits/', outFil
 # |------------------------------------------------------------|
 # |-------------------- Command Line Wrapper ------------------|
 # |------------------------------------------------------------|
-def thePickler(proIms, fnames, pickleJar='wbPickles/', name='temp'):
+def thePickler(proIms, fnames, pickleJar='wbPickles/', name='temp', otherDiff=None):
     """
     Wrapper to make a pickle with all the info that the GUI will need
     for the background images. Everything will be fully processed pre
@@ -1281,12 +1282,16 @@ def thePickler(proIms, fnames, pickleJar='wbPickles/', name='temp'):
                       images or an array of four for SoloHI mosaics
     
         Optional:
-            name:        A unique name tag for the pickle, which will be save as WBGUI_name.pkl
-                         Defaults to "temp" and will overwrite an existing temp pkl
+            name:       A unique name tag for the pickle, which will be save as WBGUI_name.pkl
+                        Defaults to "temp" and will overwrite an existing temp pkl
     
-            pickleJar:   Where to save the pickles that are generated
-                         (Defaults to /wbPickles/ )        
-   
+            pickleJar:  Where to save the pickles that are generated
+                        Defaults to /wbPickles/       
+        
+            doRdifHI:   Option to run rdifhi processing (use shift from cross correlation)
+                        instead of the basic differencing
+                        Defaults to True but only applied to STEREO HI
+        
         Actions:
             Saves a pickle in the pickleJar folder as WBGUI_temp.pkl
     
@@ -1344,7 +1349,7 @@ def thePickler(proIms, fnames, pickleJar='wbPickles/', name='temp'):
         # |---- Make running difference maps ----|
         # |--------------------------------------|
         if bigDill['WBinfo']['isEUV'][key]:
-            tempMaps[key] = arr2maps(bigDill['proIms'][key][0], bigDill['proIms'][key][1], doDiff=False)           
+            tempMaps[key] = arr2maps(bigDill['proIms'][key][0], bigDill['proIms'][key][1], doDiff=False)  
         else:
             tempMaps[key] = arr2maps(bigDill['proIms'][key][0], bigDill['proIms'][key][1])           
         
@@ -1391,6 +1396,15 @@ def thePickler(proIms, fnames, pickleJar='wbPickles/', name='temp'):
                     massIm = (1-mySatStuff[j]['MASK']) * massIm
                 #bigDill['massIms'][key].append(np.transpose(massIm))
                 bigDill['massIms'][key].append(massIm)
+                
+        # |---------------------------------|
+        # |---- Replace with fancy diff ----|
+        # |---------------------------------|
+        if type(otherDiff) != type(None):
+            if key in otherDiff:
+                tempMaps[key][0] = otherDiff[key][0]
+                tempMaps[key][2] = otherDiff[key][1]
+        
 
         # |-------------------------------------------|
         # |---- Calculate scaled images and store ----|
@@ -1410,8 +1424,7 @@ def thePickler(proIms, fnames, pickleJar='wbPickles/', name='temp'):
             bigDill['proImMaps'][key][0].append(myMap)
             bigDill['proImMaps'][key][1].append(bigDill['proIms'][key][1][j])
 
-    
-        
+            
     # |-------------------------|
     # |---- Save the pickle ----|
     # |-------------------------|
@@ -1578,7 +1591,6 @@ def getSatStuff(imMap):
         satDict['OBS'] =  myhdr['obsrvtry'] 
         satDict['INST'] = myhdr['instrume'] + '_' + myhdr['detector']
         myTag   = myhdr['telescop'] + '_' + myhdr['instrume'] + '_' + myhdr['detector']+satDict['OBS'][-1]
-        print (myTag)
     elif myhdr['obsrvtry'] == 'SDO':
         satDict['OBS'] =  myhdr['obsrvtry'] 
         satDict['INST'] = myhdr['detector']
@@ -2008,7 +2020,9 @@ def commandLineWrapper():
     if vals[1] < vals[0]:
         sys.exit('Exiting processObs, start time is after end time...')
     
+    #|-------------------------------------|
     #|---- Pull times and check format ----|
+    #|-------------------------------------|
     try:
         temp = parse_time(vals[0])
     except:
@@ -2018,25 +2032,35 @@ def commandLineWrapper():
     except:
         print('Error in end time format')
     times = [vals[0], vals[1]]
-    
+    #|--- Remove the times, keep the rest ---|
     vals = vals[2:]
     
-    #|---- Check rest for inst/folder ----|
+    #|------------------------------------|
+    #|---- Check args for inst/folder ----|
+    #|----or different processing tags ---|
+    #|------------------------------------|
     insts = []
     inFolder = 'pullFolder/'
+    # Processing options
+    doRdifHI = False
     for val in vals:
         if val.upper() not in tags:
             if os.path.isdir(val):
                 inFolder = val
+            elif val.lower() in ['rdiffhi', 'rdifhi']:
+                doRdifHI = True
+            # Add any bonus processing tags to check here
             else:
-                sys.exit(val + ' is not inst tag or exisiting intput folder. Exiting... ')
+                sys.exit(val + ' is not inst tag or exisiting input folder. Exiting... ')
         else:
             insts.append(val.upper().replace('SOLO', 'Solo'))
      
     if len(insts) < 1:
         sys.exit('No instrument tag provided')
     
-    #|---- Set up spice kernels as needed ----|
+    #|------------------------------|
+    #|---- Set up spice kernels ----|
+    #|------------------------------|
     kernelSpot = os.getcwd() + '/spiceKernels/'
     # Kernels everyone likely needs
     load_common_kernels(kernelSpot)
@@ -2052,9 +2076,42 @@ def commandLineWrapper():
     if loadSOLO:
         load_solo_kernels(kernelSpot+'solo/')
     
+    #|--------------------------|
+    #|---- Basic processing ----|
+    #|--------------------------|
     proIms, fnames = processObs(times, insts, inFolder=inFolder)    
     
-    thePickler(proIms, fnames)
+    #|------------------------------|
+    #|---- Alternate processing ----|
+    #|------------------------------|
+    HIkeys = ['HI1A', 'HI1B', 'HI2A', 'HI2B']
+    rdifHIs = {}
+    if doRdifHI:
+        for key in fnames:
+            if key in HIkeys:    
+                print('|--- Running rdifhi for '+key+' ---|')
+                myFs = fnames[key][0]
+                firstF = myFs[0]
+                # Get side (a/b)
+                side = 'a'
+                if 'b.fts' in firstF.lower(): side = 'b'
+                # Get telescope (1/2)
+                tel = 'hi_1'
+                if 'h2' in firstF.lower(): tel = 'hi_2'
+                myRDHIs, rdHdrs = rdifhi_wrapper(myFs, side=side, tel=tel)
+               
+                #|---- Mapify ---|
+                rdMaps = []
+                for i in range(len(myRDHIs)):               
+                    rdMaps.append(sunpy.map.Map(myRDHIs[i], rdHdrs[i]))
+                rdifHIs[key] = [rdMaps, rdHdrs]
+    else:
+        rdifHIs = None
+    
+    #|---------------------------|
+    #|---- Package in pickle ----|
+    #|---------------------------|
+    thePickler(proIms, fnames, otherDiff=rdifHIs)
            
 
 if __name__ == '__main__':
