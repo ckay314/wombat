@@ -474,10 +474,10 @@ def pullSTEREO(times, insts, EUVtime=10, CORtime=20, HItime=30, outFolder='pullF
         elif '/cor2/' in result[0]['fileid'][i]:
             mySpot = 1
             #whichC[1].append(i)
-        elif ('/hi_1/' in result[0]['fileid'][i]) & (result[0]['Size'][i].to_value() > 2.4):
+        elif ('/hi_1/' in result[0]['fileid'][i]) & (result[0]['Size'][i].to_value() > 2.4) & (result[0]['Size'][i].to_value() < 8.0):
             mySpot = 2
             #whichC[2].append(i)
-        elif ('/hi_2/' in result[0]['fileid'][i]) & (result[0]['Size'][i].to_value() > 2.4):
+        elif ('/hi_2/' in result[0]['fileid'][i]) & (result[0]['Size'][i].to_value() > 2.4) & (result[0]['Size'][i].to_value() < 8.0):
             mySpot = 3
              #whichC[3].append(i)
         if '/a/' in result[0]['fileid'][i]:
