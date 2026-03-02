@@ -592,7 +592,7 @@ def processSoloHI(times, insts, inFolder='pullFolder/SolO/SoloHI/', outFolder='w
         prefixs = ['solo_L2_solohi-1ft_', 'solo_L2_solohi-2ft_', 'solo_L2_solohi-3fg_', 'solo_L2_solohi-4fg_']
         for i in range(4):
             for j in range(len(goodFiles[i])):
-                thisT = parse_time(goodFiles[i][j].replace(prefixs[i],'').replace('_V01.fits','').replace('_V02.fits',''))
+                thisT = parse_time(goodFiles[i][j].replace(prefixs[i], '').replace('_V01.fits', '').replace('_V02.fits','').replace('_V03.fits', ''))
                 myTimes[i].append(thisT)
         # Figure out which has the most obs
         nEach =[len(myTimes[i]) for i in range(4)]

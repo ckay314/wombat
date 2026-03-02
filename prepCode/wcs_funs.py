@@ -246,8 +246,10 @@ def fitshead2wcs(hdr,system=''):
     wcs['roll_angle'] = hdr['SC_ROLL'+system]
     if variation in ['PC', 'CD']:
         roll_angle, cdelt = wcs_decomp_angle(wcs)
-        wcs['roll_angle'] = roll_angle
-        wcs['cdelt'] = cdelt
+        if roll_angle:
+            wcs['roll_angle'] = roll_angle
+        if cdelt:
+            wcs['cdelt'] = cdelt
     # wc['simple']
     # wcs['time']
     # wcs['position']
@@ -342,8 +344,10 @@ def wcs_decomp_angle(wcs):
         if (test[ix] < 0) or (test[iy] < 0):
             roll_angle = roll_angle - np.sign(roll_angle)*180
             cdelt = - cdelt
-
-    return roll_angle, cdelt
+    if found:
+        return roll_angle, cdelt
+    else:
+        return None, None
                        
 #|--------------------------------|
 #|--- Get Sun center in pixels ---|
