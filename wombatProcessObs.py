@@ -95,7 +95,7 @@ from aia_prep import aia_prep
 from hi_prep import rdifhi_wrapper
 from wcs_funs import fitshead2wcs, wcs_get_pixel, wcs_get_coord
 from wombatPullObs import setupFolderStructure
-from sunspyce import load_common_kernels, load_psp_kernels, load_solo_kernels
+from sunspyce import load_common_kernels, load_psp_kernels, load_solo_kernels, load_stereo_kernels
 import wombatMass as wM
 
 # |-------------------------------|
@@ -1559,7 +1559,7 @@ def getSatStuff(imMap):
     
     # Nominal radii (in Rs) for the occulters for each instrument. Pulled from google so 
     # generally correct (hopefully) but not the most precise
-    occultDict = {'STEREO_SECCHI_COR2':[3,14], 'STEREO_SECCHI_COR1':[1.5,4], 'SOHO_LASCO_C1':[1.1,3], 'SOHO_LASCO_C2':[2,6], 'SOHO_LASCO_C3':[3.7,32], 'STEREO_SECCHI_HI1':[15,80], 'STEREO_SECCHI_HI2':[80,215], 'STEREO_SECCHI_EUVI':[0,1.7],'SDO_AIA':[0,1.35]}
+    occultDict = {'STEREO_SECCHI_COR2':[3,14], 'STEREO_SECCHI_COR2A':[3,14], 'STEREO_SECCHI_COR2B':[3,14], 'STEREO_SECCHI_COR1':[1.5,4], 'STEREO_SECCHI_CORA1':[1.5,4], 'STEREO_SECCHI_COR1B':[1.5,4], 'SOHO_LASCO_C1':[1.1,3], 'SOHO_LASCO_C2':[2,6], 'SOHO_LASCO_C3':[3.7,32], 'STEREO_SECCHI_HI1':[15,80], 'STEREO_SECCHI_HI1A':[15,80], 'STEREO_SECCHI_HI1B':[15,80], 'STEREO_SECCHI_HI2':[80,215], 'STEREO_SECCHI_HI2B':[80,215], 'STEREO_SECCHI_HI2A':[80,215], 'STEREO_SECCHI_EUVI':[0,1.7],'SDO_AIA':[0,1.35]}
     
     #|---- Initialize dictionary ----|
     satDict = {}
@@ -1957,7 +1957,9 @@ def scaleIt(obsIn, satStuffs):
 def commandLineWrapper():
     """
     Wrapper to only be used to make wombatProcessObs run from the command line using
-    a list of arguments. Any external program should call processObs directly
+    a list of arguments. Any external program should call processObs directly. The 
+    inputs are from the command line arguments, not passed directly to this function
+    itself
     
 
     Inputs:
@@ -1980,8 +1982,14 @@ def commandLineWrapper():
                             *** must appear directly after ending time ***
         Optional:
             inFolder -      top directory where the files will pulled from their
-                            appropriate subfolders
+                            appropriate subfolders. it should be passed just as a 
+                            directory name in the command line arguments after the inst tags
                             defaults to pullFolder/
+    
+            rdiffhi -       a flag to run the star removal rdif fuction for HI observations
+                            it is flagged by adding the argument 'rdiffhi' after the inst
+                            tags in the command line call
+                            defaults to not including
     
         
         Available Instrument Tags:
@@ -2064,17 +2072,22 @@ def commandLineWrapper():
     kernelSpot = os.getcwd() + '/spiceKernels/'
     # Kernels everyone likely needs
     load_common_kernels(kernelSpot)
-    # Check for psp or solo
-    loadPSP, loadSOLO = False, False
+    # Check for psp or solo or stereo
+    loadPSP, loadSOLO, loadSTEREO = False, False, False
     for inst in insts:
         if inst.upper() in ['WISPR', 'WISPRI', 'WISPRO']:
             loadPSP = True
         elif inst.upper() in ['SOLOHI', 'SOLOHI1', 'SOLOHI2', 'SOLOHI3', 'SOLOHI4',]:
             loadSOLO = True
+        elif inst.upper() in ['COR1A', 'COR1B', 'COR2A', 'COR2B', 'HI1A', 'HI1B', 'HI2A', 'HI2B']:
+            loadSTEREO = True
     if loadPSP:
         load_psp_kernels(kernelSpot+'psp/')
     if loadSOLO:
         load_solo_kernels(kernelSpot+'solo/')
+    if loadSTEREO:
+        load_stereo_kernels(kernelSpot+'stereo/')
+        
     
     #|--------------------------|
     #|---- Basic processing ----|

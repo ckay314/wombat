@@ -514,7 +514,7 @@ def get_sunspyce_lonlat(date, spacecraft, system=None, instrument=None, target=N
     
         doAU: flag to return the result in AU (defaults to False)
     
-        doDegrees: flag to return the velocity vector in addition to the dist (defaults to False)
+        doDegrees: flag to return the results in degrees (defaults to False)
     
         pos_long: flag to force longitude to positive values (defaults to False)
     
@@ -593,6 +593,249 @@ def get_sunspyce_lonlat(date, spacecraft, system=None, instrument=None, target=N
         lat = lat * 180. / np. pi
     return [rad, lon, lat]
 
+
+#|---------------------------------------|
+#|--- Convert a point between systems ---|
+#|---------------------------------------|
+def convert_sunspyce_lonlat(date, coord, fromSys, toSys, spacecraft=None, doDegrees=False):
+    """
+    Function to convert a lon/lat coordinate from one system to another. This
+    is largely a wrapper to format a lon/lat pair and the systems so that they
+    can be passed to convert_sunspyce_coord.
+    
+    This is a very partial port of the IDL function as needed for cor2_point
+    
+    Input:
+        date: a date string in a format suitable for spiceypy.str2et
+              (this is fairly flexible in formatting)
+    
+        coord: a point (or array? untested) in the form of either [lon, lat]
+               or [rad, lon, lat]
+    
+        fromSys:  the coordinate system (e.g. HEEQ, Carrington, RTN...) of the 
+                  provided point. If RTN then spacecraft is needed
+    
+        toSys:  the coordinate system (e.g. HEEQ, Carrington, RTN...) of the 
+                provided point. If RTN then spacecraft is needed
+    
+    Optional Input:
+        spacecraft: the spacecraft of interest (needed for certain systems)
+    
+        doDegrees: flag that the input is in degrees and to return the output
+                   also in degrees
+    
+    Output:
+        [rad, lat, long]: the spacecraft radius (km), latitude (rads), and longitude (rads)
+                          if doDegrees is flagged then the angles will be returned
+                          in degrees
+
+    """
+    #|----------------------|
+    #|--- Process Inputs ---|
+    #|----------------------|
+    # Make sure sys are uppercase
+    fromSys = fromSys.upper()
+    toSys   = toSys.upper()
+    
+    # Assume passed correct date/coord (lines 139-166)
+    
+    # Check if list not array
+    if type(coord) == type([]):
+        coord = np.array(coord)
+    
+    # make a 2d array
+    singlePt = False
+    if len(coord.shape) == 1:
+        coord = coord.reshape([-1,1])
+        singlePt = True
+    
+    #|----------------------|
+    #|--- Convert to xyz ---|
+    #|----------------------|
+    nvec = coord.shape[0]
+    if nvec == 2:
+        radius = 1
+        lon = coord[0,:]
+        lat = coord[1,:]
+    elif nvec == 3:
+        radius = coord[0,:]
+        lon    = coord[1,:]
+        lat    = coord[2,:]
+    else:
+        sys.exit('Exiting convert_sunspyce_lonlat, passed coord that is not 2 or 3 dim')
+    
+    if doDegrees:
+        dtor = np.pi / 180.
+        lon = dtor * lon
+        lat = dtor * lat
+    
+    # If input is HPC convert to RTN first
+    if fromSys == 'HPC':
+        fromSys = 'RTN'
+        lon = np.pi - lon
+    
+    # Get the state
+    state = np.zeros([3, len(lon)])
+    state[0,:] = radius * np.cos(lat) * np.cos(lon)
+    state[1,:] = radius * np.cos(lat) * np.sin(lon)
+    state[2,:] = radius * np.sin(lat)
+    
+    # If output is HPC calc RTN and correct after
+    hpc_conv = False
+    if toSys == 'HPC':
+        toSys = 'RTN'
+        hpc_conv = True
+        
+    #|----------------------------------|
+    #|--- Pass to conversion routine ---|
+    #|----------------------------------|
+    state = convert_sunspyce_coord(date, state, fromSys, toSys, spacecraft=spacecraft)
+    radius, longitude, latitude = spice.reclat(state)
+    
+    # Ignoring missing
+    # Ignoring pixel masking
+    # Ignoring HPC
+    # Ignoring Carrington
+    
+    #|---------------------|
+    #|--- Format Output ---|
+    #|---------------------|
+    if doDegrees:
+        longitude = (180/ np.pi) * longitude
+        latitude = (180/ np.pi) * latitude
+        
+    coord = np.zeros([nvec, len(lon)])    
+    if nvec == 2:
+        coord[0,:] = longitude
+        coord[1,:] = latitude
+    elif nvec == 3:
+        coord[0,:] = radius
+        coord[1,:] = longitude
+        coord[2,:] = latitude
+        
+    
+    if singlePt:
+        coord = coord.reshape(-1)
+        
+    return coord
+
+#|--------------------------------------------|
+#|--- Also convert a point between systems ---|
+#|--------------------------------------------|
+def convert_sunspyce_coord(date, coord, fromSys, toSys, spacecraft=None):
+    """
+    Function to convert a coordinate from one system to another. 
+    
+    This is a very partial port of the IDL function as needed for cor2_point
+    
+    Input:
+        date: a date string in a format suitable for spiceypy.str2et
+              (this is fairly flexible in formatting)
+    
+        coord: a point (or array? untested) in 3D Cartesian coordinates
+    
+        fromSys:  the coordinate system (e.g. HEEQ, Carrington, RTN...) of the 
+                  provided point. If RTN then spacecraft is needed
+    
+        toSys:  the coordinate system (e.g. HEEQ, Carrington, RTN...) of the 
+                provided point. If RTN then spacecraft is needed
+    
+    Optional Input:
+        spacecraft: the spacecraft of interest (needed for certain systems)
+    
+    
+    Output:
+        [x, y, z]: the point converted to cartesian coordinates in the toSys frame
+    
+    """
+    #|----------------------|
+    #|--- Process Inputs ---|
+    #|----------------------|
+    # Assume inputs are fine (157 - 188)
+    
+    # parse name
+    if spacecraft.lower() in scDict:
+        sc = scDict[spacecraft.lower()]
+    else:
+        sys.exit(spacecraft.lower() + ' not in scDict for sunspyce. Pick from sta, stb, solo, psp, earth.')
+    
+    # Convert time to utc
+    time = parse_time(date).utc
+    
+    count = spice.ktotal( 'ALL' )
+    if count == 0:
+        load_common_kernels('spiceKernels/')    
+        load_stereo_kernels('spiceKernels/stereo/')
+    
+    # Convert date/time to eph time and then to sc clock time
+    et = spice.str2et(date)
+    
+    #|-----------------------|
+    #|--- Process Systems ---|
+    #|-----------------------|
+    # Deterime whici coord sys specified
+    if fromSys == 'HEQ': fromSys = 'HEEQ'
+    if fromSys in 'CARRINGTON': fromSys = 'CARRINGTON'
+    if toSys == 'HEQ': toSys = 'HEEQ'
+    if toSys in 'CARRINGTON': toSys = 'CARRINGTON'
+    
+    baseFrom = fromSys
+    baseTo   = toSys
+    # Determine base systems
+    if fromSys == 'RTN':
+        if sc   == '-234': frameFrom = 'STAHGRTN'
+        elif sc == '-235': frameFrom = 'STBHGRTN'
+        elif sc == '-21': frameFrom = 'SOHOHGRTN'
+        elif sc == '-144': frameFrom = 'SOLOHGRTN'
+        elif sc == '-96': frameFrom = 'PSPHGRTN'
+        else:
+            print ('Assuming Earth obs')
+            frameFrom = 'GEORTN'
+    else:
+        sys.exit("Hitting uncoded part of convert_sunspyce_coord")
+
+    # Same for to systems
+    if fromSys == 'RTN':
+        if sc   == '-234': frameTo = 'STAHGRTN'
+        elif sc == '-235': frameTo = 'STBHGRTN'
+        elif sc == '-21': frameTo = 'SOHOHGRTN'
+        elif sc == '-144': frameTo = 'SOLOHGRTN'
+        elif sc == '-96': frameTo = 'PSPHGRTN'
+        else:
+            print ('Assuming Earth obs')
+            frameTo = 'GEORTN'
+    else:
+        sys.exit("Hitting uncoded part of convert_sunspyce_coord")
+    
+    if baseFrom == 'RTN':
+        originFrom = sc
+    else:
+        sys.exit("Hitting uncoded part of convert_sunspyce_coord")
+    
+    if baseTo == 'GEI':
+        frameTo = 'J2000'
+        origin_to = 'Earth'
+       
+    # Ignoring origin it seems
+
+    #|---------------------------------|
+    #|--- Get PX matrix and convert ---|
+    #|---------------------------------|
+    # Get transformation matrix
+    xform = spice.pxform(frameFrom, frameTo, et)   
+    coord = np.matmul(xform, coord) # matches IDL w/o the transpose
+    
+    if toSys in ['MAG', 'GSM', 'SM']:
+        sys.exit('Hitting uncoded part of convert_sunspice_coord')
+        
+    #|-----------------------|
+    #|--- Clean up Output ---|
+    #|-----------------------|
+    coord = np.transpose(coord)
+    if len(coord) == 1:
+        coord = coord[0]
+    return coord
+    
 #|-------------------------------|
 #|--- Get the p0 angle of s/c ---|
 #|-------------------------------|
@@ -727,13 +970,14 @@ def load_common_kernels(pathIn):
         naif0012.tls
         heliospheric.tf
         pck00011_n0066.tpc    
-    
+        sdo_body_name.tf
+        
     Input:
         pathIn: path to where these kernels live.
 
     """
     # Load the kernels that most satellites use
-    kerns = ['de421.bsp', 'naif0012.tls', 'heliospheric.tf', 'pck00011_n0066.tpc']    
+    kerns = ['de421.bsp', 'naif0012.tls', 'heliospheric.tf', 'pck00011_n0066.tpc', 'sdo_body_name.tf']    
     
     # Get the loaded kernels to check against so
     # we can avoid reloading
@@ -750,6 +994,43 @@ def load_common_kernels(pathIn):
         if fullName not in loadKerns:
             spice.furnsh(fullName)
             
+#|------------------------------------------|
+#|--- Load STEREO specific spice kernels ---|
+#|------------------------------------------|
+def load_stereo_kernels(pathIn):
+    """
+    Function to load kernels related to STEREO
+    calculations via spice 
+    
+    Input:
+        pathIn: path to where these kernels live.
+
+    """
+    # Get the loaded kernels to check against so
+    # we can avoid reloading
+    num_kernels = spice.ktotal('ALL')
+    loadKerns = []
+    for i in range(num_kernels):
+        filename, kind, source, handle,  = spice.kdata(i, 'ALL')
+        loadKerns.append(filename)
+    loadKerns = np.array(loadKerns)
+    
+    # The one not in subfolder
+    if pathIn+'stereo_rtn.tf' not in loadKerns:
+        spice.furnsh(pathIn+'stereo_rtn.tf')
+    
+    # All the kernel folders
+    stereoFolds = ['sclk/ahead/', 'sclk/behind/', 'epm/ahead/', 'epm/behind/', 'depm/ahead/', 'depm/behind/']
+    
+    # Search through and load anyone in these folders
+    for aFold in stereoFolds:
+        files = os.listdir(pathIn+aFold)
+        for aF in files:
+            fullName = pathIn + aFold +'/' + aF
+            if fullName not in loadKerns:
+                spice.furnsh(fullName)
+
+
 #|---------------------------------------|
 #|--- Load PSP specific spice kernels ---|
 #|---------------------------------------|
@@ -813,3 +1094,4 @@ def load_solo_kernels(pathIn):
             fullName = pathIn + aFold +'/' + aF
             if fullName not in loadKerns:
                 spice.furnsh(fullName)    
+

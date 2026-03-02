@@ -20,6 +20,7 @@ from astropy import wcs
 import sys, os
 from scipy.io import readsav
 from sunspyce import get_sunspyce_roll, get_sunspyce_hpc_point
+from wcs_funs import fitshead2wcs, wcs_get_coord
 
 #|--------------------|
 #|--- Date Globals ---|
@@ -533,8 +534,11 @@ def scc_zelensky_array(im, hdr, outsize, out):
             hdr['dstop1'] = np.min([hdr['dstop1'], s[0]]) # think this equiv of IDL
             hdr['dstop2'] = np.min([hdr['dstop2'], s[1]])
             
-            # Don't think we use xcen/ycen so ignoring this
-                                    
+            wcs = fitshead2wcs(hdr)
+            xycen = wcs_get_coord(wcs, np.array([(hdr['NAXIS1']-1.)/2., (hdr['NAXIS2']-1.)/2.]), doQuick=True).reshape([-1])
+            hdr['xcen'] = xycen[0]
+            hdr['ycen'] = xycen[1]
+            
     return output_img, hdr
     
 #|---------------------|
@@ -1403,7 +1407,7 @@ def scc_getbkgimg(hdr, secchi_bkg ='STEREObackgrounds/', doRot=False, match=Fals
                 
             else:
                 if dday > ndays:
-                    sys.exit('Cannot find appropriate background file')
+                    sys.exit('Cannot find appropriate background file, have you downloaded it?')
                     
     # Skipping more for interp, postd, doubles 
     
@@ -1506,6 +1510,7 @@ def scc_getbkgimg(hdr, secchi_bkg ='STEREObackgrounds/', doRot=False, match=Fals
     
     # Check for rotate correction
     rolldif = hdr['crota'] - bhdr['crota']
+    doRoll = False # need to add this in?
     if (np.abs(rolldif) > 1) and doRoll:
         print ('Havent coded background roll')
         print (Quit)
@@ -2137,7 +2142,7 @@ def euvi_point(hdr, gtFile):
         hdr['xcen'] = hdr['cdelt1'] * (hdr['pc1_1']*ceni + hdr['pc1_2']*cenj)
         hdr['ycen'] = hdr['cdelt2'] * (hdr['pc2_1']*ceni + hdr['pc2_2']*cenj)
     return hdr
-        
+            
 #|------------------------------|
 #|--- Get sunvec in GT Frame ---|
 #|------------------------------|
@@ -2188,9 +2193,13 @@ def scc_gt2sunvec(anytim, sund, gtdata, obs, gtFile, doRad=False):
     #|--- Port of scc_time2gtparms ---|
     #|--------------------------------|
     # yes it's parms not params    
+    if type(gtFile) == type(None):
+        gtFile = 'prepFiles/stereo/secchi_gtdbase.geny'
     gt = readsav(gtFile)
     if obs.lower() == 'a':
         fulldb = gt['p0'].a[0]
+    if obs.lower() == 'b':
+        fulldb = gt['p0'].b[0]
     fulldb = fulldb[np.where(fulldb.flg ==1 )]
     myIdx = np.max(np.where(fulldb.t <= anytim))
     mydb = fulldb[myIdx]

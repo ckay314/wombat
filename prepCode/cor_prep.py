@@ -17,10 +17,11 @@ import numpy as np
 import os
 import sys
 from astropy.io import fits
-from scc_funs import secchi_rectify, fill_from_defhdr, rebinIDL, scc_getbkgimg, scc_sebip
+from scc_funs import secchi_rectify, fill_from_defhdr, rebinIDL, scc_getbkgimg, scc_sebip, scc_gt2sunvec
 from wcs_funs import get_Suncent, fitshead2wcs
 import datetime
 from scipy.interpolate import griddata
+from sunspyce import convert_sunspyce_lonlat
 
 #|-------------------------|
 #|--- Set a few globals ---|
@@ -773,7 +774,6 @@ def cor_prep(im, hdr, prepDir, outSize=None, calibrate_off=False, warp_off=False
             im, hdr = cor1_calibrate(im, hdr, prepDir, outSize=outSize)
         else:
             im, hdr = cor_calibrate(im, hdr, prepDir, outSize=outSize)
-    
     # Not hitting Missing block mask (193-199)
     missing = 0
     
@@ -787,10 +787,10 @@ def cor_prep(im, hdr, prepDir, outSize=None, calibrate_off=False, warp_off=False
         aFile = hdr['att_file']
         gterr = aFile[-3:-2]
         if (gterr != '2') & (gterr != '+'):
-            print ('Havent implemented cor2_point yet')
-            print (Quit)
+            hdr = cor2_point(hdr)
+            #print ('Havent implemented cor2_point yet')
+            #print (Quit)
         im, hdr = cor2_warp(im,hdr)        
-    
     # Skipping rotate for now
     # Skipping color table
     # Skipping updating header
@@ -806,6 +806,219 @@ def cor_prep(im, hdr, prepDir, outSize=None, calibrate_off=False, warp_off=False
     # No date/logo adding
     
     return im, hdr
+
+def cor2_point(hdr):
+    att_file = None
+    if not hdr['RECTIFY']:
+        sys.exit('cor2_point only works with rectified images. Exiting...')
+    
+    # Conjunction dates
+    pcdate0 = '2015-05-19T00:00:00'
+    pcdate1 = '2023-08-12T00:00:00'
+        
+    #|---- STEREO A ----|    
+    if hdr['obsrvtry'] == 'STEREO_A':
+        print ('Hitting uncheck portion')
+        mysc ='sta'
+        crpix = [1022.0, 1020.8]
+        # Correct of over/under scan r1row/col 
+        crpix[0] += 129
+        crpix[1] += 51
+        # HPC Coord Vals of CRPIX
+        crval = [67.4553, -55.5457]
+        # Platescale (arcseconds)
+        cdelt = 14.7
+        # Instrument roll offset degress
+        drot = 0.245
+        date_obs = hdr['date-obs']
+            
+        # Not going spicy, header results are fine
+        spoint = np.zeros(3)
+        spoint[2] = hdr['sc_roll']
+        wcs = fitshead2wcs(hdr, system='a')
+        croll = wcs['roll_angle']
+        att_file = hdr['att_file']
+        dsun = hdr['dsun_obs'] * 1e-3 / 1.4959787e+08
+        
+        # Fold in the Guide Telescope data
+        date0 = '2007-05-01T01:08:11.422'
+        dsun0 = 1.0442248
+        idl_base_date = datetime.datetime(1979, 1, 1, 0, 0, 0) 
+        t0 = datetime.datetime.strptime('2007-05-01T01:08:11.422', "%Y-%m-%dT%H:%M:%S.%f" )
+        anytim0 = (t0-idl_base_date).total_seconds() # end exp + 2 sec
+        t = datetime.datetime.strptime(hdr['date-obs'], "%Y-%m-%dT%H:%M:%S.%f" )
+        anytim = (t-idl_base_date).total_seconds()
+        
+        d0 = scc_gt2sunvec(anytim0, dsun0, [0.,0.], 'a', None)
+        d  = scc_gt2sunvec(anytim, dsun, [0.,0.], 'a', None)
+        sgn = 1
+        if (hdr['date-obs'] >= pcdate0) & (hdr['date-obs'] <= pcdate1):
+            sgn = -1
+        spoint[0] = sgn * (d[1]-d0[1]) / 3600.
+        spoint[1] = sgn * (d[0]-d0[0]) / 3600.
+            
+        point = spoint[:2]        
+        point = convert_sunspyce_lonlat(date_obs, point, 'HPC', 'GEI', spacecraft=mysc, doDegrees=True)
+        cpoint = point
+
+    #|---- STEREO B ----|    
+    elif hdr['obsrvtry'] == 'STEREO_B':
+        mysc = 'stb'
+        crpix = [1020.60, 1033.20]
+        # Correct of over/under scan r1row/col 
+        crpix[0] += 1
+        crpix[1] += 79
+        # HPC Coord Vals of CRPIX
+        crval = [-130.938087, 115.425487]
+        # Platescale (arcseconds)
+        cdelt = 14.7
+        # Instrument roll offset degress
+        drot = -0.20
+        date_obs = hdr['date-obs']
+        if date_obs > '2008-06-18T20:10':
+            drot = -0.30
+            
+        # Not going spicy, header results are fine
+        spoint = np.zeros(3)
+        spoint[2] = hdr['sc_roll']
+        wcs = fitshead2wcs(hdr, system='a')
+        croll = wcs['roll_angle']
+        
+        #croll2 = get_sunspyce_roll(date_obs, 'stb')
+        
+        att_file = hdr['att_file']
+        dsun = hdr['dsun_obs'] * 1e-3 / 1.4959787e+08
+         
+        # Fold in the Guide Telescope data
+        date0 = '2007-05-01T01:08:11.422'
+        dsun0 = 1.0442248
+        idl_base_date = datetime.datetime(1979, 1, 1, 0, 0, 0) 
+        t0 = datetime.datetime.strptime('2007-05-01T01:08:11.422', "%Y-%m-%dT%H:%M:%S.%f" )
+        anytim0 = (t0-idl_base_date).total_seconds() # end exp + 2 sec
+        t = datetime.datetime.strptime(hdr['date-obs'], "%Y-%m-%dT%H:%M:%S.%f" )
+        anytim = (t-idl_base_date).total_seconds()
+        
+        d0 = scc_gt2sunvec(anytim0, dsun0, [0.,0.], 'b', None)
+        d  = scc_gt2sunvec(anytim, dsun, [0.,0.], 'b', None)
+        sgn = 1
+        if (hdr['date-obs'] >= pcdate0) & (hdr['date-obs'] <= pcdate1):
+            sgn = -1
+        spoint[0] = sgn * (d[1]-d0[1]) / 3600.
+        spoint[1] = sgn * (d[0]-d0[0]) / 3600.
+            
+        point = spoint[:2]
+        point = convert_sunspyce_lonlat(date_obs, point, 'HPC', 'GEI', spacecraft=mysc, doDegrees=True)
+        cpoint = point
+                
+    #|---- Unknown Obs ----|    
+    else:
+        sys.exit('Unrecognized observatory in cor2_point, should be STEREO_A or STEREO_B')
+        
+    # Adjust any post conjunction data (line 301)
+    if (hdr['date-obs'] >= pcdate0) & (hdr['date-obs'] <= pcdate1):
+        print ('Hitting unchecked part of cor2_point, should check')
+        crval = - crval
+        if hdr['rectify']:
+            crpix = 2179 - crpix
+            sys.exit('Need to check the crpix line in cor2_point before using blindly')
+            
+    # Set instrument offset keywords
+    hdr['ins_x0'] = crval[0]
+    hdr['ins_y0'] = crval[1]
+    hdr['ins_r0'] = drot
+    
+    # Set SC_ values with GT values before transform
+    hdr['sc_yaw'] = spoint[0]
+    hdr['sc_pitch'] = spoint[1]
+    hdr['sc_yawa'] = cpoint[0]
+    hdr['sc_pitcha'] = cpoint[1]
+    
+    # Take into account the area of the CCD used
+    crpix[0] = crpix[0] - hdr['r1col']
+    crpix[1] = crpix[1] - hdr['r1row']
+    
+    # Correct the place scale and ref pixs for pix summing 
+    summed = 2 ** ( hdr['summed'] -1 )
+    if summed > 1:
+        cdelt = cdelt * summed
+        crpix[0] = (crpix[0] - 0.5) / summed + 0.5
+        crpix[1] = (crpix[1] - 0.5) / summed + 0.5
+
+    # Transform coords based on s/c pointing info
+    dr = np.pi / 180. # deg to rad
+    ddr = dr / 3600. # arcsec to rad
+    
+    # Form transform matrix
+    sy, cy = np.sin(spoint[0] * dr), np.cos(spoint[0] * dr)
+    sp, cp = np.sin(spoint[1] * dr), np.cos(spoint[1] * dr)
+    sr, cr = np.sin(spoint[2] * dr), np.cos(spoint[2] * dr)    
+    mat = [[cp*cy, cp*sy, -sp],  [-cr*sy+sr*sp*cy,  cr*cy+sr*sp*sy, sr*cp], [ sr*sy+cr*sp*cy, -sr*cy+cr*sp*sy, cr*cp]]
+    
+    # Form instrument pointing vector
+    yaw = -crval[0] * ddr
+    pitch = crval[1] * ddr
+    vec = [np.cos(yaw)*np.cos(pitch), np.sin(yaw)*np.cos(pitch), np.sin(pitch)]
+
+    # Transform and recalc the pointing
+    newvec = np.matmul(mat, vec)
+    crval[0] = -np.atan2(newvec[1], newvec[0]) / ddr
+    crval[1] = np.asin(newvec[2]) / ddr
+    
+    # Convert pointing into celestial coords
+    point = [crval[0] / 3600, crval[1] / 3600]
+    point = convert_sunspyce_lonlat(date_obs, point, 'HPC', 'GEI', spacecraft=mysc, doDegrees=True)
+    cpoint = point
+    
+    hdr['crpix1']  = crpix[0]
+    hdr['crpix1a'] = hdr['crpix1']
+    hdr['crpix2']  = crpix[1]
+    hdr['crpix2a'] = hdr['crpix2']
+    
+    hdr['cdelt1']  = cdelt
+    hdr['cdelt2']  = cdelt
+    ccdelt = cdelt / 3600.0         #Convert arcseconds to degrees
+    hdr['cdelt1a'] = -ccdelt           #Negative for celestial coordinates
+    hdr['cdelt2a'] =  ccdelt
+
+    hdr['crval1']  = crval[0]
+    hdr['crval2']  = crval[1]
+    hdr['crval1a'] = cpoint[0]
+    hdr['crval2a'] = cpoint[1]
+    
+    # Add 90/270 to rot angle for unrectified images
+    gamma = spoint[2] + drot
+    if not hdr['rectify'] and (hdr['obsrvtry'] == 'STEREO_A'):
+        gamma += 270
+    if not hdr['rectify'] and (hdr['obsrvtry'] == 'STEREO_B'):
+        gamma += 90
+        
+    # Put the correct rot ange/mats in hdr
+    hdr['crota'] = gamma
+    gamma = gamma * dr              #Convert degrees to radians
+    cgamma = np.cos(gamma)
+    sgamma = np.sin(gamma)
+    hdr['pc1_1'] =  cgamma
+    hdr['pc1_2'] = -sgamma
+    hdr['pc2_1'] =  sgamma
+    hdr['pc2_2'] =  cgamma   
+    
+    # Calculate xcen, ycen
+    di = (hdr['naxis1'] + 1.)/2. - crpix[0]
+    dj = (hdr['naxis2'] + 1.)/2. - crpix[1]
+    hdr['xcen'] = crval[0] + cdelt*(di*cgamma - dj*sgamma)
+    hdr['ycen'] = crval[1] + cdelt*(di*sgamma + dj*cgamma)
+    
+    # Same for celestial coordinates
+    gamma = (croll - drot) * dr
+    cgamma = np.cos(gamma)
+    sgamma = np.sin(gamma)
+    hdr['pc1_1a'] =  cgamma
+    hdr['pc1_2a'] =  sgamma
+    hdr['pc2_1a'] = -sgamma
+    hdr['pc2_2a'] =  cgamma
+    
+    # Not updating att file or history for now
+    return hdr
            
 #|-------------------------|
 #|--- Process Polarized ---|

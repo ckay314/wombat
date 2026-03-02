@@ -160,7 +160,7 @@ def fitshead2wcs(hdr,system=''):
     # skipping cname and non compliant strings
     
     if variation == 'PC':
-        cdelt1 = hdr['CDELT1'+system]
+        cdelt1 = hdr['CDELT1'+system] 
         cdelt2 = hdr['CDELT2'+system]
         pc = np.zeros([n_axis,n_axis])
         for i in range(n_axis):
@@ -244,11 +244,106 @@ def fitshead2wcs(hdr,system=''):
     wcs['proj_names'] = np.array(proj_names)
     wcs['proj_values'] = np.array(proj_values)
     wcs['roll_angle'] = hdr['SC_ROLL'+system]
+    if variation in ['PC', 'CD']:
+        roll_angle, cdelt = wcs_decomp_angle(wcs)
+        wcs['roll_angle'] = roll_angle
+        wcs['cdelt'] = cdelt
     # wc['simple']
     # wcs['time']
     # wcs['position']
 
     return wcs
+
+#|-----------------------------|
+#|--- Get decomp roll angle ---|
+#|-----------------------------|
+def wcs_decomp_angle(wcs):
+    prec = 1e-5
+    xprec = prec
+    
+    ix = wcs['ix']
+    iy = wcs['iy']
+    naxis = wcs['naxis']
+    n_axis = len(naxis) # hate it but following idl names
+    variation = wcs['variation']
+    
+    if variation == 'CROTA':
+        print('hitting unchecked part of wcs_decomp_angle')
+        roll_angle = wcs['roll_angle']
+        cdelt = wcs['cdelt'][ix,iy]
+        found = True
+        return roll_angle, cdelt
+    
+    elif variation == 'PC':
+        cdelt = wcs['cdelt']
+        pc = wcs['pc']
+        # |--- Check for sign cross terms involv non-spatial dim ---|
+        for i in range(n_axis -1):
+            for j in range(n_axis - 1):
+                if (((i != ix) and (i !=iy)) ^ ((j !=ix) and (j !=iy))) and (i!=j) and (np.abs(pc[i,j])*naxis[i] >= xprec):
+                    found = False
+                    print ('Exiting wcs_decomp_angle because of significant cross terms involving non-spatial dimensions')
+                    return None, None
+        # Transposed from IDL so use indexing matching IDL below
+        cd = np.transpose(np.array([[cdelt[ix]*pc[ix,ix], cdelt[iy]*pc[iy,ix]], [cdelt[ix]*pc[ix,iy], cdelt[iy]*pc[iy,iy]]]))
+    elif variation == 'CD':
+        print('hitting unchecked part of wcs_decomp_angle')        
+        cd = wcs['cd']
+        #|--- Check for sign cross terms involv non-spatial dim ---|
+        for i in range(n_axis -1):
+            for j in range(n_axis - 1):
+                if (((i != ix) and (i != iy)) ^ (j !=ix) and (j != iy)) and (i !=j) and (np.abs(cd[i,j])*naxis[j] >  np.abs(xprec*cd[i,i])) and  (np.abs(cd[i,j])*naxis[i] >  np.abs(xprec*cd[j,j])):
+                    found = False
+                    return None, None
+        # Transposed from IDL so use indexing matching IDL below
+        cd = np.transpose(np.array([[cd[ix,ix],cd[iy,ix]], [cd[ix,iy],cd[iy,iy]]]))
+    
+    # Process cd to estimate the rotation angle
+    # Use matching indexing to IDL here bc cd transposed
+    if cd[1,0] > 0:
+        rho_a = np.arctan2(cd[1,0], cd[0,0])
+    elif cd[1,0] < 0:
+        rho_a = np.arctan2(-cd[1,0], -cd[0,0])
+    else:
+        rho_a = 0
+    if cd[0,1] > 0:
+        rho_b = np.arctan2(cd[0,1],-cd[1,1])
+    elif cd[0,1] < 0:
+        rho_b = np.arctan2(-cd[0,1],cd[1,1])
+    else:
+        rho_b = 0
+
+    # Check angles and flip if needed
+    if (np.abs(rho_a) <= prec) and (np.abs(rho_b-np.pi) <= prec): rho_b = rho_b - np.pi
+    if (np.abs(rho_a - np.pi) <= prec) and (np.abs(rho_b) <= prec): rho_a = rho_a - np.pi
+    
+    # Derive decomposed roll_angle and cdelt
+    if np.abs(rho_a - rho_b) <= prec:
+        roll_angle = (rho_a + rho_b) / 2
+        if variation == 'CD':
+            print ('hitting unchecked part of wcs_decomp_angle')
+            cdelt = [wcs['cd'][0,0], wcs['cd'][1,1]]
+        if cd[0,0] != 0:
+            cdelt[ix] = cd[0,0] / np.cos(roll_angle) 
+        else:
+            cdelt[ix] = cd[1,0] / np.sin(roll_angle)
+        if cd[1,1] != 0:
+            cdelt[iy] = cd[1,1] / np.cos(roll_angle) 
+        else:
+            cdelt[iy] = -cd[0,1] / np.sin(roll_angle)
+        roll_angle = roll_angle * 180 / np.pi
+        found = True
+    else:
+        found = False
+
+    # Correction for PC variation
+    if found and (variation == 'PC'):
+        test = [cdelt[0] * wcs['cdelt'][0], cdelt[1] * wcs['cdelt'][1]]
+        if (test[ix] < 0) or (test[iy] < 0):
+            roll_angle = roll_angle - np.sign(roll_angle)*180
+            cdelt = - cdelt
+
+    return roll_angle, cdelt
                        
 #|--------------------------------|
 #|--- Get Sun center in pixels ---|
@@ -347,8 +442,8 @@ def wcs_proj_tan(my_wcs, coord, doQuick=False, force_proj=False):
             coord[1,:] = (np.sqrt(x**2 + y**2) - halfpi) / cy
             return coord
         else:
-            coord[0,:] = coord[0,:] #+ my_wcs['crval'][0]         
-            coord[1,:] = coord[1,:] #+ my_wcs['crval'][1]
+            coord[0,:] = coord[0,:] + my_wcs['crval'][0]  # the crval parts were commented       
+            coord[1,:] = coord[1,:] + my_wcs['crval'][1]  # out at some point?
             return coord
         
     #|--------------------------|
@@ -1027,7 +1122,7 @@ def wcs_inv_proj_zpn(my_wcs, coord):
 #|----------------------------|
 #|--- Get coord of a pixel ---|
 #|----------------------------|
-def wcs_get_coord(my_wcs, pixels=None):
+def wcs_get_coord(my_wcs, pixels=None, doQuick=False):
     """
     Function to get wcs coordinates from pixel values. It can be
     passed a list of specific pixel values or will calculated all
@@ -1039,6 +1134,9 @@ def wcs_get_coord(my_wcs, pixels=None):
     Optional Input:
         pixels: a list of specific pixel values to use in the calc
                 (defaults to None and does full grid calc)
+    
+        doQuick: flag to do quick projections (when possible)
+                 defaults to False
 
     Output:
         coord: the coordinates of each point in the grid (or for set pixels)
@@ -1071,7 +1169,7 @@ def wcs_get_coord(my_wcs, pixels=None):
         coord = np.empty([n_axis, num_elements])
         coord[0,:] = index  % naxis1
         coord[1,:] = (index / naxis1 % naxis2).astype(int)
-
+    
     # Skipping distortion
     
     #|-------------------------------|
@@ -1081,7 +1179,7 @@ def wcs_get_coord(my_wcs, pixels=None):
     crpix = my_wcs['crpix']
     coord[0,:] = coord[0,:] - (crpix[0] -1)
     coord[1,:] = coord[1,:] - (crpix[1] -1)
-        
+
     # Skipping distortion/associate/pixel-list (218-234)
     
     # Calcualte immedate (relative coordinates)
@@ -1103,13 +1201,12 @@ def wcs_get_coord(my_wcs, pixels=None):
             print (Quit)
     
     # Assume we dont hit any of the weird cases of proj and crval already dealt with (319-350)
-    
     #|------------------------|
     #|--- Apply projection ---|
     #|------------------------|
     proj = my_wcs['projection']
     if proj == 'TAN':
-        coord = wcs_proj_tan(my_wcs, coord)
+        coord = wcs_proj_tan(my_wcs, coord, doQuick=doQuick)
     elif proj == 'AZP':
         coord = wcs_proj_azp(my_wcs, coord)
     elif proj == 'ZPN':
