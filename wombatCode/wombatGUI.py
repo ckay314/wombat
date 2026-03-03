@@ -2556,7 +2556,7 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, labelPW=True, reloadD
                       since we default to not taking a difference but this makes it easier
                       to run consistent code across all instruments
     Optional Inputs:
-        nWFs:         number of wireframes. Currently set an upper limit of 10 to keep
+        nWFs:         number of wireframes. Currently set an upper limit of 5 to keep
                       GUI from becoming overloaded
                       defaults to 1
     
@@ -2658,55 +2658,6 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, labelPW=True, reloadD
     # Load up noneType WFs
     wfs = [wf.wireframe(None) for i in range(nwfs)]
     
-    #|-----------------------------| 
-    #|---- Setup observations -----|
-    #|-----------------------------|    
-    
-    #sclIms = []    
-    #massIms = []   
-    #satStuff = []
-    #|---- Loop through insts ----|
-    '''for i in range(nSats):
-        satScls = []
-        someStuff = []
-        someMims = []
-        tNum = len(obsFiles[i][0])
-        # If anyone has more than 1 then multitime mode
-        if tNum > 1:
-            multiTime = True
-
-        #|---- Process each time step header ----|    
-        for j in range(tNum): 
-            mySatStuff = getSatStuff(obsFiles[i][0][j])
-            if ('rsun' not in obsFiles[i][2][j]):
-                 if 'RSUN_ARC' in obsFiles[i][2][j]:
-                     obsFiles[i][2][j]['rsun'] =  obsFiles[i][2][j]['RSUN_ARC']
-                 else:
-                    calcRsun = mySatStuff['ONERSUN']*mySatStuff['SCALE']
-                    if mySatStuff['OBSTYPE'] == 'HI':
-                        calcRsun *= 3600
-                    obsFiles[i][2][j]['rsun'] = calcRsun
-                 
-            someStuff.append(mySatStuff)
-            
-            if mySatStuff['OBSTYPE'] != 'EUV':
-                #|---- Make mass images ----|
-                # Use base difference not running
-                massIm, hdrM = wM.TB2mass(obsFiles[i][1][j].data, obsFiles[i][2][j])
-                #|--- Put mask on the mass im ---|
-                if 'MASK' in mySatStuff:
-                    massIm = (1-mySatStuff['MASK']) * massIm
-            else:
-                massIm = np.zeros(obsFiles[i][0][j].data.shape)
-            someMims.append(np.transpose(massIm))   
-
-        #|---- Get scaled versions of the data ----|     
-        mySclIms, someStuffx2 = makeNiceMMs(obsFiles[i], someStuff) 
-        
-        #|---- Stuff in array ----|                 
-        sclIms.append(mySclIms)
-        satStuff.append(someStuffx2)
-        massIms.append(someMims)'''
     
     #|---------------------------------| 
     #|---- Setup time slider vals -----|

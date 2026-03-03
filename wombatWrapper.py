@@ -601,6 +601,9 @@ def runWombat(args):
             sys.exit('Last argument not understood, currently available option is only ovw to turn on overview window')
         else:
             overviewPlot = True
+    
+    if nWFs > 5:
+        sys.exit('Max limit of 5 wireframes')
         
         
     releaseTheWombat(bkgData, reloadDict=reloadDict, overviewPlot=overviewPlot, nWFs=nWFs)   

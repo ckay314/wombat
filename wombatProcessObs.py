@@ -1294,7 +1294,42 @@ def thePickler(proIms, fnames, pickleJar='wbPickles/', name='temp', otherDiff=No
         
         Actions:
             Saves a pickle in the pickleJar folder as WBGUI_temp.pkl
+            
+            The pickle is for a dictionary with the below entries. A tag with [inst] means
+            that that entry is itself an dictionary with one entries for each instrument tag
+            and the description corresponds to the structure for the individual inst entry
+                WBinfo: a dictionary for the full set up with tags
     
+                        insts: a list of all available instruments (tags for other entries)
+    
+                        origFiles[inst]: a list of the fits files used for that inst
+    
+                        isEUV[inst]: whether or not an instrument is EUV type (i.e. don't mass)
+    
+                proIms0[inst]: the processed based image (array) and header
+                                [arr0, hdr0]
+    
+                proIms[inst]: the full time series of processed images (array) and header. 
+                              Processed meaning standard total brightness calibration but
+                              no differencing
+                              [[arr0, arr1, arr2, ...], [hdr0, hdr1, hdr2,...]]
+    
+                proImMaps[inst]: the same as proIms but with image maps instead of arrays
+                                 [[map0, map1, map2, ...], [hdr0, hdr1, hdr2,...]]
+    
+                massIms[inst]: the time series of mass images (as arrays)
+                               [massArr1, massArr2, ...]
+    
+                scaledIms[inst]: the scaled images that will be shown in the GUI, which are 
+                                 either just nicely scaled versions of proIms or may have 
+                                 additional processing applied if flagged to do such. This is
+                                 of the form [running_diff, base_diff] where each difference
+                                 has [[lin1, log1, sqrt1], [lin2, log2, sqrt2], ...]
+    
+                satStuff[inst]:  a file structure of the same format as scaled Ims ([rd, bd])
+                                 but with satStuff dictionaries that are header-like structures
+                                 with additional information needed by the GUI and correspond
+                                 to each of the arrays in scaledIms
         
     """
     
@@ -1810,6 +1845,7 @@ def scaleIt(obsIn, satStuffs):
                    methods (linear, logarithmic, square root). This data is in 
                    array form, not maps.
                    e.g. [[lin1, log1, sqrt1], [lin2, log2, sqrt2], ...]
+                   these are then nested into [BD, RD]
     
         satStuffs: the header like structure created by getSatStuff 
                    but with a few additional entries
