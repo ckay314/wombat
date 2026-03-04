@@ -1744,13 +1744,20 @@ class OverviewWindow(QWidget):
                 self.satStrings.append(myName)
                 self.satxys.append([xsat, ysat])
         
-        #|---- Set up arrow for the WF lons ----|
+        #|---- Set up arrows/points for the WF in ovw ----|
         self.arrows = []
+        self.wfScats = []
         for i in range(nwfs):
             arrow = pg.ArrowItem(angle=-45, tipAngle=0, headLen=0, tailLen=0, tailWidth=0, pen={'color': 'w', 'width': 2}, brush='b')
             arrow.setPos(0, 0)
             self.pWindow.addItem(arrow)
             self.arrows.append(arrow)
+            
+            wfScat = self.pWindow.plot([0], [0],pen=pg.mkPen('w', width=1))
+            self.wfScats.append(wfScat)
+            self.pWindow.addItem(wfScat)
+            
+            
         self.setLayout(layoutOV)
     
     def updateArrow(self, i, color='w'):
@@ -1767,21 +1774,37 @@ class OverviewWindow(QWidget):
         #|---- Get the WF lon ----|
         mywf = wfs[i]
         lon  = mywf.params[1]
+        h    = mywf.params[0]
+        if h < 10:
+            #|---- Get arrow head loc ----|
+            rlon = lon * np.pi /180.
+            hL, tL = 0.1, 0.3 # head length, tail length
+            aL = hL+tL
+            xh = aL * np.sin(rlon)
+            yh = -aL * np.cos(rlon)
+            ang = -np.arctan2(yh, xh) * 180 / np.pi
         
-        #|---- Get arrow head loc ----|
-        rlon = lon * np.pi /180.
-        hL, tL = 0.1, 0.3 # head length, tail length
-        aL = hL+tL
-        xh = aL * np.sin(rlon)
-        yh = -aL * np.cos(rlon)
-        ang = -np.arctan2(yh, xh) * 180 / np.pi
+            #|---- Update the arrow ----|
+            self.arrows[i].setStyle(angle=lon-270, headWidth=0.05, headLen=hL, tailLen=tL, tailWidth=0.03, pxMode=False,  pen={'color': color, 'width': 2}, brush=color)
+            tail_len = self.arrows[i].opts['tailLen']
+            self.arrows[i].setPos(xh, yh)
+        else:
+            xs = -wfs[i].points[:,0] / 215.
+            ys = wfs[i].points[:,1] / 215.
+            self.wfScats[i].setData(ys, xs)
         
-        #|---- Update the arrow ----|
-        self.arrows[i].setStyle(angle=lon-270, headWidth=0.05, headLen=hL, tailLen=tL, tailWidth=0.03, pxMode=False,  pen={'color': color, 'width': 2}, brush=color)
-        tail_len = self.arrows[i].opts['tailLen']
-        self.arrows[i].setPos(xh, yh)
     
     def updateFoV(self):
+        """
+        Function for updating the fields of view. It just pulls
+        the values for the new time index from the satstuff 
+        dictionary and updates the curves in the fill between object
+        
+        Inputs:
+            None
+        
+     
+        """
         for i in range(nSats):
             #|---- Get a proj sat loc ----|
             myPos = self.satStuff[i][0][pws[i].tidx]['POS']
