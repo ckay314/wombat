@@ -82,6 +82,7 @@ from astropy.coordinates import SkyCoord
 import astropy.units as u
 from astropy.time import TimeDelta
 from sunpy.time import parse_time
+from sunpy.coordinates import HeliographicStonyhurst
 import sunpy
 import pickle
 
@@ -1697,8 +1698,8 @@ def getSatStuff(imMap):
     latd = obsLat * np.pi / 180.
     lond = obsLon * np.pi / 180.
     xyz = [np.cos(latd)*np.cos(lond), np.cos(latd)*np.sin(lond), np.sin(latd)]
-    satDict['POINTING'] = -np.array(xyz)
-    pointLon = np.arctan2(satDict['POINTING'][1], satDict['POINTING'][0]) * 180 / np.pi
+    satDict['POINT2SUN'] = -np.array(xyz)
+    pointLon = np.arctan2(satDict['POINT2SUN'][1], satDict['POINT2SUN'][0]) * 180 / np.pi
     PoSlon1 = (pointLon - 90) % 360
     PoSlon2 = (pointLon + 90) % 360
     satDict['POSLON'] = [PoSlon1, PoSlon2]
@@ -1720,12 +1721,50 @@ def getSatStuff(imMap):
     # Reference pixel
     cx,cy = int(myhdr['crpix1'])-1, int(myhdr['crpix2'])-1
     satDict['CRPIX'] = [cx, cy]
+       
     
     # |-----------------|
     # |---- Get WCS ----|    
     # |-----------------|
     myWCS = fitshead2wcs(myhdr)
     satDict['WCS'] = myWCS
+    
+    # |----------------------|
+    # |---- Get POINTING ----|    
+    # |----------------------|
+    coordM = imMap.pixel_to_world(imMap.data.shape[1]/2 * u.pix, imMap.data.shape[0]/2 * u.pix)
+    alpha = coordM.Tx.rad
+    coord0 = imMap.pixel_to_world(0 * u.pix, 0 * u.pix)
+    coord1 = imMap.pixel_to_world(0 * u.pix, imMap.data.shape[0] * u.pix)
+    coord2 = imMap.pixel_to_world(imMap.data.shape[1] * u.pix, 0 * u.pix)
+    coord3 = imMap.pixel_to_world(imMap.data.shape[1] * u.pix, imMap.data.shape[0] * u.pix)
+    angs = [coord0.Tx.rad, coord1.Tx.rad, coord2.Tx.rad, coord3.Tx.rad]
+    wid = np.abs(0.5*(np.max(angs) - np.min(angs)) )  
+    lon = (satDict['POS'][1] % 360) * np.pi / 180
+    rSat = satDict['POS'][2] / 1.5e11
+    FoVlen = 1.5
+    
+    pt1 = np.array([-np.cos(wid), -np.sin(wid)]) *FoVlen
+    pt2 = np.array([-np.cos(wid),  np.sin(wid)]) *FoVlen
+
+    # Rotate by alpha
+    pt1a = [np.cos(-alpha)*pt1[0] + -np.sin(-alpha)*pt1[1], np.sin(-alpha)*pt1[0] + np.cos(-alpha)*pt1[1]]
+    pt2a = [np.cos(-alpha)*pt2[0] + -np.sin(-alpha)*pt2[1], np.sin(-alpha)*pt2[0] + np.cos(-alpha)*pt2[1]]
+
+    # Move to sat
+    pt1b = [pt1a[0] + rSat, pt1a[1]]
+    pt2b = [pt2a[0] + rSat, pt2a[1]]
+
+    # Rotate to lon
+    pt1c =np.array([np.cos(lon)*pt1b[0] + -np.sin(lon)*pt1b[1], np.sin(lon)*pt1b[0] + np.cos(lon)*pt1b[1]])
+    pt2c =np.array([np.cos(lon)*pt2b[0] + -np.sin(lon)*pt2b[1], np.sin(lon)*pt2b[0] + np.cos(lon)*pt2b[1]])
+        
+    ptmid = [0.5*(pt1c[0] + pt2c[0]), 0.5*(pt1c[1] + pt2c[1])]
+    
+    pointing = [ptmid, pt1c, pt2c]
+    
+    satDict['POINTING'] = pointing
+    
     
     # |--------------------|
     # |---- Get SUNPIX ----|    

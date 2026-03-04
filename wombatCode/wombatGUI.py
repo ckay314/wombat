@@ -720,6 +720,8 @@ class ParamWindow(QMainWindow):
             aPW.tidx = aPW.st2obs[tval-2]
             aPW.plotBackground()    
         self.Tlabel.setText('Time selection: '+self.tlabs[tval-2])
+        if ovw:
+            ovw.updateFoV()
         
     def EBclicked(self):
         """
@@ -1649,6 +1651,7 @@ class OverviewWindow(QWidget):
             self.setGeometry( int(0.8*screenXY[0]),screenXY[1] , 400, 400) 
         self.setFixedSize(400, 400) 
         self.setWindowTitle('Polar View')
+        self.satStuff = satStuff
         
         #|---- Make a layout ----|
         layoutOV =  QGridLayout()
@@ -1674,9 +1677,12 @@ class OverviewWindow(QWidget):
         
         #|---- Set up scatters for sats ----|
         self.scatters = []
+        self.scattersPt = []
         self.satLabs = []
         self.satStrings = []
         self.satxys = []
+        self.curves = []
+        self.fbis = []
         L1counter = 0
         for i in range(nSats):
             #|---- Get a proj sat loc ----|
@@ -1693,10 +1699,23 @@ class OverviewWindow(QWidget):
             pos = []
             pos.append({'pos': [x,y]})
             self.scatters[i].setData(pos)
-            
-            #|---- Add to window ----|
             self.pWindow.addItem(aScat)
             
+            #|---- Add field of views ----|
+            myPoint = satStuff[i][0][pws[i].tidx]['POINTING'][1]
+            xPt = myPoint[1] 
+            yPt = -myPoint[0]
+            curve1 = self.pWindow.plot([x, xPt], [y, yPt],pen=pg.mkPen('w', width=1))
+            myPoint = satStuff[i][0][pws[i].tidx]['POINTING'][2]
+            xPt = myPoint[1] 
+            yPt = -myPoint[0]
+            curve2 = self.pWindow.plot([x, xPt], [y, yPt],pen=pg.mkPen('w', width=1))
+            
+            fbi = pg.FillBetweenItem(curve1, curve2, brush=(100, 100, 255, 100)) 
+            self.curves.append([curve1, curve2])
+            self.fbis.append(fbi)
+            self.pWindow.addItem(fbi)
+                       
             #|---- Label each sat ----|
             # Labeling sats not insts to avoid overload
             myName = satStuff[i][0][0]['SHORTNAME']
@@ -1761,6 +1780,27 @@ class OverviewWindow(QWidget):
         self.arrows[i].setStyle(angle=lon-270, headWidth=0.05, headLen=hL, tailLen=tL, tailWidth=0.03, pxMode=False,  pen={'color': color, 'width': 2}, brush=color)
         tail_len = self.arrows[i].opts['tailLen']
         self.arrows[i].setPos(xh, yh)
+    
+    def updateFoV(self):
+        for i in range(nSats):
+            #|---- Get a proj sat loc ----|
+            myPos = self.satStuff[i][0][pws[i].tidx]['POS']
+            myName = self.satStuff[i][0][0]['OBS']
+            myR = myPos[2] / 1.496e+11 
+            myLon = myPos[1] * np.pi / 180.
+            y = - myR * np.cos(myLon)
+            x = myR * np.sin(myLon)
+            
+            myPoint = self.satStuff[i][0][pws[i].tidx]['POINTING'][1]
+            xPt = myPoint[1] 
+            yPt = -myPoint[0]
+            self.curves[i][0].setData([x, xPt], [y, yPt])
+            myPoint = self.satStuff[i][0][pws[i].tidx]['POINTING'][2]
+            xPt = myPoint[1] 
+            yPt = -myPoint[0]
+            self.curves[i][1].setData([x, xPt], [y, yPt])
+            
+        
         
     def keyPressEvent(self, event):
         """
@@ -2132,8 +2172,8 @@ def getSatStuff(imMap):
     latd = obsLat * np.pi / 180.
     lond = obsLon * np.pi / 180.
     xyz = [np.cos(latd)*np.cos(lond), np.cos(latd)*np.sin(lond), np.sin(latd)]
-    satDict['POINTING'] = -np.array(xyz)
-    pointLon = np.arctan2(satDict['POINTING'][1], satDict['POINTING'][0]) * 180 / np.pi
+    satDict['POINT2SUN'] = -np.array(xyz)
+    pointLon = np.arctan2(satDict['POINT2SUN'][1], satDict['POINT2SUN'][0]) * 180 / np.pi
     PoSlon1 = (pointLon - 90) % 360
     PoSlon2 = (pointLon + 90) % 360
     satDict['POSLON'] = [PoSlon1, PoSlon2]
