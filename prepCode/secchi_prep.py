@@ -162,8 +162,6 @@ def secchi_prep(filesIn, outSize=None, silent=False, polarizeOn=False, prepDir=N
         #im = SCC_PUTIN_ARRAY(im,hdr,outout,_extra=ex)
         im, hdr = scc_zelensky_array(im, hdr, outout, out)
 
-                    
-                
         # |------------------------------------------------------|
         # |----------------- Begin Calibration ------------------|
         # |------------------------------------------------------|
@@ -214,7 +212,7 @@ def secchi_prep(filesIn, outSize=None, silent=False, polarizeOn=False, prepDir=N
         im, hdr = cor_polarize(seq, seq_hdr)
         images_out = [im]
         headers_out = [hdr]
-        
+    
     return images_out, headers_out
                 
   

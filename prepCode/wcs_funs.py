@@ -246,9 +246,9 @@ def fitshead2wcs(hdr,system=''):
     wcs['roll_angle'] = hdr['SC_ROLL'+system]
     if variation in ['PC', 'CD']:
         roll_angle, cdelt = wcs_decomp_angle(wcs)
-        if roll_angle:
+        if type(roll_angle) != type(None):
             wcs['roll_angle'] = roll_angle
-        if cdelt:
+        if type(cdelt) != type(None):
             wcs['cdelt'] = cdelt
     # wc['simple']
     # wcs['time']
@@ -262,7 +262,6 @@ def fitshead2wcs(hdr,system=''):
 def wcs_decomp_angle(wcs):
     prec = 1e-5
     xprec = prec
-    
     ix = wcs['ix']
     iy = wcs['iy']
     naxis = wcs['naxis']
@@ -277,7 +276,8 @@ def wcs_decomp_angle(wcs):
         return roll_angle, cdelt
     
     elif variation == 'PC':
-        cdelt = wcs['cdelt']
+        cdelt = np.array([wcs['cdelt'][0], wcs['cdelt'][0]]) 
+        #cdelt = wcs['cdelt']
         pc = wcs['pc']
         # |--- Check for sign cross terms involv non-spatial dim ---|
         for i in range(n_axis -1):
@@ -314,7 +314,6 @@ def wcs_decomp_angle(wcs):
         rho_b = np.arctan2(-cd[0,1],cd[1,1])
     else:
         rho_b = 0
-
     # Check angles and flip if needed
     if (np.abs(rho_a) <= prec) and (np.abs(rho_b-np.pi) <= prec): rho_b = rho_b - np.pi
     if (np.abs(rho_a - np.pi) <= prec) and (np.abs(rho_b) <= prec): rho_a = rho_a - np.pi
@@ -337,7 +336,6 @@ def wcs_decomp_angle(wcs):
         found = True
     else:
         found = False
-
     # Correction for PC variation
     if found and (variation == 'PC'):
         test = [cdelt[0] * wcs['cdelt'][0], cdelt[1] * wcs['cdelt'][1]]
@@ -1229,7 +1227,7 @@ def wcs_get_coord(my_wcs, pixels=None, doQuick=False):
         coord.reshape(pixels.shape)
     else:
         coord = coord.reshape([2, naxis2, naxis1])
-
+        
     return coord    
     
     
