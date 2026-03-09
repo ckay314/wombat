@@ -1705,13 +1705,13 @@ class OverviewWindow(QWidget):
             myPoint = satStuff[i][0][pws[i].tidx]['POINTING'][1]
             xPt = myPoint[1] 
             yPt = -myPoint[0]
-            curve1 = self.pWindow.plot([x, xPt], [y, yPt],pen=pg.mkPen('w', width=1))
+            curve1 = self.pWindow.plot([x, xPt], [y, yPt],pen=pg.mkPen('w', width=0.5))
             myPoint = satStuff[i][0][pws[i].tidx]['POINTING'][2]
             xPt = myPoint[1] 
             yPt = -myPoint[0]
-            curve2 = self.pWindow.plot([x, xPt], [y, yPt],pen=pg.mkPen('w', width=1))
+            curve2 = self.pWindow.plot([x, xPt], [y, yPt],pen=pg.mkPen('w', width=0.5))
             
-            fbi = pg.FillBetweenItem(curve1, curve2, brush=(100, 100, 255, 100)) 
+            fbi = pg.FillBetweenItem(curve1, curve2, brush=(100, 100, 255, 75)) 
             self.curves.append([curve1, curve2])
             self.fbis.append(fbi)
             self.pWindow.addItem(fbi)
@@ -1755,7 +1755,7 @@ class OverviewWindow(QWidget):
             
             wfScat = self.pWindow.plot([0], [0],pen=pg.mkPen('w', width=1))
             self.wfScats.append(wfScat)
-            self.pWindow.addItem(wfScat)
+            
             
             
         self.setLayout(layoutOV)
@@ -1792,7 +1792,8 @@ class OverviewWindow(QWidget):
             xs = -wfs[i].points[:,0] / 215.
             ys = wfs[i].points[:,1] / 215.
             self.wfScats[i].setData(ys, xs)
-        
+            new_pen = pg.mkPen(color=color, width=1)
+            self.wfScats[i].setPen(new_pen)
     
     def updateFoV(self):
         """
