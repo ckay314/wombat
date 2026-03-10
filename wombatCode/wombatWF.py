@@ -107,7 +107,6 @@ pi    = np.pi
 npDict = {'GCS': 6, 'Torus': 8, 'Sphere':4, 'Half Sphere':4, 'Ellipse':7, 'Half Ellipse':7, 'Slab':9, 'Tube':9}
 
 
-
 #|-------------------------------|
 #|---- Geometry helper funcs ----|
 #|-------------------------------|

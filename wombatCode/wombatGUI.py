@@ -1666,9 +1666,9 @@ class OverviewWindow(QWidget):
         twopi = np.linspace(0, 2.01*np.pi, 200)
         x_data = np.cos(twopi)
         y_data = np.sin(twopi)
-        self.pWindow.plot(x_data, y_data, pen=pg.mkPen('w', width=3))
-        self.pWindow.plot([0], [0], symbol='o', symbolSize=20, symbolBrush=pg.mkBrush(color='y'))
-        self.pWindow.plot([0], [-1], symbol='o', symbolSize=15, symbolBrush=pg.mkBrush(color='blue'))
+        self.pWindow.plot(x_data, y_data, pen=pg.mkPen('w', width=1))
+        self.pWindow.plot([0], [0], symbol='o', symbolSize=10, symbolBrush=pg.mkBrush(color='y'))
+        self.pWindow.plot([0], [-1], symbol='o', symbolSize=10, symbolBrush=pg.mkBrush(color='blue'))
         
         #|---- Hide the axes ----|
         self.pWindow.hideAxis('bottom')
@@ -1753,9 +1753,9 @@ class OverviewWindow(QWidget):
             self.pWindow.addItem(arrow)
             self.arrows.append(arrow)
             
-            wfScat = self.pWindow.plot([0], [0],pen=pg.mkPen('w', width=1))
+            wfScat = pg.ScatterPlotItem(pen=None, brush=pg.mkBrush(color='g'),symbol='o', size=2)
             self.wfScats.append(wfScat)
-            
+            self.pWindow.addItem(wfScat)
             
             
         self.setLayout(layoutOV)
@@ -1788,12 +1788,11 @@ class OverviewWindow(QWidget):
             self.arrows[i].setStyle(angle=lon-270, headWidth=0.05, headLen=hL, tailLen=tL, tailWidth=0.03, pxMode=False,  pen={'color': color, 'width': 2}, brush=color)
             tail_len = self.arrows[i].opts['tailLen']
             self.arrows[i].setPos(xh, yh)
-        else:
-            xs = -wfs[i].points[:,0] / 215.
-            ys = wfs[i].points[:,1] / 215.
+        else:            
+            xs = -wfs[i].points[::2,0] / 215.
+            ys = wfs[i].points[::2,1] / 215.
             self.wfScats[i].setData(ys, xs)
-            new_pen = pg.mkPen(color=color, width=1)
-            self.wfScats[i].setPen(new_pen)
+            self.wfScats[i].setBrush(color)
     
     def updateFoV(self):
         """
@@ -1814,6 +1813,9 @@ class OverviewWindow(QWidget):
             myLon = myPos[1] * np.pi / 180.
             y = - myR * np.cos(myLon)
             x = myR * np.sin(myLon)
+            
+            pos = [{'pos': [x,y]}]
+            self.scatters[i].setData(pos)
             
             myPoint = self.satStuff[i][0][pws[i].tidx]['POINTING'][1]
             xPt = myPoint[1] 

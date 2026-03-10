@@ -82,7 +82,7 @@ from astropy.coordinates import SkyCoord
 import astropy.units as u
 from astropy.time import TimeDelta
 from sunpy.time import parse_time
-from sunpy.coordinates import HeliographicStonyhurst
+from sunpy.coordinates import HeliographicStonyhurst, frames
 import sunpy
 import pickle
 
@@ -1595,7 +1595,7 @@ def getSatStuff(imMap):
     
     # Nominal radii (in Rs) for the occulters for each instrument. Pulled from google so 
     # generally correct (hopefully) but not the most precise
-    occultDict = {'STEREO_SECCHI_COR2':[3,14], 'STEREO_SECCHI_COR2A':[3,14], 'STEREO_SECCHI_COR2B':[3,14], 'STEREO_SECCHI_COR1':[1.5,4], 'STEREO_SECCHI_CORA1':[1.5,4], 'STEREO_SECCHI_COR1B':[1.5,4], 'SOHO_LASCO_C1':[1.1,3], 'SOHO_LASCO_C2':[2,6], 'SOHO_LASCO_C3':[3.7,32], 'STEREO_SECCHI_HI1':[15,80], 'STEREO_SECCHI_HI1A':[15,80], 'STEREO_SECCHI_HI1B':[15,80], 'STEREO_SECCHI_HI2':[80,215], 'STEREO_SECCHI_HI2B':[80,215], 'STEREO_SECCHI_HI2A':[80,215], 'STEREO_SECCHI_EUVI':[0,1.7],'SDO_AIA':[0,1.35]}
+    occultDict = {'STEREO_SECCHI_COR2':[3,14], 'STEREO_SECCHI_COR2A':[3,14], 'STEREO_SECCHI_COR2B':[3,14], 'STEREO_SECCHI_COR1':[1.5,4], 'STEREO_SECCHI_COR1A':[1.5,4], 'STEREO_SECCHI_COR1B':[1.5,4], 'SOHO_LASCO_C1':[1.1,3], 'SOHO_LASCO_C2':[2,6], 'SOHO_LASCO_C3':[3.7,32], 'STEREO_SECCHI_HI1':[15,80], 'STEREO_SECCHI_HI1A':[15,80], 'STEREO_SECCHI_HI1B':[15,80], 'STEREO_SECCHI_HI2':[80,215], 'STEREO_SECCHI_HI2B':[80,215], 'STEREO_SECCHI_HI2A':[80,215], 'STEREO_SECCHI_EUVI':[0,1.7],'SDO_AIA':[0,1.35]}
     
     #|---- Initialize dictionary ----|
     satDict = {}
@@ -1732,39 +1732,28 @@ def getSatStuff(imMap):
     # |----------------------|
     # |---- Get POINTING ----|    
     # |----------------------|
+    # Use elongation and Thomson sphere at mid FoV to get pointing wedge
     coordM = imMap.pixel_to_world(imMap.data.shape[1]/2 * u.pix, imMap.data.shape[0]/2 * u.pix)
-    alpha = coordM.Tx.rad
-    coord0 = imMap.pixel_to_world(0 * u.pix, 0 * u.pix)
-    coord1 = imMap.pixel_to_world(0 * u.pix, imMap.data.shape[0] * u.pix)
-    coord2 = imMap.pixel_to_world(imMap.data.shape[1] * u.pix, 0 * u.pix)
-    coord3 = imMap.pixel_to_world(imMap.data.shape[1] * u.pix, imMap.data.shape[0] * u.pix)
-    angs = [coord0.Tx.rad, coord1.Tx.rad, coord2.Tx.rad, coord3.Tx.rad]
-    wid = np.abs(0.5*(np.max(angs) - np.min(angs)) )  
-    lon = (satDict['POS'][1] % 360) * np.pi / 180
+    ell = np.sqrt(coordM.Tx.rad**2 + coordM.Ty.rad**2)
     rSat = satDict['POS'][2] / 1.5e11
-    FoVlen = 1.5
+    d = np.abs(rSat * np.cos(ell))
+    hpc = SkyCoord(Tx=coordM.Tx, Ty=coordM.Ty, distance=d*u.au, frame= coordM.frame)
+    ston = hpc.transform_to(frames.HeliographicStonyhurst)
+    TSxyz = np.array([ston.cartesian.x.to_value(), ston.cartesian.y.to_value(), ston.cartesian.z.to_value()])
     
-    pt1 = np.array([-np.cos(wid), -np.sin(wid)]) *FoVlen
-    pt2 = np.array([-np.cos(wid),  np.sin(wid)]) *FoVlen
+    coord0 = imMap.pixel_to_world(0 * u.pix, imMap.data.shape[0]/2 * u.pix)
+    hpc0 = SkyCoord(Tx=coord0.Tx, Ty=coord0.Ty, distance=d*u.au, frame= coord0.frame)
+    ston0 = hpc0.transform_to(frames.HeliographicStonyhurst)
+    TSxyz0 = np.array([ston0.cartesian.x.to_value(), ston0.cartesian.y.to_value(), ston0.cartesian.z.to_value()])
 
-    # Rotate by alpha
-    pt1a = [np.cos(-alpha)*pt1[0] + -np.sin(-alpha)*pt1[1], np.sin(-alpha)*pt1[0] + np.cos(-alpha)*pt1[1]]
-    pt2a = [np.cos(-alpha)*pt2[0] + -np.sin(-alpha)*pt2[1], np.sin(-alpha)*pt2[0] + np.cos(-alpha)*pt2[1]]
-
-    # Move to sat
-    pt1b = [pt1a[0] + rSat, pt1a[1]]
-    pt2b = [pt2a[0] + rSat, pt2a[1]]
-
-    # Rotate to lon
-    pt1c =np.array([np.cos(lon)*pt1b[0] + -np.sin(lon)*pt1b[1], np.sin(lon)*pt1b[0] + np.cos(lon)*pt1b[1]])
-    pt2c =np.array([np.cos(lon)*pt2b[0] + -np.sin(lon)*pt2b[1], np.sin(lon)*pt2b[0] + np.cos(lon)*pt2b[1]])
-        
-    ptmid = [0.5*(pt1c[0] + pt2c[0]), 0.5*(pt1c[1] + pt2c[1])]
+    coordF = imMap.pixel_to_world(imMap.data.shape[1] * u.pix, imMap.data.shape[0]/2 * u.pix)
+    hpcF = SkyCoord(Tx=coordF.Tx, Ty=coordF.Ty, distance=d*u.au, frame= coordF.frame)
+    stonF = hpcF.transform_to(frames.HeliographicStonyhurst)
+    TSxyzF = np.array([stonF.cartesian.x.to_value(), stonF.cartesian.y.to_value(), stonF.cartesian.z.to_value()])
     
-    pointing = [ptmid, pt1c, pt2c]
+    pointing = [TSxyz, TSxyz0, TSxyzF]
     
     satDict['POINTING'] = pointing
-    
     
     # |--------------------|
     # |---- Get SUNPIX ----|    
