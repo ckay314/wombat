@@ -1752,8 +1752,12 @@ def getSatStuff(imMap):
     TSxyzF = np.array([stonF.cartesian.x.to_value(), stonF.cartesian.y.to_value(), stonF.cartesian.z.to_value()])
     
     pointing = [TSxyz, TSxyz0, TSxyzF]
-    
     satDict['POINTING'] = pointing
+
+    # Check if pointed off sun, if so replace the +/- plane of sky
+    if np.sqrt(np.sum(TSxyz**2))*215 > 1.1: 
+        PoSlon = np.arctan2(TSxyz[1], TSxyz[0])*180./np.pi
+        satDict['POSLON'] = [PoSlon, PoSlon]
     
     # |--------------------|
     # |---- Get SUNPIX ----|    
