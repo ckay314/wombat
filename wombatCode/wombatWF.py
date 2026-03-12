@@ -299,7 +299,7 @@ class wireframe():
     # |-----------------------------------------------------------------|
     # |--------- Calculate the shape in Stonyhurst Cartestian ----------|
     # |-----------------------------------------------------------------|
-    def getPoints(self):
+    def getPoints(self, inside=False):
         """
         Function that calculates the position of each point in the
         wireframe grids. Just a lot of geometry.
@@ -382,7 +382,9 @@ class wireframe():
            # Compute the shell points from axis and radius
            nbp = axisPTS.shape[0]
            theta = np.linspace(0, 360*(1-1./ncross) , ncross, endpoint=True)*dtor
-    
+           if inside:
+               theta = np.linspace(180, 360*(1-1./ncross) , ncross, endpoint=True)*dtor
+           
            # Put things into massive arrays to avoid real for loops
            thetaMEGA = np.array([theta]*nbp).reshape([1,-1])
            crMEGA = np.array([[crossrads[i]]*ncross for i in range(nbp)]).reshape([-1])
@@ -416,7 +418,8 @@ class wireframe():
             # theta is along axis, phi along CS
             thetas = np.linspace(-pi/2, pi/2, gps[1], endpoint=True)
             phis   = np.linspace(0, 2*pi, gps[0], endpoint=True)
-            
+            if inside:
+                phis   = np.linspace(pi/2, 3/2*pi, gps[0], endpoint=True)
             # Make the massive arrays
             thetaMEGA = np.array([thetas]*gps[0]).reshape([-1])
             phiMEGA = np.array([[phis[i]]*gps[1] for i in range(gps[0])]).reshape([-1])
