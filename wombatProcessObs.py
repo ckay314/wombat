@@ -1736,20 +1736,45 @@ def getSatStuff(imMap):
     coordM = imMap.pixel_to_world(imMap.data.shape[1]/2 * u.pix, imMap.data.shape[0]/2 * u.pix)
     ell = np.sqrt(coordM.Tx.rad**2 + coordM.Ty.rad**2)
     rSat = satDict['POS'][2] / 1.5e11
-    d = np.abs(rSat * np.cos(ell))
-    hpc = SkyCoord(Tx=coordM.Tx, Ty=coordM.Ty, distance=d*u.au, frame= coordM.frame)
+    dM = np.abs(rSat * np.abs(np.cos(ell)))
+    hpc = SkyCoord(Tx=coordM.Tx, Ty=coordM.Ty, distance=dM*u.au, frame= coordM.frame)
     ston = hpc.transform_to(frames.HeliographicStonyhurst)
     TSxyz = np.array([ston.cartesian.x.to_value(), ston.cartesian.y.to_value(), ston.cartesian.z.to_value()])
+    xyz = np.array(xyz)* rSat
+    LoS = TSxyz - xyz 
     
+    uxyz = xyz / np.linalg.norm(xyz)
+    uTSxyz = TSxyz / np.linalg.norm(TSxyz)
+    uLoS = LoS / np.linalg.norm(LoS)
+
     coord0 = imMap.pixel_to_world(0 * u.pix, imMap.data.shape[0]/2 * u.pix)
-    hpc0 = SkyCoord(Tx=coord0.Tx, Ty=coord0.Ty, distance=d*u.au, frame= coord0.frame)
+    ell = np.sqrt(coord0.Tx.rad**2 + coord0.Ty.rad**2)
+    d0 = np.abs(rSat * np.cos(ell))
+    hpc0 = SkyCoord(Tx=coord0.Tx, Ty=coord0.Ty, distance=d0*u.au, frame= coord0.frame)
     ston0 = hpc0.transform_to(frames.HeliographicStonyhurst)
     TSxyz0 = np.array([ston0.cartesian.x.to_value(), ston0.cartesian.y.to_value(), ston0.cartesian.z.to_value()])
+    LoS0 = TSxyz0 - xyz    
+    uTSxyz0 = TSxyz0 / np.linalg.norm(TSxyz)
+    uLoS0 = LoS0 / np.linalg.norm(LoS0)
+    ang = np.arccos(np.dot(uLoS0, uLoS))
+    newL = dM / np.cos(np.abs(ang))
+    TSxyz0 = xyz + newL*uLoS0
+
 
     coordF = imMap.pixel_to_world(imMap.data.shape[1] * u.pix, imMap.data.shape[0]/2 * u.pix)
-    hpcF = SkyCoord(Tx=coordF.Tx, Ty=coordF.Ty, distance=d*u.au, frame= coordF.frame)
+    ell = np.sqrt(coordF.Tx.rad**2 + coordF.Ty.rad**2)
+    dF = np.abs(rSat * np.cos(ell))
+    hpcF = SkyCoord(Tx=coordF.Tx, Ty=coordF.Ty, distance=dF*u.au, frame= coordF.frame)
     stonF = hpcF.transform_to(frames.HeliographicStonyhurst)
     TSxyzF = np.array([stonF.cartesian.x.to_value(), stonF.cartesian.y.to_value(), stonF.cartesian.z.to_value()])
+    LoSF = TSxyzF - xyz    
+    uTSxyzF = TSxyzF / np.linalg.norm(TSxyz)
+    uLoSF = LoSF / np.linalg.norm(LoSF)
+    ang = np.arccos(np.dot(uLoSF, uLoS))
+    newL = dM / np.cos(np.abs(ang))
+    TSxyzF = xyz + newL*uLoSF
+    
+
     
     pointing = [TSxyz, TSxyz0, TSxyzF]
     satDict['POINTING'] = pointing
