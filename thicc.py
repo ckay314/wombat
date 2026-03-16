@@ -12,6 +12,8 @@ import sys
 sys.path.append('prepCode/') 
 sys.path.append('wombatCode/') 
 import wombatWF as wf
+from wombatLoadCTs import *
+
 
 
 def anOldDistaster():
@@ -369,55 +371,145 @@ def wf2CartFoV(myMap, aWF, pixCent=None):
     return res
     
 
-def mass2dens(myMap, satDict, aWF):
-    downSize = 32
+def mass2dens(myMap, satDict, aWF, toShow=None):
+    
+    # |-----------------------------------------|
+    # Get functions for converting map pixel to 3D cartesian coords
+    # where the FoV is in the yz plane at x=0
+    # |-----------------------------------------|
+    downSize = 16
     pixx, pixy = [], []
     for i in range(myMap.data.shape[1])[::downSize]:
         for j in range(myMap.data.shape[0])[::downSize]:
             pixx.append(i)
             pixy.append(j)
-    print (pixx)
 
     #ptsOut = map2CartFoV(myMap, [[0, myMap.data.shape[1]], [myMap.data.shape[0]/2, myMap.data.shape[0]/2]])
-    ptsOut = map2CartFoV(myMap, [pixx, pixy])
-    print (ptsOut)
+    ptsOut = map2CartFoV(myMap, [pixx, pixy])   # is [x,y,z] where each is same len as pixIn  
     
-    wfPts = wf2CartFoV(myMap, aWF)
+    uniX = np.unique(np.array(pixx))
+    uniY = np.unique(np.array(pixy))
+    maxX = np.max(uniX)
+    maxY = np.max(uniY)
+    
+    FOVx = np.transpose(ptsOut[0].reshape([len(uniY), len(uniX)]))
+    FOVy = np.transpose(ptsOut[1].reshape([len(uniY), len(uniX)]))
+    FOVz = np.transpose(ptsOut[2].reshape([len(uniY), len(uniX)]))  
 
+    FOV2x = RegularGridInterpolator((uniX, uniY), np.transpose(FOVx), method='linear')
+    FOV2y = RegularGridInterpolator((uniX, uniY), np.transpose(FOVy), method='linear')
+    FOV2z = RegularGridInterpolator((uniX, uniY), np.transpose(FOVz), method='linear')
+    FOVfunc = [FOV2x, FOV2y, FOV2z]
+    
+    
+    
+    #|-------------------------------------------------|
+    #|--- Get the wireframe width perp to FoV plane ---|
+    #|-------------------------------------------------|
+    awf.gPoints = [i * 10 for i in awf.gPoints]
+    awf.getPoints()
+    wfPts = wf2CartFoV(myMap, aWF)
+    wfPtsT = np.transpose(np.array(wfPts))
+    wids, midx, FoV, nGridY = getWidth(wfPtsT)
+    
+    awf.getPoints(inside=True)
+    wfPtsI = wf2CartFoV(myMap, aWF)
+    wfPtsI = np.transpose(np.array(wfPtsI))
+    widsI, midxI, FoV, nGridY = getWidth(wfPtsI, FoV=FoV, nGridY=nGridY)
+    #awf.getPoints()
+
+    dy, ygs, yms, nGridZ, zgs, zms = createGrid(FoV, nGridY)
+    wid = wids-widsI
+    mask = wid > 0
+    wid_smooth = ndimage.gaussian_filter(wid, sigma=2.0, order=0) 
+
+    # indexing of func is y,z    
+    widFunc = RegularGridInterpolator((yms, zms), np.transpose(wid_smooth), method='linear')
+    
+    
+    #|-----------------------------|
+    #|--- Get width on FoV Grid ---|
+    #|-----------------------------|
+    # Start with grid of pixels
+    pixx = range(myMap.data.shape[1])[::downSize]
+    pixy = range(myMap.data.shape[0])[::downSize]
+    pixxx, pixyy = np.meshgrid(pixx,pixy)
+    # Convert to grid of FoV yz
+    cartxx = FOVfunc[0]((pixxx, pixyy))
+    cartyy = FOVfunc[1]((pixxx, pixyy))
+    cartzz = FOVfunc[2]((pixxx, pixyy))
+    # Figure out who is within the width interpolator
+    crit1 = cartyy >= FoV[0][0]
+    crit2 = cartyy <= FoV[0][1]
+    crit3 = cartzz >= FoV[1][0]
+    crit4 = cartzz <= FoV[1][1]
+    isInWid = crit1 & crit2 & crit3 & crit4
+    # Make an array of width within the FoV
+    widGrid = np.zeros(cartyy.shape)
+    widGrid[isInWid] = widFunc((cartyy[isInWid],cartzz[isInWid]))
+    
+    
+    
+
+    
+    cs ='m'
+    if type(toShow) != type(None):
+        cs = toShow[pixxx, pixyy]
+        '''cs = []
+        for i in range(len(pixx)):
+            cs.append(toShow[pixy[i], pixx[i]])'''
+        
+    fig = plt.figure()
+    #plt.contourf(pixxx,pixyy, widGrid)
+    plt.contourf(pixyy,pixxx,cs, vmin=0, vmax=256)
+    plt.contour(toShow)
+    plt.show()
 
     ax = plt.figure().add_subplot(projection='3d')
-    ax.scatter(ptsOut[0],ptsOut[1],ptsOut[2], c='m')
+    ax.scatter(ptsOut[0],ptsOut[1],ptsOut[2], c=cs, vmin=0, vmax=256)
     
-    ax.scatter(wfPts[0],wfPts[1],wfPts[2], c='gray')
+    #ax.scatter(cartxx, cartyy, cartzz, c=widGrid)
+    
+    #ax.scatter(wfPtsT[:,0],wfPtsT[:,1],wfPtsT[:,2], c='gray')
 
-    ax.set_xlim([-220,220])
-    ax.set_ylim([-220,220])
-    ax.set_zlim([-220,220])
+    ax.set_xlim([-60,60])
+    ax.set_ylim([-60,60])
+    ax.set_zlim([-60,60])
     ax.set_xlabel('x')
     ax.set_ylabel('y')
     ax.set_zlabel('z')
     plt.show()
 
-    #print (satDict['WCS'])
+    #print (satDict)
 
-# python3 wombatProcessObs.py 2012-07-13T04:00 2012-07-13T22:00 HI2A
+# python3 wombatProcessObs.py 2012-07-12T16:00 2012-07-13T05:00 HI1A rdiffHI
+# python3 wombatProcessObs.py 2012-07-13T20:00 2012-07-14T12:00 HI2A rdiffHI
 theFile = 'wbPickles/WBGUI_temp.pkl'
 
 # Open the pickle
 with open(theFile, 'rb') as file:
     bkgData = pickle.load(file)
-    
-imMap = bkgData['proImMaps']['HI2A'][0][0]
-satDict = bkgData['satStuff']['HI2A'][0][0]
+
+tidx = 6    
+obs  ='HI1A'
+satDict = bkgData['satStuff'][obs][0][tidx]
+imMap = bkgData['proImMaps'][obs][0][tidx]
+showMap = bkgData['scaledIms'][obs][0][tidx][0]
+massMap = bkgData['massIms'][obs][tidx]
+
+fig = plt.figure()
+#plt.imshow(showMap, vmin=63, vmax=128, cmap='gist_heat')
+plt.imshow(massMap,  cmap='gist_heat', vmin=-1e9, vmax=1e9)
+plt.show()
+
+print (sd)
 
 awf = wf.wireframe('GCS')
-awf.params[0] = 150
-awf.params[1] = 80
-awf.params[2] = 0
-awf.params[3] = 10
+#awf.params = [27, 25, -13.4, 78.0, 55.0, 0.48]
+awf.params = [40, 45, -13.4, 90., 55.0, 0.48]
 awf.getPoints()
     
-mass2dens(imMap, satDict, awf)    
+mass2dens(imMap, satDict, awf, toShow=showMap)    
 
 if False:
     awf = wf.wireframe('GCS')
