@@ -377,7 +377,7 @@ def mass2dens(myMap, satDict, aWF, toShow=None):
     # Get functions for converting map pixel to 3D cartesian coords
     # where the FoV is in the yz plane at x=0
     # |-----------------------------------------|
-    downSize = 16
+    downSize = 32
     pixx, pixy = [], []
     for i in range(myMap.data.shape[1])[::downSize]:
         for j in range(myMap.data.shape[0])[::downSize]:
@@ -386,7 +386,7 @@ def mass2dens(myMap, satDict, aWF, toShow=None):
 
     #ptsOut = map2CartFoV(myMap, [[0, myMap.data.shape[1]], [myMap.data.shape[0]/2, myMap.data.shape[0]/2]])
     ptsOut = map2CartFoV(myMap, [pixx, pixy])   # is [x,y,z] where each is same len as pixIn  
-    
+        
     uniX = np.unique(np.array(pixx))
     uniY = np.unique(np.array(pixy))
     maxX = np.max(uniX)
@@ -399,9 +399,25 @@ def mass2dens(myMap, satDict, aWF, toShow=None):
     FOV2x = RegularGridInterpolator((uniX, uniY), np.transpose(FOVx), method='linear')
     FOV2y = RegularGridInterpolator((uniX, uniY), np.transpose(FOVy), method='linear')
     FOV2z = RegularGridInterpolator((uniX, uniY), np.transpose(FOVz), method='linear')
-    FOVfunc = [FOV2x, FOV2y, FOV2z]
+    FOVfunc = [FOV2x, FOV2y, FOV2z] # pixels to FOVcart
     
+    # For plotting
+    '''fake_px = np.unique(np.array(pixx))
+    fake_py = np.unique(np.array(pixy))
+    fpxx, fpyy = np.meshgrid(fake_px, fake_py)
+    f_fovx = FOV2x((fpxx, fpyy))
+    f_fovy = FOV2y((fpxx, fpyy))
+    f_fovz = FOV2z((fpxx, fpyy))'''
     
+    if False:
+        ax = plt.figure().add_subplot(projection='3d')
+        ax.scatter(f_fovx, f_fovy, f_fovz, c=fpyy)
+        plt.show()
+        
+    if False:
+        fig = plt.figure()
+        plt.imshow(f_fovz, extent=[fake_px[0], fake_px[-1], fake_py[0], fake_py[-1]], vmin=-30, vmax=30, origin='lower')
+        plt.show()
     
     #|-------------------------------------------------|
     #|--- Get the wireframe width perp to FoV plane ---|
@@ -411,7 +427,17 @@ def mass2dens(myMap, satDict, aWF, toShow=None):
     wfPts = wf2CartFoV(myMap, aWF)
     wfPtsT = np.transpose(np.array(wfPts))
     wids, midx, FoV, nGridY = getWidth(wfPtsT)
-    
+    if False:
+        ax = plt.figure().add_subplot(projection='3d')
+        ax.scatter(awf.points[::10,0], awf.points[::10,1], awf.points[::10,2])
+        ax.scatter(wfPts[0][::10], wfPts[1][::10], wfPts[2][::10], c='m')
+        plt.show()
+        
+    if False:
+        fig = plt.figure()
+        plt.imshow(wids, extent=[FoV[0][0], FoV[0][1], FoV[1][0], FoV[1][1]], vmin=0, vmax=30, origin='lower')
+        plt.show()
+
     awf.getPoints(inside=True)
     wfPtsI = wf2CartFoV(myMap, aWF)
     wfPtsI = np.transpose(np.array(wfPtsI))
@@ -419,58 +445,153 @@ def mass2dens(myMap, satDict, aWF, toShow=None):
     #awf.getPoints()
 
     dy, ygs, yms, nGridZ, zgs, zms = createGrid(FoV, nGridY)
-    wid = wids-widsI
+    wid = wids#-widsI
     mask = wid > 0
     wid_smooth = ndimage.gaussian_filter(wid, sigma=2.0, order=0) 
 
     # indexing of func is y,z    
-    widFunc = RegularGridInterpolator((yms, zms), np.transpose(wid_smooth), method='linear')
-    
+    widFunc = RegularGridInterpolator((yms, zms), np.transpose(wid_smooth), method='linear', bounds_error=False, fill_value=0)
+
     
     #|-----------------------------|
     #|--- Get width on FoV Grid ---|
     #|-----------------------------|
     # Start with grid of pixels
-    pixx = range(myMap.data.shape[1])[::downSize]
-    pixy = range(myMap.data.shape[0])[::downSize]
-    pixxx, pixyy = np.meshgrid(pixx,pixy)
-    # Convert to grid of FoV yz
-    cartxx = FOVfunc[0]((pixxx, pixyy))
-    cartyy = FOVfunc[1]((pixxx, pixyy))
-    cartzz = FOVfunc[2]((pixxx, pixyy))
-    # Figure out who is within the width interpolator
-    crit1 = cartyy >= FoV[0][0]
-    crit2 = cartyy <= FoV[0][1]
-    crit3 = cartzz >= FoV[1][0]
-    crit4 = cartzz <= FoV[1][1]
-    isInWid = crit1 & crit2 & crit3 & crit4
-    # Make an array of width within the FoV
-    widGrid = np.zeros(cartyy.shape)
-    widGrid[isInWid] = widFunc((cartyy[isInWid],cartzz[isInWid]))
+    downSize = 8
+    fake_px = np.array(range(myMap.data.shape[1])[::downSize])
+    fake_py = np.array(range(myMap.data.shape[0])[::downSize])
     
+    fake_px = fake_px[np.where(fake_px <= maxX)[0]]
+    fake_py = fake_py[np.where(fake_py <= maxY)[0]]
     
+    fpxx, fpyy = np.meshgrid(fake_px, fake_py)
+    f_fovx = FOV2x((fpxx, fpyy))
+    f_fovy = FOV2y((fpxx, fpyy))
+    f_fovz = FOV2z((fpxx, fpyy))
+    widsInt = widFunc((f_fovy, f_fovz))
+    if False:
+        ax = plt.figure().add_subplot(projection='3d')
+        ax.scatter(f_fovx, f_fovy, f_fovz, c=widsInt)
+        plt.show()
+    if False:
+        fig = plt.figure()
+        plt.imshow(widsInt, extent=[fake_px[0], fake_px[-1], fake_py[0], fake_py[-1]], vmin=0, vmax=30, origin='lower')
+        plt.show()
+        
     
+    #|--------------------------|
+    #|--- Pull the mass data ---|
+    #|--------------------------|
+    # Might want to take avg of nearby pix but TVD
+    subMass = toShow[fpyy, fpxx]
+    
+    # Get the width of each grid cell (in solar radii)
+    # Could make this smoother, or at least better at edges, TBD
+    dys = np.zeros(subMass.shape)
+    dys[:,1:] = f_fovy[:,1:] - f_fovy[:,:-1]
+    dys[:,0] = dys[:,1] 
+    dzs = np.zeros(subMass.shape)
+    dzs[1:,:] = f_fovz[1:,:] - f_fovz[:-1,:]
+    dzs[0,:] = dzs[1,:]
+    cellArea = dys * dzs
+    
+    notZero = np.where(widsInt != 0)
+    dens = np.zeros(subMass.shape)
+    dens[notZero] = subMass[notZero] / widsInt[notZero] / cellArea[notZero]
+    
+    if False:
+       fig = plt.figure()
+       vval = 1e9
+       plt.imshow(subMass, extent=[fake_px[0], fake_px[-1], fake_py[0], fake_py[-1]], vmin=-vval, vmax=vval, origin='lower')
+       plt.show()
+    if False:
+        vval = 1e9
+        ax = plt.figure().add_subplot(projection='3d')
+        #ax.scatter(f_fovx[notZero], f_fovy[notZero], f_fovz[notZero], c=subMass[notZero],vmin=-vval, vmax=vval )
+        ax.scatter(f_fovx, f_fovy, f_fovz, c=subMass,vmin=-vval, vmax=vval )
+        ax.scatter(wfPts[0][::10], wfPts[1][::10], wfPts[2][::10], c='m')
+        ax.set_xlim([-60,60])
+        ax.set_ylim([-60,60])
+        ax.set_zlim([-60,60])
+        ax.set_xlabel('x')
+        ax.set_ylabel('y')
+        ax.set_zlabel('z')
+        plt.show() 
+    
+    #|---------------------------|
+    #|--- Expand in the x dim ---|
+    #|---------------------------|
 
     
+    ynot0    = f_fovy[notZero]
+    znot0    = f_fovz[notZero]
+    xnot0    = znot0 * 0
+    wnot0    = widsInt[notZero]
+    dnot0    = dens[notZero]
+    
+    dx = np.mean(dys) # should be sufficient
+    nptsx = wnot0 / dx / 2 
+    nptsx = nptsx.astype(int)
+    
+    allpts = [np.array([]), np.array([]), np.array([]), np.array([])]
+    for i in range(len(ynot0)):
+    #for i in range(4):
+        myxs = None
+        if nptsx[i] > 0:
+            myxs = dx *(np.arange(-nptsx[i], nptsx[i]+1))
+        elif wnot0[i] > 0.75*dx:
+            myxs = np.zeros(1)
+        if type(myxs) != type(None):
+            myys  = ynot0[i] * np.ones(2*nptsx[i] + 1)
+            myzs  = znot0[i] * np.ones(2*nptsx[i] + 1)
+            mydens = dnot0[i] * np.ones(2*nptsx[i] + 1)
+            allpts[0] = np.concatenate((allpts[0], myxs))
+            allpts[1] = np.concatenate((allpts[1], myys))
+            allpts[2] = np.concatenate((allpts[2], myzs))
+            allpts[3] = np.concatenate((allpts[3], mydens))
+            
+    # polish density    
+    allpts[3] = allpts[3] / (6.957e10 **3 ) # convert to g/cm^3   
+    #meand, maxd = np.mean(allpts[3]), np.max(allpts[3]) 
+    allpts[3][np.where(allpts[3] <= 0)] = np.min(np.abs(allpts[3]))
+    logd = np.log10(allpts[3])
+    #logv1, logv2 = np.log10(meand + deld), np.log10(meand - deld)
+    
+    if True:
+        vval = 1e9 /dx**3
+        ax = plt.figure().add_subplot(projection='3d')
+        ax.scatter(allpts[0], allpts[1], allpts[2], c=logd)
+        ax.set_aspect('equal') 
+        plt.show()
+    
+    print (sd)
     cs ='m'
+    # In toShow need to index by pix xy but then compare with wid (yz) at that pix
     if type(toShow) != type(None):
         cs = toShow[pixxx, pixyy]
         '''cs = []
         for i in range(len(pixx)):
             cs.append(toShow[pixy[i], pixx[i]])'''
-        
-    fig = plt.figure()
+    cs = wid
+    cs[np.transpose(isZero)] = 0
+    cs[np.transpose(~isZero)] = widGrid[~isZero]#cs[np.transpose(~isZero)] / widGrid[~isZero]
+    
+    
+    
+    #fig = plt.figure()
     #plt.contourf(pixxx,pixyy, widGrid)
-    plt.contourf(pixyy,pixxx,cs, vmin=0, vmax=256)
-    plt.contour(toShow)
-    plt.show()
+    #plt.imshow(pixyy,pixxx,cs, vmin=0, vmax=256)
+    #plt.imshow(toShow, vmin=63, vmax=128)
+    #plt.imshow(toShow, vmin=-1e9, vmax=1e9, origin='lower')
+    #plt.show()
 
     ax = plt.figure().add_subplot(projection='3d')
-    ax.scatter(ptsOut[0],ptsOut[1],ptsOut[2], c=cs, vmin=0, vmax=256)
+    #ax.scatter(ptsOut[0],ptsOut[1],ptsOut[2], c=cs, vmin=0, vmax=1e8)
+    ax.scatter(cartxx, cartyy, cartzz, c=widGrid)
     
     #ax.scatter(cartxx, cartyy, cartzz, c=widGrid)
     
-    #ax.scatter(wfPtsT[:,0],wfPtsT[:,1],wfPtsT[:,2], c='gray')
+    ax.scatter(wfPtsT[::10,0],wfPtsT[::10,1],wfPtsT[::10,2], c='gray')
 
     ax.set_xlim([-60,60])
     ax.set_ylim([-60,60])
@@ -497,19 +618,19 @@ imMap = bkgData['proImMaps'][obs][0][tidx]
 showMap = bkgData['scaledIms'][obs][0][tidx][0]
 massMap = bkgData['massIms'][obs][tidx]
 
-fig = plt.figure()
+'''fig = plt.figure()
 #plt.imshow(showMap, vmin=63, vmax=128, cmap='gist_heat')
 plt.imshow(massMap,  cmap='gist_heat', vmin=-1e9, vmax=1e9)
 plt.show()
 
-print (sd)
+print (sd)'''
 
 awf = wf.wireframe('GCS')
 #awf.params = [27, 25, -13.4, 78.0, 55.0, 0.48]
-awf.params = [40, 45, -13.4, 90., 55.0, 0.48]
+awf.params = [30, 45, -13.4, 90., 55.0, 0.48]
 awf.getPoints()
     
-mass2dens(imMap, satDict, awf, toShow=showMap)    
+mass2dens(imMap, satDict, awf, toShow=massMap)    
 
 if False:
     awf = wf.wireframe('GCS')
