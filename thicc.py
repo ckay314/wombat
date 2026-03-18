@@ -15,121 +15,6 @@ import wombatWF as wf
 from wombatLoadCTs import *
 
 
-
-def anOldDistaster():
-    theFile = 'wbPickles/WBGUI_temp.pkl'
-
-    # Open the pickle
-    with open(theFile, 'rb') as file:
-        bkgData = pickle.load(file)
-
-    
-    imMap = bkgData['proImMaps']['HI2A'][0][0]
-    satDict = bkgData['satStuff']['HI2A'][0][0]
-    coordM = imMap.pixel_to_world(imMap.data.shape[1]/2 * u.pix, imMap.data.shape[0]/2 * u.pix)
-    alpha = coordM.Tx.rad
-    coord0 = imMap.pixel_to_world(0 * u.pix, 0 * u.pix)
-    coord1 = imMap.pixel_to_world(0 * u.pix, imMap.data.shape[0] * u.pix)
-    coord2 = imMap.pixel_to_world(imMap.data.shape[1] * u.pix, 0 * u.pix)
-    coord3 = imMap.pixel_to_world(imMap.data.shape[1] * u.pix, imMap.data.shape[0] * u.pix)
-
-
-    angs = [coord0.Tx.rad, coord1.Tx.rad, coord2.Tx.rad, coord3.Tx.rad]
-    wid = np.abs(0.5*(np.max(angs) - np.min(angs)) )  
-    ra = 0.5*(np.max(angs) + np.min(angs))
-    angs2 = [coord0.Ty.rad, coord1.Ty.rad, coord2.Ty.rad, coord3.Ty.rad]
-    hei = np.abs(0.5*(np.max(angs2) - np.min(angs2)) )  
-    dec = 0.5*(np.max(angs2) + np.min(angs2)) 
-    lon = (satDict['POS'][1] % 360) * np.pi / 180
-    rSat = satDict['POS'][2] / 1.5e11
-    FoVlen = 1.5 * rSat
-
-    # Playing with skycoords
-    myCoord = coordM
-    ell = np.sqrt(myCoord.Tx.rad**2 + myCoord.Ty.rad**2)
-    d = np.abs(rSat * np.cos(ell))
-    hpc = SkyCoord(Tx=myCoord.Tx, Ty=myCoord.Ty, distance=d*u.au, frame= myCoord.frame)
-    ston = hpc.transform_to(frames.HeliographicStonyhurst)
-
-
-    # Make edges of FoV in spacecraft frame
-    pt1 = np.array([-FoVlen * np.cos(wid) * np.sin(hei), -FoVlen * np.sin(wid) * np.sin(hei), FoVlen * np.sin(hei)])
-    pt2 = np.array([-FoVlen * np.cos(wid) * np.sin(hei), FoVlen * np.sin(wid) * np.sin(hei), FoVlen * np.sin(hei)])
-    pt3 = np.array([-FoVlen * np.cos(wid) * np.sin(hei), -FoVlen * np.sin(wid) * np.sin(hei),-FoVlen * np.sin(hei)])
-    pt4 = np.array([-FoVlen * np.cos(wid) * np.sin(hei), FoVlen * np.sin(wid) * np.sin(hei), -FoVlen * np.sin(hei)])
-    ptM = np.array([-FoVlen, 0, 0])
-
-    sc  = [0, 0, 0]
-    pts = [pt1, pt2, pt3, pt4, ptM]
-
-
-    # Rotate FoV by dec
-    for i in range(len(pts)):
-        pt = pts[i]
-        newx =  np.cos(dec)*pt[0] + np.sin(dec)*pt[2]
-        newz = -np.sin(dec)*pt[0] + np.cos(dec)*pt[2]
-        pts[i][0] = newx
-        pts[i][2] = newz
-
-    # Rotate FoV by -ra
-    for i in range(len(pts)):
-        pt = pts[i]
-        newx =  np.cos(-ra)*pt[0] - np.sin(-ra)*pt[1]
-        newy =  np.sin(-ra)*pt[0] + np.cos(-ra)*pt[1]
-        pts[i][0] = newx
-        pts[i][1] = newy
-
-    # Move sat to dist
-    for i in range(len(pts)):
-        pts[i][0] = pts[i][0]+ rSat
-    sc[0] =  sc[0] + rSat
-
-
-    # Adjust FoV lens to Thomson sphere
-    # Get elon angs
-    sc = np.array(sc)
-    pts2 = []
-    for i in range(len(pts)):
-        v1 = -sc
-        v1 = v1 / np.sqrt(np.sum(v1**2))
-        v2 = pts[i] - sc
-        v2 = v2 / np.sqrt(np.sum(v2**2))
-        ell = np.abs(np.arccos(np.dot(v1, v2)))
-        l = np.abs(rSat * np.cos(ell))
-        pts2.append(sc + l * v2)
-    
-    # Rotate everyone to satLon
-    for i in range(len(pts)):
-        pt = pts[i]
-        newx =  np.cos(lon)*pt[0] - np.sin(lon)*pt[1]
-        newy =  np.sin(lon)*pt[0] + np.cos(lon)*pt[1]
-        pts[i][0] = newx
-        pts[i][1] = newy
-        pt2 = pts2[i]
-        newx2 =  np.cos(lon)*pt2[0] - np.sin(lon)*pt2[1]
-        newy2 =  np.sin(lon)*pt2[0] + np.cos(lon)*pt2[1]
-        pts2[i][0] = newx2
-        pts2[i][1] = newy2
-    scR = np.zeros(3)
-    scR[0] = np.cos(lon)*sc[0] - np.sin(lon)*sc[1]
-    scR[1] = np.sin(lon)*sc[0] + np.cos(lon)*sc[1]
-    scR[2] = sc[2]
-    sc = scR 
-
-    TSxyz = np.array([ston.cartesian.x.to_value(), ston.cartesian.y.to_value(), ston.cartesian.z.to_value()])
-    print (np.dot(sc-TSxyz, -TSxyz))
-
-    ax = plt.figure().add_subplot(projection='3d')
-    for i in range(len(pts)):
-        ax.plot([sc[0], pts[i][0]], [sc[1], pts[i][1]], [sc[2],pts[i][2]], 'k--')
-        ax.plot(pts2[i][0],pts2[i][1],pts2[i][2], 'ko')
-    ax.scatter(0,0,0, c='y')
-    ax.scatter(sc[0], sc[1], sc[2], c='b')
-    ax.scatter(ston.cartesian.x.to_value(), ston.cartesian.y.to_value(), ston.cartesian.z.to_value(), 'g')
-    ax.set_xlabel('x')
-    plt.show()
-
-
 def createGrid(FoV, nGridY):
     miny, maxy = FoV[0][0], FoV[0][1]
     minz, maxz = FoV[1][0], FoV[1][1]
@@ -372,7 +257,11 @@ def wf2CartFoV(myMap, aWF, pixCent=None):
     return res
     
 
-def mass2dens(myMap, satDict, aWF, massMap):
+def mass2dens(myMap, satDict, aWF, massMap, doInner=False):
+    
+    # Check if have single wireframe or multiple
+    if (type(aWF) == type(wf.wireframe(None))):
+        multiMode = False 
     
     # |------------------------------------------|
     # |--- Map pixels to FoV Cartestian frame ---|
@@ -401,42 +290,58 @@ def mass2dens(myMap, satDict, aWF, massMap):
     FOV2x = RegularGridInterpolator((uniX, uniY), np.transpose(FOVx), method='linear')
     FOV2y = RegularGridInterpolator((uniX, uniY), np.transpose(FOVy), method='linear')
     FOV2z = RegularGridInterpolator((uniX, uniY), np.transpose(FOVz), method='linear')
+
     
     #|-------------------------------------------------|
     #|--- Get the wireframe width perp to FoV plane ---|
     #|-------------------------------------------------|
     awf.gPoints = [i * 10 for i in awf.gPoints]
     awf.getPoints()
+    #awf.getPoints(inside=True)
     wfPts = wf2CartFoV(myMap, aWF)
     wfPtsT = np.transpose(np.array(wfPts))
     wids, midx, FoV, nGridY = getWidth(wfPtsT)
-
-    '''awf.getPoints(inside=True)
-    wfPtsI = wf2CartFoV(myMap, aWF)
-    wfPtsI = np.transpose(np.array(wfPtsI))
-    widsI, midxI, FoV, nGridY = getWidth(wfPtsI, FoV=FoV, nGridY=nGridY)'''
-
     dy, ygs, yms, nGridZ, zgs, zms = createGrid(FoV, nGridY)
-    wid = wids#-widsI
-    mask = wid > 0
-    wid_smooth = ndimage.gaussian_filter(wid, sigma=2.0, order=0) 
-    #xc_smooth  = ndimage.gaussian_filter(midx, sigma=2.0, order=0) 
+    wid_smooth = ndimage.gaussian_filter(wids, sigma=2.0, order=0)
     # need to fill in the outer -9999 region of xc so interp is happy
     for i in range(midx.shape[1]):
         notOut = np.where(midx[:,i] !=-9999)[0]
         if len(notOut) >= 2:
-            midx[:notOut[0], i] = midx[notOut[0],i]
+            midx[:notOut[0], i]  = midx[notOut[0],i]
             midx[notOut[-1]:, i] = midx[notOut[-1],i]
     for i in range(midx.shape[0]):
         notOut = np.where(midx[i,:] !=-9999)[0]
         if len(notOut) >= 2:
-            midx[i,:notOut[0]] = midx[i, notOut[0]]
+            midx[i,:notOut[0]]  = midx[i, notOut[0]]
             midx[i,notOut[-1]:] = midx[i, notOut[-1]]
 
     # indexing of func is y,z    
     widFunc = RegularGridInterpolator((yms, zms), np.transpose(wid_smooth), method='linear', bounds_error=False, fill_value=0)  
     xcFunc  = RegularGridInterpolator((yms, zms), np.transpose(midx), method='linear', bounds_error=False, fill_value=0)
+    
+    # |--- Repeat process for the inside (if doing) ---|
+    if doInner:
+        awf.getPoints(inside=True)
+        wfPtsI = wf2CartFoV(myMap, aWF)
+        wfPtsI = np.transpose(np.array(wfPtsI))
+        widsI, midxI, FoV, nGridY = getWidth(wfPtsI, FoV=FoV, nGridY=nGridY)
+        wid_smoothI = ndimage.gaussian_filter(widsI, sigma=2.0, order=0)
+        # fill in xc
+        for i in range(midxI.shape[1]):
+            notOutI = np.where(midxI[:,i] !=-9999)[0]
+            if len(notOutI) >= 2:
+                midxI[:notOutI[0], i]  = midxI[notOutI[0],i]
+                midxI[notOutI[-1]:, i] = midxI[notOutI[-1],i]
+        for i in range(midxI.shape[0]):
+            notOutI = np.where(midxI[i,:] !=-9999)[0]
+            if len(notOutI) >= 2:
+                midxI[i,:notOutI[0]]  = midxI[i, notOutI[0]]
+                midxI[i,notOutI[-1]:] = midxI[i, notOutI[-1]]
 
+        # indexing of func is y,z    
+        widFuncI = RegularGridInterpolator((yms, zms), np.transpose(wid_smoothI), method='linear', bounds_error=False, fill_value=0) 
+        xcFuncI  = RegularGridInterpolator((yms, zms), np.transpose(midxI), method='linear', bounds_error=False, fill_value=0)
+    
     
     #|------------------------------------|
     #|--- Get width over full FoV Grid ---|
@@ -459,11 +364,14 @@ def mass2dens(myMap, satDict, aWF, massMap):
     
     # Use width interpolater
     widsInt = widFunc((f_fovy, f_fovz))
+    # Same thing for inside, diff func, same grid
+    if doInner:
+        widsIntI = widFuncI((f_fovy, f_fovz))
     
 
-    #|-------------------------------|
-    #|--- Find pix where wid != 0 ---|
-    #|-------------------------------|
+    #|----------------------------------------|
+    #|--- Find bounding box where wid != 0 ---|
+    #|----------------------------------------|
     notZero = np.where(widsInt != 0)
     
     # Get nice bounds (in range, multiple of downselect)
@@ -511,6 +419,10 @@ def mass2dens(myMap, satDict, aWF, massMap):
     f_fovz = FOV2z((nzpxx, nzpyy))
     widsIntnz = widFunc((f_fovy, f_fovz))
     xcIntnz   = xcFunc((f_fovy, f_fovz))
+    if doInner:
+        widsIntnzI = widFuncI((f_fovy, f_fovz))
+        xcIntnzI   = xcFuncI((f_fovy, f_fovz))
+        
     if False:
         ax = plt.figure().add_subplot(projection='3d')
         #ax.scatter(f_fovx, f_fovy, f_fovz, c=widsInt)
@@ -519,9 +431,10 @@ def mass2dens(myMap, satDict, aWF, massMap):
 
     if False:
         fig = plt.figure()
-        plt.imshow(widsInt, extent=[fake_px[0], fake_px[-1], fake_py[0], fake_py[-1]], vmin=0, vmax=30, origin='lower')
+        plt.imshow(widsIntI, extent=[fake_px[0], fake_px[-1], fake_py[0], fake_py[-1]], vmin=0, vmax=30, origin='lower')
         plt.show()
-          
+
+
     #|--------------------------------------|
     #|--- Get grid cell area on subfield ---|
     #|--------------------------------------|
@@ -540,7 +453,10 @@ def mass2dens(myMap, satDict, aWF, massMap):
     #|-------------------------------------|
     notZero = np.where(widsIntnz != 0)
     dens = np.zeros(subMass.shape)
-    dens[notZero] = subMass[notZero] / widsIntnz[notZero] / cellArea[notZero] # g/Rs^3
+    if doInner:
+        dens[notZero] = subMass[notZero] / (widsIntnz[notZero] - widsIntnzI[notZero]) / cellArea[notZero] # g/Rs^3
+    else:
+        dens[notZero] = subMass[notZero] / widsIntnz[notZero] / cellArea[notZero] # g/Rs^3
     
     # 2d plotting example (for testing)
     if False:
@@ -548,7 +464,7 @@ def mass2dens(myMap, satDict, aWF, massMap):
        vval = 1e12
        plt.imshow(dens, vmin=-vval, vmax=vval, origin='lower')
        plt.show()
-    
+
     #|---------------------------|
     #|--- Expand in the x dim ---|
     #|---------------------------|
@@ -556,8 +472,11 @@ def mass2dens(myMap, satDict, aWF, massMap):
     znot0    = f_fovz[notZero]
     xnot0    = znot0 * 0
     wnot0    = widsIntnz[notZero]
-    xcnot0    = xcIntnz[notZero]
+    xcnot0   = xcIntnz[notZero]
     dnot0    = dens[notZero]
+    if doInner:
+        wnot0I  = widsIntnzI[notZero]
+        xcnot0I = xcIntnzI[notZero]
     
     dx = np.mean(dys) # should be sufficient
     nptsx = wnot0 / dx / 2 
@@ -571,24 +490,39 @@ def mass2dens(myMap, satDict, aWF, massMap):
         elif wnot0[i] > 0.9*dx:
             myxs = np.zeros(1)
         if type(myxs) != type(None):
+            myxs =  myxs+xcnot0[i]
             myys  = ynot0[i] * np.ones(2*nptsx[i] + 1)
             myzs  = znot0[i] * np.ones(2*nptsx[i] + 1)
             mydens = dnot0[i] * np.ones(2*nptsx[i] + 1)
-            allpts[0] = np.concatenate((allpts[0], myxs+xcnot0[i]))
+            
+            if doInner:
+                if wnot0I[i] > dx:
+                    gapx = xcnot0I[i]
+                    gapwid = wnot0I[i] / 2.
+                    dists = np.abs(myxs - gapx)
+                    outgap = np.where(dists > gapwid)
+                    myxs = myxs[outgap]
+                    myys = myys[outgap]
+                    myzs = myzs[outgap]
+                    mydens = mydens[outgap]
+                
+            allpts[0] = np.concatenate((allpts[0], myxs))
             allpts[1] = np.concatenate((allpts[1], myys))
             allpts[2] = np.concatenate((allpts[2], myzs))
             allpts[3] = np.concatenate((allpts[3], mydens))
             
     # polish density    
     allpts[3] = allpts[3] / (6.957e10 **3 ) # convert to g/cm^3   
-    allpts[3][np.where(allpts[3] <= 0)] = np.min(np.abs(allpts[3]))
+    negPts = np.where(allpts[3] <= 0)
+    if len(negPts[0]) > 0:
+        allpts[3][negPts] = np.min(np.abs(allpts[3]))
     logd = np.log10(allpts[3])
     
     totalMass = np.sum(allpts[3]*(dx*6.957e10)**3)/1e15
     
     # 3d plotting example (for testing)
     if True:
-        showLess = 2
+        showLess = 10
         vval = 1e9 /dx**3
         ax = plt.figure().add_subplot(projection='3d')
         ax.scatter(allpts[0][::showLess], allpts[1][::showLess], allpts[2][::showLess], c=logd[::showLess])
@@ -623,51 +557,7 @@ print (sd)'''
 
 awf = wf.wireframe('GCS')
 awf.params = [27, 25, -13.4, 78.0, 55.0, 0.48]
-#awf.params = [30, 45, -13.4, 90., 50.0, 0.48]
+#awf.params = [50, 45, 0, 0., 50.0, 0.25]
 awf.getPoints()
     
-mass2dens(imMap, satDict, awf, massMap)    
-
-if False:
-    awf = wf.wireframe('GCS')
-    # Increase resolution of the wf
-    awf.gPoints = [i * 10 for i in awf.gPoints]
-    # Set some arb parameters
-    awf.params[0] = 10
-    awf.params[1] = 80
-    awf.params[2] = 0
-    awf.params[3] = 10
-    awf.getPoints()
-    wids, midx, FoV, nGridY = getWidth(awf.points)
-    awf.getPoints(inside=True)
-    widsI, midxI, FoV, nGridY = getWidth(awf.points, FoV=FoV, nGridY=nGridY)
-
-    dy, ygs, yms, nGridZ, zgs, zms = createGrid(FoV, nGridY)
-    wid = wids-widsI
-    mask = wid > 0
-    wid_smooth = ndimage.gaussian_filter(wid, sigma=2.0, order=0) 
-
-    # indexing of func is y,z    
-    interp_func = RegularGridInterpolator((yms, zms), np.transpose(wid_smooth), method='linear')
-    
-    if False:
-            points = awf.points
-            x = points[:,0]
-            y = points[:,1]
-            z = points[:,2]
-            ax = plt.figure().add_subplot(projection='3d')
-            ax.scatter(x,y,z, c='y')
-            #ax.scatter(np.zeros(len(gapPts[:,0])),gapPts[:,0],gapPts[:,1], c='r')
-            ax.set_xlabel('x')
-            ax.set_ylabel('y')
-            ax.set_zlabel('z')
-            plt.show()
-        
-    if True:
-        fig = plt.figure()
-        YY, ZZ = np.meshgrid(yms, zms)
-        plt.contourf(YY, ZZ, wid_smooth * mask)
-        maskIt = midx != -9999
-        plt.contourf(YY, ZZ, midx*maskIt)
-        plt.show()
-    
+mass2dens(imMap, satDict, awf, massMap, doInner=True)    
