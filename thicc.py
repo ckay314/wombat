@@ -278,8 +278,8 @@ def wf2CartFoV(myMap, aWF, pixCent=None):
     return res
     
 
-def mass2dens(myMap, satDict, awf, massMap, doInner=False, shell=True):
-    
+def mass2dens(myMap, satDict, awf, massMap, doInner=False, shell=True, densRatio=1):
+    # densRatio is dens of WF1 / WF2
     # Check if have single wireframe or multiple
     if (type(awf) == type(wf.wireframe(None))):
         multiMode = False 
@@ -480,15 +480,7 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, shell=True):
     maxxMap = [maxx, maxxI, maxx2]
     minxMap = [minx, minxI, minx2]
     outFoV  = [minpx, maxpx, minpy, maxpy, downSize]
-        
-    #|---------------------------------------------------|
-    #|--- Find the overlap points bewteen WF1 and WF2 ---|
-    #|---------------------------------------------------|
-    if multiMode:
-        overlap = np.where((widsIntnz2 > 0) & (widsIntnz > 0))
-        ovys    = f_fovy[overlap]
-        ovzs    = f_fovz[overlap]
-
+                
     #|--------------------------------------|
     #|--- Get grid cell area on subfield ---|
     #|--------------------------------------|
@@ -503,31 +495,111 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, shell=True):
     cellArea = dys * dzs
     
 
-    #|-------------------------------------|
-    #|--- Get density where wid nonzero ---|
-    #|-------------------------------------|
+    #|--------------------------|
+    #|--- Get simple density ---|
+    #|--------------------------|
+    # Start with assuming full mass goes into WF1
     notZero = np.where(widsIntnz != 0)
     dens = np.zeros(subMass.shape)
+    # Account for inner gap in WF1 if needed
     if doInner:
         dens[notZero] = subMass[notZero] / (widsIntnz[notZero] - widsIntnzI[notZero]) / cellArea[notZero] # g/Rs^3
     else:
         dens[notZero] = subMass[notZero] / widsIntnz[notZero] / cellArea[notZero] # g/Rs^3
-    
-    # This is wrong but do init to work with and fix later    
+        
+    # Get density for WF2 but ignore effects of WF for now (correct below)
     if multiMode:
         notZero2 = np.where(widsIntnz2 != 0)
         dens2 = np.zeros(subMass.shape)  
+        dens2[notZero2] = subMass[notZero2] / widsIntnz2[notZero2] / cellArea[notZero2] # g/Rs^3  
+    
+    
+    #|-------------------------------------------|
+    #|--- Get overlap region and adjacent pts ---|
+    #|-------------------------------------------|
+    ovMap = None
+    if multiMode:
+        #|--- Start by finding the overlap ---|
+        w1 = widsIntnz
         if doInner:
-            dens2[notZero2] = subMass[notZero2] / (widsIntnz2[notZero2] - (widsIntnz[notZero2] - widsIntnzI[notZero2])) / cellArea[notZero2] # g/Rs^3
-        else:
-            dens2[notZero2] = subMass[notZero2] / (widsIntnz2[notZero2] - widsIntnz[notZero2]) / cellArea[notZero2] # g/Rs^3  
+            w1 = w1 - widsIntnzI
+        w2 = widsIntnz2
+            
+        dx = np.mean(np.sqrt(cellArea))    
+        overlap = np.where((w2 >= dx) & (w1 >= dx))
+        ovys    = f_fovy[overlap]
+        ovzs    = f_fovz[overlap]
+        ovl     = np.zeros(f_fovy.shape)
+        ovl[overlap] = 1
+        
+        #|--- Find the edge of the overlap ---|
+        minOx, maxOx = np.min(overlap[1]), np.max(overlap[1])
+        minOy, maxOy = np.min(overlap[0]), np.max(overlap[0])
+        
+        # Run through each vertical line
+        for i in np.arange(minOx, maxOx+1):
+            js = overlap[0][np.where(overlap[1] == i)]
+            prej = -1
+            for j in js: 
+                if (j - prej) > 1:
+                    ovl[j,i] = 2
+                prej = j
+            ovl[j,i] = 2
+
+        # Run through each horiz line
+        for j in np.arange(minOy, maxOy+1):
+            iis = overlap[1][np.where(overlap[0] == j)]
+            prei = -1
+            for i in iis: 
+                if (i - prei) > 1:
+                    ovl[j,i] = 2
+                prei = i
+            ovl[j,i] = 2
+            
+        #|--- Find cells one outside/inside overlap ---|  
+        # Mark as -2, 2  
+        edge = np.where(ovl == 2)
+        for k in range(len(edge[0])):
+            i,j = edge[1][k], edge[0][k]
+            if i-1 > 0: 
+                if ovl[j,i-1] == 0: ovl[j,i-1] = -2                    
+                if ovl[j,i-1] == 1: ovl[j,i-1] = 2                    
+            if i+1 < ovl.shape[1]: 
+                if ovl[j,i+1] == 0: ovl[j,i+1] = -2
+                if ovl[j,i+1] == 1: ovl[j,i+1] = 2
+                    
+            if j-1 > 0: 
+                if ovl[j-1,i] == 0: ovl[j-1,i] = -2
+                if ovl[j-1,i] == 1: ovl[j-1,i] = 2
+                    
+            if j+1 < ovl.shape[0]: 
+                if ovl[j+1,i] == 0: ovl[j+1,i] = -2
+                if ovl[j+1,i] == 1: ovl[j+1,i] = 2
+
+
+    #|-------------------------|
+    #|--- Correct densities ---|
+    #|-------------------------|
+    if multiMode:
+        # Assume constant ratio between WF1 and WF2
+        # Originally did M = area * wid2 * n2
+        # Want to switch to M = area * ((wid2 - wid1) * n2 + ratio * wid1 * n1)
+        #scaleIt = np.zeros(ovl.shape)
+        scaleIt = w2[overlap] / (w1[overlap] * densRatio + (w2 - w1)[overlap])
+        dens[overlap]  = scaleIt * densRatio * dens2[overlap]
+        dens2[overlap] = scaleIt * dens2[overlap]
     
     # 2d plotting example (for testing)
     if False:
        fig = plt.figure()
        vval = 1e12
-       plt.imshow(dens, vmin=-vval, vmax=vval, origin='lower')
+       plt.imshow(dens2, vmin=-vval, vmax=vval, origin='lower')
        plt.show()
+
+    #|---------------------|
+    #|--- Return things ---|
+    #|---------------------|
+
 
     #|---------------------------|
     #|--- Expand in the x dim ---|
@@ -552,15 +624,15 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, shell=True):
         iy, iz = notZero[0][i], notZero[1][i]
         if nptsx[i] > 0:
             if shell:
-                myxs = np.array([minxMap[0][iy, iz], maxxMap[0][notZero[0][i], notZero[1][i]]])    
+                myxs = np.array([minxMap[0][iy, iz], maxxMap[0][iy, iz]])    
             else:
-                myxs = dx *(np.arange(-nptsx[i], nptsx[i]+1)) + xcMap[0][notZero[0][i], notZero[1][i]]
+                myxs = dx *(np.arange(-nptsx[i], nptsx[i]+1)) + xcMap[0][iy, iz]
         elif wnot0[i] > 0.9*dx:
-            myxs = np.array([xcMap[0][notZero[0][i], notZero[1][i]]])
+            myxs = np.array([xcMap[0][iy, iz]])
         
         if type(myxs) != type(None):
             if shell:
-                myys  = f_fovy[notZero[0][i], notZero[1][i]] * np.ones(len(myxs))
+                myys  = f_fovy[iy, iz] * np.ones(len(myxs))
                 myzs  = znot0[i] * np.ones(len(myxs))
                 mydens = dnot0[i] * np.ones(len(myxs))
             else:
@@ -572,7 +644,7 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, shell=True):
                 if wnot0I[i] > dx:
                     # Add inner part of shell
                     if shell:
-                        xIa, xIb = minxMap[1][notZero[0][i], notZero[1][i]], maxxMap[1][notZero[0][i], notZero[1][i]]
+                        xIa, xIb = minxMap[1][iy, iz], maxxMap[1][iy, iz]
                         myxsI = np.concatenate([xIa * np.ones(5), [xIa-dx, xIa+dx],  xIb * np.ones(5), [xIb-dx, xIb+dx]])
                         myysI = np.array([0, -dx, dx, 0, 0, 0, 0, 0, -dx, dx, 0, 0, 0, 0]) + myys[0]
                         myzsI = np.array([0, 0, 0, -dx, dx, 0, 0, 0, 0, 0, -dx, dx, 0, 0]) + myzs[0]
@@ -647,8 +719,6 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, shell=True):
                 allpts2[1] = np.concatenate((allpts2[1], myys2[idxOut]))
                 allpts2[2] = np.concatenate((allpts2[2], myzs2[idxOut]))
                 allpts2[3] = np.concatenate((allpts2[3], mydens2[idxOut]))
-                    
-                
             
     # polish density    
     allpts[3] = allpts[3] / (6.957e10 **3 ) # convert to g/cm^3   
@@ -667,6 +737,9 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, shell=True):
         logd2 = np.log10(allpts2[3])
     
         totalMass2 = np.sum(allpts2[3]*(dx*6.957e10)**3)/1e15
+
+
+
         
     # 3d plotting example (for testing)
     if True:
@@ -713,7 +786,7 @@ awf2 = wf.wireframe('Half Sphere')
 awf2.params = [36.2, 43.2, -5.4, 70]
 awf2.getPoints()
 
-mass2dens(imMap, satDict, [awf, awf2], massMap, doInner=True, shell=False)    
+mass2dens(imMap, satDict, [awf, awf2], massMap, doInner=True, shell=False, densRatio=0.8)    
 
 
 
