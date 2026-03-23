@@ -91,11 +91,14 @@ def getWidth(points, FoV=None, nGridY=100, fillAround=True):
                     mypts2 = np.where(np.abs(subz - zms[j]) < pad*dy)[0]
                     #mypts2 = np.where((subz >= z0-pad*dy) & (subz <= z1+pad*dy))[0]
                     sortx = np.sort(subx[mypts2])
-                    if len(sortx) > 0:               
+                    if len(sortx) > 1:               
                         fullwid = sortx[-1] - sortx[0]
                         wids[j,i] = fullwid
                         midx[j,i] = 0.5*(sortx[-1] + sortx[0])
-                        
+    '''fig = plt.figure()
+    plt.imshow(midx, origin='lower')
+    plt.show()
+    print (sd)'''                    
     # need to fill in the outer -9999 region of xc so interp is happy
     for i in range(midx.shape[1]):
         notOut = np.where(midx[:,i] !=-9999)[0]
@@ -107,6 +110,12 @@ def getWidth(points, FoV=None, nGridY=100, fillAround=True):
         if len(notOut) >= 2:
             midx[i,:notOut[0]]  = midx[i, notOut[0]]
             midx[i,notOut[-1]:] = midx[i, notOut[-1]]
+   
+    '''fig = plt.figure()
+    plt.imshow(midx, origin='lower')
+    plt.show()
+    print (sd)'''
+    
    
     return wids, midx, FoV, nGridY
 
@@ -399,11 +408,11 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
         wids2, midx2, FoV, nGridY = getWidth(wfPts2T)
         dy, ygs, yms, nGridZ, zgs, zms = createGrid(FoV, nGridY)
         wid_smooth2 = ndimage.gaussian_filter(wids2, sigma=2.0, order=0)
-        
+                
         # indexing of func is y,z    
         widFunc2 = RegularGridInterpolator((yms, zms), np.transpose(wid_smooth2), method='linear', bounds_error=False, fill_value=0)
         xcFunc2  = RegularGridInterpolator((yms, zms), np.transpose(midx2), method='linear', bounds_error=False, fill_value=0)
-    
+        
     # |--- Do the inner/main WF ---|
     awf.gPoints = [i * 10 for i in awf.gPoints]
     awf.getPoints()
@@ -559,9 +568,8 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
     widMap  = [widsIntnz, widsIntnzI, widsIntnz2]    
     xcMap   = [xcIntnz, xcIntnzI, xcIntnz2]   
     outFoV  = [minpx, maxpx, minpy, maxpy, downSize]
-                
     
-
+                
     #|--------------------------|
     #|--- Get simple density ---|
     #|--------------------------|
@@ -842,13 +850,14 @@ def cloudPlot(widMap, xcMap, densMap, outFoV, pix2FOV, shell=True, plotIt=True):
         for i in range(len(ynot2)):
             # |--- Check if we have at least one pt in width ---|
             myxs2 = None
+            iy, iz = notZero2[0][i], notZero2[1][i]
             if nptsx2[i] > 0:
                 if shell:
-                    myxs2 = np.array([-wnot2[i]/2, wnot2[i]/2])
+                    myxs2 = np.array([minxMap[2][iy, iz], maxxMap[2][iy, iz]]) 
                 else:
                     myxs2 = dx *(np.arange(-nptsx2[i], nptsx2[i]+1))
-            elif wnot2[i] > 0.9*dx:
-                myxs2 = np.zeros(1)
+            #elif wnot2[i] > 0.9*dx:
+            #    myxs2 = np.zeros(1)
                 
             # |--- Grab the matching y, z, dens ---|
             if type(myxs2) != type(None):                
@@ -858,7 +867,7 @@ def cloudPlot(widMap, xcMap, densMap, outFoV, pix2FOV, shell=True, plotIt=True):
                     mydens2 = dnot2[i] * np.ones(len(myxs2))
                     idxOut = range(len(myxs2))
                 else:
-                    myxs2 =  myxs2+xcnot2[i]
+                    #myxs2 =  myxs2+xcnot2[i]
                     myys2  = ynot2[i] * np.ones(2*nptsx2[i] + 1)
                     myzs2  = znot2[i] * np.ones(2*nptsx2[i] + 1)
                     mydens2 = dnot2[i] * np.ones(2*nptsx2[i] + 1)
@@ -896,7 +905,6 @@ def cloudPlot(widMap, xcMap, densMap, outFoV, pix2FOV, shell=True, plotIt=True):
         if len(negPts2[0]) > 0:
             allpts2[3][negPts2] = np.min(np.abs(allpts2[3]))
         logd2 = np.log10(allpts2[3])
-    
         #totalMass2 = np.sum(allpts2[3]*(dx*6.957e10)**3)/1e15
         #print ('WF2 total mass (1e15 g): ', totalMass2)
 
@@ -911,11 +919,22 @@ def cloudPlot(widMap, xcMap, densMap, outFoV, pix2FOV, shell=True, plotIt=True):
         # (gets laggy with filled structures)
         if shell:
             showLess1 = 1
+            idx1 = range(len(allpts[0]))
             showLess2 = 2
+            idx2 = np.arange(0,len(allpts2[0])-1)
+            np.random.shuffle(idx2)
+            idx2 = idx2[::showLess2]
             alpha2 = 0.3
         else:
             showLess1 = 2
+            idx1 = np.arange(0,len(allpts[0])-1)
+            np.random.shuffle(idx1)
+            idx1 = idx1[::showLess1]
+            
             showLess2 = 4
+            idx2 = np.arange(0,len(allpts2[0])-1)
+            np.random.shuffle(idx2)
+            idx2 = idx2[::showLess2]
             alpha2   = 0.15
         # Guess at nice density range    
         vval = 1e9 /dx**3
@@ -923,9 +942,10 @@ def cloudPlot(widMap, xcMap, densMap, outFoV, pix2FOV, shell=True, plotIt=True):
         # |--- Initiate figure ---|
         ax = plt.figure().add_subplot(projection='3d')
         # WF1 scatter
-        ax.scatter(allpts[0][::showLess1], allpts[1][::showLess1], allpts[2][::showLess1], c=logd[::showLess1], cmap='Reds')
+        ax.scatter(allpts[0][idx1], allpts[1][idx1], allpts[2][idx1], c=logd[idx1], cmap='Reds')
         # WF2 scatter
-        ax.scatter(allpts2[0][::showLess2], allpts2[1][::showLess2], allpts2[2][::showLess2], c=logd2[::showLess2], cmap='Blues', alpha=alpha2)
+        ax.scatter(allpts2[0][idx2], allpts2[1][idx2], allpts2[2][idx2], c=logd2[idx2], cmap='Blues', alpha=alpha2)
+        #ax.scatter(allpts2[0], allpts2[1], allpts2[2], c=logd2, cmap='Blues', alpha=alpha2)
     
         # Add contour legend?
     
@@ -1098,16 +1118,16 @@ awf.params = [23.5, 25.2, -13.5, 77.4, 54.9, 0.3]
 #awf.params = [50, 45, 0, 0., 50.0, 0.25]
 awf.getPoints()
 
-awf2 = wf.wireframe('Half Sphere')
+awf2 = wf.wireframe('Sphere')
 #awf2.params = [36.2, 43.2, -5.4, 70]
-awf2.params = [26.74, 25.2, -13.5, 77]
+awf2.params = [56.74, 25.2, -13.5, 55]
 awf2.getPoints()
 
 widMap, xcMap, densMap, subMass, outFoV, pix2FOV  = mass2dens(imMap, satDict, [awf, awf2], massMap, doInner=True,  densRatio=0.8)    
 
-#allPts = cloudPlot(widMap, xcMap, densMap,outFoV, pix2FOV, shell=True, plotIt=False)
-contourDens(densMap, outFoV, pix2FOV)
-getMasses(widMap, densMap, outFoV, pix2FOV)
+allPts = cloudPlot(widMap, xcMap, densMap,outFoV, pix2FOV, shell=True, plotIt=True)
+#contourDens(densMap, outFoV, pix2FOV)
+#getMasses(widMap, densMap, outFoV, pix2FOV)
 
 
 
