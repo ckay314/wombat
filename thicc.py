@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 from sunpy.coordinates import frames
 import scipy.ndimage as ndimage
 from scipy.interpolate import RegularGridInterpolator
+import matplotlib.cm as cm
 
 import sys
 sys.path.append('prepCode/') 
@@ -205,7 +206,10 @@ def map2CartFoV(myMap, points, pixCent=None):
         LoS0 = TSxyz0 - satxyz    
         uTSxyz0 = TSxyz0 / np.linalg.norm(TSxyz)
         uLoS0 = LoS0 / np.linalg.norm(LoS0)
-        ang = np.arccos(np.dot(uLoS0, uLoS))
+        dotIt = np.dot(uLoS0, uLoS)
+        if dotIt > 1: dotIt = 1.
+        elif dotIt < -1: dotIt = -1.
+        ang = np.arccos(dotIt)
         newL = dM / np.cos(np.abs(ang))
         TSxyz0 = satxyz + newL*uLoS0
         xs.append(TSxyz0[0]*215)
@@ -278,8 +282,65 @@ def wf2CartFoV(myMap, aWF, pixCent=None):
     return res
     
 
-def mass2dens(myMap, satDict, awf, massMap, doInner=False, shell=True, densRatio=1):
-    # densRatio is dens of WF1 / WF2
+def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSelect=8):
+    '''
+    Fuction to take a mass image map, satellite dictionay, and wireframe object and
+    determine the width perp to the plane of sky and convert integrated mass to density.
+    A single wireframe or two can be passed (to represent a shock and ejecta). A constant
+    density is assumed along the line of sight within each WF. For GCS/torus shapes the
+    doInner flag indicates to remove the inner gap between the legs
+    
+    Inputs:
+        myMap:      a astropy/sunpy map where the data has units of g per pix
+    
+        satDict:    a wombat style satellite dictionary
+    
+        awf:        a wombat wireframe or two in an array [wf1, wf2] where wf1 is the 
+                    primary wf (i.e. ejecta) and wf2 is an outer/surrounding shape (sheath)
+    
+    Optional Inputs:
+        doInner:    remove the gap region at the back for a GCS or torus wf
+                    (defaults to false)
+    
+        densRatio:  the ratio of the density between wf1 and wf2, which is treated as a 
+                    constant value over all lines of sight. calculated as wf1/wf2 and 
+                    ignored if only a single wf is passed
+                    (defaults to 1)
+    
+        downSelect: an integer to downsample the output resolution
+                    (defaults to 8)
+    
+    Outputs:
+        widMap:     an array of the widths (in Rs) perp to the plane of sky 
+                    the array contains [wf1, wf1_inner, wf2] where inner represents
+                    the inner gap in wf1. wf1_inner and wf2 will be None if not used.
+                    each element is an array matching the region shown in subMass and
+                    with the field of view given in outFoV
+    
+        xcMap:      the distance of the center of mass from the plane of sky in the same
+                    format as widMap. also in Rs
+    
+        densMap:    same format as widMap/xcMap but for the calculated density. In g/cm^3
+    
+        subMass:    an array containing the data from the original mass map but clipped to 
+                    the field of view around the projected wf(s)
+    
+        outFoV:     an array with [x0, xf, y0, yf, downselect] where the first four 
+                    elements represent the extent of the sub-field of view (in pix) and
+                    downselect is an integer representing the 1D reduction in resolution.
+                    The field of values represent the locations in the full resolution image
+                    (e.g. a 1024x1024 original image with outFoV [0,512,0,512,2] would be a
+                    256x256 image containing one quadrant of the original )
+    
+        pix2FOV:    an array with three interpolation functions ([FOV2x, FOV2y, FOV2z] ) 
+                    that convert from from a pixel in the original image ((pixx, pixy)) to the
+                    location in the 3D cartesian system with the image in yz-plane at x=0 with
+                    the image center at the origin
+                    the interp funcs do need to be called with the pix in parens 
+                    (e.g. FoVx((pixx,pixy)) )
+    
+    ''' 
+    
     # Check if have single wireframe or multiple
     if (type(awf) == type(wf.wireframe(None))):
         multiMode = False 
@@ -290,6 +351,10 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, shell=True, densRatio
             multiMode = True
             awf2 = awf[1]
             awf  = awf[0]
+
+    # save downselect input as the final downselect
+    # (will use same var name for interp downselects in middle)
+    downSelectF = downSelect
 
     # |------------------------------------------|
     # |--- Map pixels to FoV Cartestian frame ---|
@@ -403,10 +468,13 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, shell=True, densRatio
     #|----------------------------------------|
     #|--- Find bounding box where wid != 0 ---|
     #|----------------------------------------|
-    notZero = np.where((widsInt != 0) | (widsInt2 != 0))
-    
+    if multiMode:
+        notZero = np.where((widsInt != 0) | (widsInt2 != 0))
+    else:
+         notZero = np.where(widsInt != 0) 
+         
     # Get nice bounds (in range, multiple of downselect)
-    downSize = 8
+    downSize = downSelectF 
     halfwid = int(downSize /2)
     minpx = np.max([np.min(fpxx[notZero]) - downSize,0])
     maxpx = np.min([np.max(fpxx[notZero]+downSize), int(myMap.data.shape[1]-halfwid-1), maxX-halfwid-1])
@@ -442,49 +510,14 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, shell=True, densRatio
     subMass = subsubMass
         
     
-    #|----------------------------------------|
-    #|--- Get x pos and widths on subfield ---|
-    #|----------------------------------------|
-    f_fovx = FOV2x((nzpxx, nzpyy))
-    f_fovy = FOV2y((nzpxx, nzpyy))
-    f_fovz = FOV2z((nzpxx, nzpyy))
-    
-    
-    #|--- Main wireframe ---|
-    widsIntnz = widFunc((f_fovy, f_fovz))
-    xcIntnz   = xcFunc((f_fovy, f_fovz))
-    maxx      = xcIntnz + 0.5 * widsIntnz 
-    minx      = xcIntnz - 0.5 * widsIntnz 
-
-    #|--- Inner region of main wireframe ---|
-    if doInner:
-        widsIntnzI = widFuncI((f_fovy, f_fovz))
-        xcIntnzI   = xcFuncI((f_fovy, f_fovz))
-        maxxI      = xcIntnzI + 0.5 * widsIntnzI 
-        minxI      = xcIntnzI - 0.5 * widsIntnzI
-    else:
-        widsIntnzI, xcIntnzI, maxxI, minxI = None, None, None, None
-
-    #|--- Outer wireframe ---|
-    if multiMode:
-        widsIntnz2 = widFunc2((f_fovy, f_fovz))
-        xcIntnz2   = xcFunc2((f_fovy, f_fovz))
-        maxx2      = xcIntnz2 + 0.5 * widsIntnz2 
-        minx2      = xcIntnz2 - 0.5 * widsIntnz2     
-    else:
-        widsIntnz2, xcIntnz2, maxx2, minx2 = None, None, None, None
-    
-    #|--- Package for outputs ---|
-    widMap  = [widsIntnz, widsIntnzI, widsIntnz2]    
-    xcMap   = [xcIntnz, xcIntnzI, xcIntnz2]   
-    maxxMap = [maxx, maxxI, maxx2]
-    minxMap = [minx, minxI, minx2]
-    outFoV  = [minpx, maxpx, minpy, maxpy, downSize]
-                
     #|--------------------------------------|
     #|--- Get grid cell area on subfield ---|
     #|--------------------------------------|
     # (in solar radii)
+    f_fovx = FOV2x((nzpxx, nzpyy))
+    f_fovy = FOV2y((nzpxx, nzpyy))
+    f_fovz = FOV2z((nzpxx, nzpyy))
+    
     # Could make this smoother, or at least better at edges, TBD
     dys = np.zeros(subMass.shape)
     dys[:,1:] = f_fovy[:,1:] - f_fovy[:,:-1]
@@ -493,6 +526,40 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, shell=True, densRatio
     dzs[1:,:] = f_fovz[1:,:] - f_fovz[:-1,:]
     dzs[0,:] = dzs[1,:]
     cellArea = dys * dzs
+    dx = np.mean(dys)
+
+
+    #|----------------------------------------|
+    #|--- Get x pos and widths on subfield ---|
+    #|----------------------------------------|
+    
+    #|--- Main wireframe ---|
+    widsIntnz = widFunc((f_fovy, f_fovz))
+    xcIntnz   = xcFunc((f_fovy, f_fovz))
+    # Clean up the edge bc interp makes fuzzy
+    widsIntnz[np.where(widsIntnz < dx*0.5)] = 0
+
+    #|--- Inner region of main wireframe ---|
+    if doInner:
+        widsIntnzI = widFuncI((f_fovy, f_fovz))
+        xcIntnzI   = xcFuncI((f_fovy, f_fovz))
+        widsIntnzI[np.where(widsIntnzI < dx*0.5)] = 0
+    else:
+        widsIntnzI, xcIntnzI = None, None
+
+    #|--- Outer wireframe ---|
+    if multiMode:
+        widsIntnz2 = widFunc2((f_fovy, f_fovz))
+        xcIntnz2   = xcFunc2((f_fovy, f_fovz))
+        widsIntnz2[np.where(widsIntnz2 < dx*0.5)] = 0
+    else:
+        widsIntnz2, xcIntnz2 = None, None
+    
+    #|--- Package for outputs ---|
+    widMap  = [widsIntnz, widsIntnzI, widsIntnz2]    
+    xcMap   = [xcIntnz, xcIntnzI, xcIntnz2]   
+    outFoV  = [minpx, maxpx, minpy, maxpy, downSize]
+                
     
 
     #|--------------------------|
@@ -508,6 +575,7 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, shell=True, densRatio
         dens[notZero] = subMass[notZero] / widsIntnz[notZero] / cellArea[notZero] # g/Rs^3
         
     # Get density for WF2 but ignore effects of WF for now (correct below)
+    dens2 = [None]
     if multiMode:
         notZero2 = np.where(widsIntnz2 != 0)
         dens2 = np.zeros(subMass.shape)  
@@ -588,6 +656,9 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, shell=True, densRatio
         scaleIt = w2[overlap] / (w1[overlap] * densRatio + (w2 - w1)[overlap])
         dens[overlap]  = scaleIt * densRatio * dens2[overlap]
         dens2[overlap] = scaleIt * dens2[overlap]
+        dens2 = dens2 / (6.957e10 **3 )
+    dens = dens / (6.957e10 **3 )
+    densMap = [dens , dens2 ] # convert to g/cm^3
     
     # 2d plotting example (for testing)
     if False:
@@ -599,50 +670,122 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, shell=True, densRatio
     #|---------------------|
     #|--- Return things ---|
     #|---------------------|
+    return widMap, xcMap, densMap, subMass, outFoV, [FOV2x, FOV2y, FOV2z] 
 
+
+
+# |-----------------------------|
+# |--- 3D Density Cloud plot ---|
+# |-----------------------------|
+def cloudPlot(widMap, xcMap, densMap, outFoV, pix2FOV, shell=True, plotIt=True):
+    #|------------------|
+    #|--- Prep stuff ---|
+    #|------------------|
+    #|--- Unpackage FoV things ---|
+    minpx, maxpx, minpy, maxpy, downSize = outFoV
+    
+    #|--- Check for inner data ---|
+    doInner = False
+    if type(widMap[1]) != type(None):
+        doInner = True
+
+    #|--- Check for second WF ---|
+    multiMode = False
+    if type(widMap[2]) != type(None):
+        multiMode = True
+    
+    #|--- Make the mini FoV grid in pix ---|
+    pxs = np.arange(minpx, maxpx+1, downSize)
+    pys = np.arange(minpy, maxpy+1, downSize)
+    pxx, pyy = np.meshgrid(pxs, pys)
+    
+    #|--- Make the mini FoV grid in Rs ---|
+    fovx = pix2FOV[0]((pxx, pyy))
+    fovy = pix2FOV[1]((pxx, pyy))
+    fovz = pix2FOV[2]((pxx, pyy))
+    
+    #|--- Get resolution ---|
+    dys = np.zeros(fovx.shape)
+    dys[:,1:] = fovy[:,1:] - fovy[:,:-1]
+    dys[:,0] = dys[:,1] 
+    dzs = np.zeros(fovx.shape)
+    dzs[1:,:] = fovz[1:,:] - fovz[:-1,:]
+    dzs[0,:] = dzs[1,:]
+    cellArea = dys * dzs
+    
+    #|--- Get points with non zero wids ---|
+    if type(widMap[2]) != type(None):
+        notZero  = np.where((widMap[0] != 0) | (widMap[2] != 0))
+        notZero2 = np.where(widMap[2] != 0)
+    else:
+        notZero = np.where(widMap[0] != 0)
 
     #|---------------------------|
     #|--- Expand in the x dim ---|
     #|---------------------------|
-    ynot0    = f_fovy[notZero]
-    znot0    = f_fovz[notZero]
-    xnot0    = znot0 * 0
-    wnot0    = widsIntnz[notZero]
-    xcnot0   = xcIntnz[notZero]
-    dnot0    = dens[notZero]
-    if doInner:
-        wnot0I  = widsIntnzI[notZero]
-        xcnot0I = xcIntnzI[notZero]
+    #|--- Get map of front/back x vals ---|
+    maxxMap, minxMap = [], []
+    for i in range(3):
+        maxxMap.append(xcMap[i] + 0.5 * widMap[i])
+        minxMap.append(xcMap[i] - 0.5 * widMap[i])
     
+
+    #|--- Get values at non zero wid grid cells---|    
+    yn0    = fovy[notZero]
+    zn0    = fovz[notZero]
+    xn0    = zn0 * 0
+    wn0    = widMap[0][notZero]
+    xcn0   = xcMap[0][notZero]
+    dn0    = densMap[0][notZero]
+    if doInner:
+        wn0I  = widMap[1][notZero]
+        xcn0I = xcMap[1][notZero]
+        
+    #|--- Set x resolution at mean of y ---|    
     dx = np.mean(dys) # should be sufficient
-    nptsx = wnot0 / dx / 2 
+    
+    #|--- Get # of points in x dim ---|
+    nptsx = wn0 / dx / 2 
     nptsx = nptsx.astype(int)
     
+    
+    
+    #|-----------------------------|
+    #|--- Make the cloud points ---|
+    #|-----------------------------|
+    #|--- Build an array of points ---|    
+    # allpts = [x, y, z, dens]
     allpts = [np.array([]), np.array([]), np.array([]), np.array([])]
-    for i in range(len(ynot0)):
+    
+    #|--- Loop through nonzero cells ---|
+    for i in range(len(yn0)):
         myxs = None
         iy, iz = notZero[0][i], notZero[1][i]
+        
+        # |--- Check if we have at least one pt in width ---|
         if nptsx[i] > 0:
             if shell:
                 myxs = np.array([minxMap[0][iy, iz], maxxMap[0][iy, iz]])    
             else:
                 myxs = dx *(np.arange(-nptsx[i], nptsx[i]+1)) + xcMap[0][iy, iz]
-        elif wnot0[i] > 0.9*dx:
+        elif wn0[i] > 0.9*dx:
             myxs = np.array([xcMap[0][iy, iz]])
-        
+    
+        # |--- Grab the matching y, z, dens ---|
         if type(myxs) != type(None):
             if shell:
-                myys  = f_fovy[iy, iz] * np.ones(len(myxs))
-                myzs  = znot0[i] * np.ones(len(myxs))
-                mydens = dnot0[i] * np.ones(len(myxs))
+                myys  = fovy[iy, iz] * np.ones(len(myxs))
+                myzs  = zn0[i] * np.ones(len(myxs))
+                mydens = dn0[i] * np.ones(len(myxs))
             else:
-                myys  = ynot0[i] * np.ones(2*nptsx[i] + 1)
-                myzs  = znot0[i] * np.ones(2*nptsx[i] + 1)
-                mydens = dnot0[i] * np.ones(2*nptsx[i] + 1)
+                myys  = yn0[i] * np.ones(2*nptsx[i] + 1)
+                myzs  = zn0[i] * np.ones(2*nptsx[i] + 1)
+                mydens = dn0[i] * np.ones(2*nptsx[i] + 1)
             
+            # |--- Account for the inner gap ---|
             if doInner:
-                if wnot0I[i] > dx:
-                    # Add inner part of shell
+                if wn0I[i] > dx:
+                    # |--- Add inner part of shell ---|
                     if shell:
                         xIa, xIb = minxMap[1][iy, iz], maxxMap[1][iy, iz]
                         myxsI = np.concatenate([xIa * np.ones(5), [xIa-dx, xIa+dx],  xIb * np.ones(5), [xIb-dx, xIb+dx]])
@@ -652,36 +795,52 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, shell=True, densRatio
                         myys  = np.concatenate((myys, myysI))
                         myzs  = np.concatenate((myzs, myzsI))
                         mydens  = np.concatenate((mydens, mydens[0]*np.ones(14)))
-                    # Remove points from full structure
+                    # |--- Or remove points from full structure ---|
                     else:
-                        gapx = xcnot0I[i]
-                        gapwid = wnot0I[i] / 2.
+                        gapx = xcn0I[i]
+                        gapwid = wn0I[i] / 2.
                         dists = np.abs(myxs - gapx)
                         outgap = np.where(dists > gapwid)
                         myxs = myxs[outgap]
                         myys = myys[outgap]
                         myzs = myzs[outgap]
                         mydens = mydens[outgap]
-                
+                        
+            # |--- Add to output lists ---|    
             allpts[0] = np.concatenate((allpts[0], myxs))
             allpts[1] = np.concatenate((allpts[1], myys))
             allpts[2] = np.concatenate((allpts[2], myzs))
             allpts[3] = np.concatenate((allpts[3], mydens))
             
-    # Repeat for second wf
+    #|----------------------------|
+    #|--- Repeat for second WF ---|
+    #|----------------------------|
+    allpts2 = None
     if multiMode:
-        ynot2    = f_fovy[notZero2]
-        znot2    = f_fovz[notZero2]
+        #|--- Get values at non zero wid grid cells---|
+        ynot2    = fovy[notZero2]
+        znot2    = fovz[notZero2]
         xnot2    = znot2 * 0
-        wnot2    = widsIntnz2[notZero2]
-        xcnot2   = xcIntnz2[notZero2]
-        dnot2    = dens2[notZero2]
+        wnot2    = widMap[2][notZero2]
+        xcnot2   = xcMap[2][notZero2]
+        dnot2    = densMap[1][notZero2]
         
+        #|--- Get # of points in x dim ---|
         nptsx2 = wnot2 / dx / 2 
         nptsx2 = nptsx2.astype(int)
         
+        # |--- Get overlap points ---|
+        overlap = np.where((widMap[2] >= dx) & (widMap[0] >= dx))
+        ovys    = fovy[overlap]
+        ovzs    = fovz[overlap]
+        
+        #|--- Build an array of points ---|    
+        # allpts2 = [x, y, z, dens]
         allpts2 = [np.array([]), np.array([]), np.array([]), np.array([])]
+        
+        #|--- Loop through nonzero cells ---|
         for i in range(len(ynot2)):
+            # |--- Check if we have at least one pt in width ---|
             myxs2 = None
             if nptsx2[i] > 0:
                 if shell:
@@ -691,8 +850,8 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, shell=True, densRatio
             elif wnot2[i] > 0.9*dx:
                 myxs2 = np.zeros(1)
                 
-            if type(myxs2) != type(None):
-                
+            # |--- Grab the matching y, z, dens ---|
+            if type(myxs2) != type(None):                
                 if shell:
                     myys2  = ynot2[i] * np.ones(len(myxs2))
                     myzs2  = znot2[i] * np.ones(len(myxs2))
@@ -705,56 +864,219 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, shell=True, densRatio
                     mydens2 = dnot2[i] * np.ones(2*nptsx2[i] + 1)
                     inOV = (ynot2[i] in ovys) and (znot2[i] in ovzs)
                     idxOut = range(len(myxs2))
+                    
+                    #|--- If doing full cloud, take out inner WF1 points ---|
                     if inOV:
                         iy, iz = notZero2[0][i], notZero2[1][i]
-                        myxc, myw = xcIntnz[iy,iz], widsIntnz[iy,iz]/2
-                        myxc2, myw2 = xcIntnz2[iy,iz], widsIntnz2[iy,iz]/2
+                        myxc, myw = xcMap[0][iy,iz], widMap[0][iy,iz]/2
+                        myxc2, myw2 = xcMap[2][iy,iz], widMap[2][iy,iz]/2
                     
                         idxa = np.where(myxs2 > (myxc + myw))[0]
                         idxb = np.where(myxs2 < (myxc - myw))[0]
                         idxOut = np.concatenate((idxa, idxb))
                     
-            
+                # |--- Add to output lists ---|    
                 allpts2[0] = np.concatenate((allpts2[0], myxs2[idxOut]))
                 allpts2[1] = np.concatenate((allpts2[1], myys2[idxOut]))
                 allpts2[2] = np.concatenate((allpts2[2], myzs2[idxOut]))
                 allpts2[3] = np.concatenate((allpts2[3], mydens2[idxOut]))
-            
-    # polish density    
-    allpts[3] = allpts[3] / (6.957e10 **3 ) # convert to g/cm^3   
+    
+    
+    # |--- Logify densities ---|
     negPts = np.where(allpts[3] <= 0)
     if len(negPts[0]) > 0:
         allpts[3][negPts] = np.min(np.abs(allpts[3]))
     logd = np.log10(allpts[3])
     
-    totalMass = np.sum(allpts[3]*(dx*6.957e10)**3)/1e15
+    # Stop printing mass bc shell flag will make only shell mass
+    #totalMass = np.sum(allpts[3]*(dx*6.957e10)**3)/1e15
     
     if multiMode:
-        allpts2[3] = allpts2[3] / (6.957e10 **3 ) # convert to g/cm^3   
         negPts2 = np.where(allpts2[3] <= 0)
         if len(negPts2[0]) > 0:
             allpts2[3][negPts2] = np.min(np.abs(allpts2[3]))
         logd2 = np.log10(allpts2[3])
     
-        totalMass2 = np.sum(allpts2[3]*(dx*6.957e10)**3)/1e15
+        #totalMass2 = np.sum(allpts2[3]*(dx*6.957e10)**3)/1e15
+        #print ('WF2 total mass (1e15 g): ', totalMass2)
 
 
 
         
-    # 3d plotting example (for testing)
-    if True:
-        showLess = 1
+    #|------------------------|
+    #|--- Make the 3D Plot ---|
+    #|------------------------|
+    if plotIt:
+        # Option to downselect the number of pts shown
+        # (gets laggy with filled structures)
+        if shell:
+            showLess1 = 1
+            showLess2 = 2
+            alpha2 = 0.3
+        else:
+            showLess1 = 2
+            showLess2 = 4
+            alpha2   = 0.15
+        # Guess at nice density range    
         vval = 1e9 /dx**3
+    
+        # |--- Initiate figure ---|
         ax = plt.figure().add_subplot(projection='3d')
-        ax.scatter(allpts[0][::showLess], allpts[1][::showLess], allpts[2][::showLess], c=logd[::showLess], cmap='Reds')
-        #ax.scatter(allpts2[0][::showLess*2], allpts2[1][::showLess*2], allpts2[2][::showLess*2], c=logd2[::showLess*2], cmap='Blues', alpha=0.15)
+        # WF1 scatter
+        ax.scatter(allpts[0][::showLess1], allpts[1][::showLess1], allpts[2][::showLess1], c=logd[::showLess1], cmap='Reds')
+        # WF2 scatter
+        ax.scatter(allpts2[0][::showLess2], allpts2[1][::showLess2], allpts2[2][::showLess2], c=logd2[::showLess2], cmap='Blues', alpha=alpha2)
+    
+        # Add contour legend?
+    
+        # Prettify
         ax.set_aspect('equal') 
         ax.set_xlabel('x')
         ax.set_ylabel('y')
         ax.set_zlabel('z')
         plt.show()
     
+    return [allpts, allpts2]
+    
 
+# |----------------------------|
+# |--- Density Contour plot ---|
+# |----------------------------|
+def contourDens(densMap, outFoV, pix2FOV, showLog=False, figName=None):
+    #|------------------|
+    #|--- Prep stuff ---|
+    #|------------------|
+    #|--- Unpackage FoV things ---|
+    minpx, maxpx, minpy, maxpy, downSize = outFoV
+    
+    dens1 = densMap[0]
+    
+
+    #|--- Check for second WF ---|
+    multiMode = False
+    if type(widMap[2]) != type(None):
+        multiMode = True
+        dens2 = densMap[1]
+
+    #|--- Make the mini FoV grid in pix ---|
+    pxs = np.arange(minpx, maxpx+1, downSize)
+    pys = np.arange(minpy, maxpy+1, downSize)
+    pxx, pyy = np.meshgrid(pxs, pys)
+    
+    #|--- Make the mini FoV grid in Rs ---|
+    fovx = pix2FOV[0]((pxx, pyy))
+    fovy = pix2FOV[1]((pxx, pyy))
+    fovz = pix2FOV[2]((pxx, pyy))
+    
+    #|--- Get resolution ---|
+    dys = np.zeros(fovx.shape)
+    dys[:,1:] = fovy[:,1:] - fovy[:,:-1]
+    dys[:,0] = dys[:,1] 
+    dzs = np.zeros(fovx.shape)
+    dzs[1:,:] = fovz[1:,:] - fovz[:-1,:]
+    dzs[0,:] = dzs[1,:]
+    cellArea = dys * dzs
+    
+    # |--- Logify densities ---|
+    if showLog:
+        negPts = np.where(dens1 <= 0)
+        if len(negPts[0]) > 0:
+            minval = np.min(np.abs(dens1[np.where(np.abs(dens1) > 0)]))
+            dens1[negPts] = minval
+        logd1 = np.log10(dens1)
+        
+        if multiMode:
+            negPts2 = np.where(dens2 <= 0)
+            if len(negPts2[0]) > 0:
+                minval2 = np.min(np.abs(dens2[np.where(np.abs(dens2) > 0)]))
+                dens2[negPts2] = minval2
+            logd2 = np.log10(dens2)
+    
+    #|--------------------|
+    #|--- Setup Figure ---|
+    #|--------------------|
+    scl =  (maxpx-minpx) / (maxpy-minpy) 
+    if multiMode:
+        fig, ax = plt.subplots(1, 2, figsize = (5*scl+4.5,6), sharex=True, layout='constrained')
+    else:
+        fig, ax = plt.subplots(1, 1)
+        ax = [ax]
+    
+    vval = np.median(np.abs(dens1[dens1 !=0])) * 3 
+    
+    cmap = plt.get_cmap('RdYlBu_r')
+    cmap.set_under('k')
+    dens1[np.where(dens1 == 0)] = -10
+    im = ax[-1].imshow(dens1, vmin=-vval, vmax=vval, cmap=cmap, extent=[minpx, maxpx, minpy, maxpy])
+    ax[-1].set_xlabel('Pixels')
+    ax[-1].set_ylabel('Pixels')
+    
+    if multiMode:
+        dens2[np.where(dens2 == 0)] = -10
+        ax[0].imshow(dens2, vmin=-vval, vmax=vval, cmap=cmap, extent=[minpx, maxpx, minpy, maxpy])
+        ax[0].set_xlabel('Pixels')
+        ax[0].set_ylabel('Pixels')
+        ax[-1].set_title('Inner WF')
+        ax[0].set_title('Outer WF')
+        
+        ax[-1].contour(pxx,pyy,dens2, levels=[-10], linestyles='--', colors='w')
+        ax[0].contour(pxx,pyy,dens1, levels=[-10], linestyles='--', colors='k')
+        
+    cbar = fig.colorbar(im, ax=ax, orientation='vertical', fraction=.03, pad=0.02) #
+    cbar.set_label('Density (g cm$^{-3}$)')
+    
+    ax[0].set_aspect('equal')
+    #fig.subplots_adjust(wspace=0.1)
+    #plt.tight_layout()
+    if figName:
+        plt.savefig(figName)
+    else:
+        plt.show()
+
+# |------------------------------|
+# |--- Calculate total masses ---|
+# |------------------------------|
+def getMasses(widMap, densMap, outFoV, pix2FOV, showLog=False, figName=None):
+    #|------------------|
+    #|--- Prep stuff ---|
+    #|------------------|
+    #|--- Unpackage FoV things ---|
+    minpx, maxpx, minpy, maxpy, downSize = outFoV
+    
+    dens1 = densMap[0]
+    
+    #|--- Check for second WF ---|
+    multiMode = False
+    if type(widMap[2]) != type(None):
+        multiMode = True
+        dens2 = densMap[1]
+
+    #|--- Make the mini FoV grid in pix ---|
+    pxs = np.arange(minpx, maxpx+1, downSize)
+    pys = np.arange(minpy, maxpy+1, downSize)
+    pxx, pyy = np.meshgrid(pxs, pys)
+    
+    #|--- Make the mini FoV grid in Rs ---|
+    fovx = pix2FOV[0]((pxx, pyy))
+    fovy = pix2FOV[1]((pxx, pyy))
+    fovz = pix2FOV[2]((pxx, pyy))
+    
+    #|--- Get resolution ---|
+    dys = np.zeros(fovx.shape)
+    dys[:,1:] = fovy[:,1:] - fovy[:,:-1]
+    dys[:,0] = dys[:,1] 
+    dzs = np.zeros(fovx.shape)
+    dzs[1:,:] = fovz[1:,:] - fovz[:-1,:]
+    dzs[0,:] = dzs[1,:]
+    cellArea = dys * dzs
+
+    #widRs = [wid  for wid in widMap]
+    vol1 = widMap[0] * cellArea * (6.96e10 **3)
+    print ('Inner WF mass (1e15 g)', '{:.2f}'.format(np.sum(dens1*vol1) / 1e15))
+    if multiMode:
+        vol2 = widMap[2] * cellArea * (6.96e10 **3)
+        print ('Outer WF mass (1e15 g)', '{:.2f}'.format(np.sum(dens2*vol2) / 1e15))
+    
 # python3 wombatProcessObs.py 2012-07-12T16:00 2012-07-13T05:00 HI1A rdiffHI
 # python3 wombatProcessObs.py 2012-07-13T20:00 2012-07-14T12:00 HI2A rdiffHI
 theFile = 'wbPickles/WBGUI_temp.pkl'
@@ -763,32 +1085,29 @@ theFile = 'wbPickles/WBGUI_temp.pkl'
 with open(theFile, 'rb') as file:
     bkgData = pickle.load(file)
 
-tidx = 9
+tidx = 5
 obs  ='HI1A'
 satDict = bkgData['satStuff'][obs][0][tidx]
 imMap = bkgData['proImMaps'][obs][0][tidx]
 showMap = bkgData['scaledIms'][obs][0][tidx][0]
 massMap = bkgData['massIms'][obs][tidx]
 
-'''fig = plt.figure()
-#plt.imshow(showMap, vmin=63, vmax=128, cmap='gist_heat')
-plt.imshow(massMap,  cmap='gist_heat', vmin=-1e9, vmax=1e9)
-plt.show()
-
-print (sd)'''
 
 awf = wf.wireframe('GCS')
-awf.params = [30, 25, -13.4, 78.0, 55.0, 0.28]
+awf.params = [23.5, 25.2, -13.5, 77.4, 54.9, 0.3]
 #awf.params = [50, 45, 0, 0., 50.0, 0.25]
 awf.getPoints()
 
 awf2 = wf.wireframe('Half Sphere')
-awf2.params = [36.2, 43.2, -5.4, 70]
+#awf2.params = [36.2, 43.2, -5.4, 70]
+awf2.params = [26.74, 25.2, -13.5, 77]
 awf2.getPoints()
 
-mass2dens(imMap, satDict, [awf, awf2], massMap, doInner=True, shell=False, densRatio=0.8)    
+widMap, xcMap, densMap, subMass, outFoV, pix2FOV  = mass2dens(imMap, satDict, [awf, awf2], massMap, doInner=True,  densRatio=0.8)    
 
-
+#allPts = cloudPlot(widMap, xcMap, densMap,outFoV, pix2FOV, shell=True, plotIt=False)
+contourDens(densMap, outFoV, pix2FOV)
+getMasses(widMap, densMap, outFoV, pix2FOV)
 
 
 
