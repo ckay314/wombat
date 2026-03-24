@@ -95,10 +95,17 @@ def getWidth(points, FoV=None, nGridY=100, fillAround=True):
                         fullwid = sortx[-1] - sortx[0]
                         wids[j,i] = fullwid
                         midx[j,i] = 0.5*(sortx[-1] + sortx[0])
-    '''fig = plt.figure()
-    plt.imshow(midx, origin='lower')
-    plt.show()
-    print (sd)'''                    
+    # Certain shapes (e.g. half sphere) can see "into" and makes wid/xc wonky
+    # when only have one side along LoS... just remove this part
+    idx = np.where(midx != -9999)                    
+    medxc, stdxc = np.median(midx[idx]), np.std(midx[idx])
+    medwid, stdwid = np.median(wids[idx]), np.std(wids[idx])
+    # Check for back only section
+    midx[np.where((midx < (medxc-stdxc)) & (wids < 10*dy ) & (wids != -9999))] = -9999
+    # Check for front only section
+    midx[np.where((midx > (medxc+stdxc)) & (wids < 10*dy ) & (wids != -9999))] = -9999
+
+                  
     # need to fill in the outer -9999 region of xc so interp is happy
     for i in range(midx.shape[1]):
         notOut = np.where(midx[:,i] !=-9999)[0]
@@ -110,13 +117,8 @@ def getWidth(points, FoV=None, nGridY=100, fillAround=True):
         if len(notOut) >= 2:
             midx[i,:notOut[0]]  = midx[i, notOut[0]]
             midx[i,notOut[-1]:] = midx[i, notOut[-1]]
-   
-    '''fig = plt.figure()
-    plt.imshow(midx, origin='lower')
-    plt.show()
-    print (sd)'''
     
-   
+       
     return wids, midx, FoV, nGridY
 
 
@@ -425,7 +427,7 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
         wids2, midx2, FoV, nGridY = getWidth(wfPts2T)
         dy, ygs, yms, nGridZ, zgs, zms = createGrid(FoV, nGridY)
         wid_smooth2 = ndimage.gaussian_filter(wids2, sigma=2.0, order=0)
-                
+        
         # indexing of func is y,z    
         widFunc2 = RegularGridInterpolator((yms, zms), np.transpose(wid_smooth2), method='linear', bounds_error=False, fill_value=0)
         xcFunc2  = RegularGridInterpolator((yms, zms), np.transpose(midx2), method='linear', bounds_error=False, fill_value=0)
@@ -890,7 +892,7 @@ def cloudPlot(widMap, xcMap, densMap, outFoV, pix2FOV, shell=True, plotIt=True):
             #    myxs2 = np.zeros(1)
                 
             # |--- Grab the matching y, z, dens ---|
-            if type(myxs2) != type(None):                
+            if (type(myxs2) != type(None)) & (np.abs(xcMap[2][iy, iz]) < 10*wnot2[i]):                
                 if shell:
                     myys2  = ynot2[i] * np.ones(len(myxs2))
                     myzs2  = znot2[i] * np.ones(len(myxs2))
@@ -927,18 +929,11 @@ def cloudPlot(widMap, xcMap, densMap, outFoV, pix2FOV, shell=True, plotIt=True):
         allpts[3][negPts] = np.min(np.abs(allpts[3]))
     logd = np.log10(allpts[3])
     
-    # Stop printing mass bc shell flag will make only shell mass
-    #totalMass = np.sum(allpts[3]*(dx*6.957e10)**3)/1e15
-    
     if multiMode:
         negPts2 = np.where(allpts2[3] <= 0)
         if len(negPts2[0]) > 0:
             allpts2[3][negPts2] = np.min(np.abs(allpts2[3]))
         logd2 = np.log10(allpts2[3])
-        #totalMass2 = np.sum(allpts2[3]*(dx*6.957e10)**3)/1e15
-        #print ('WF2 total mass (1e15 g): ', totalMass2)
-
-
 
         
     #|------------------------|
@@ -951,7 +946,7 @@ def cloudPlot(widMap, xcMap, densMap, outFoV, pix2FOV, shell=True, plotIt=True):
             showLess1 = 1
             idx1 = range(len(allpts[0]))
             if multiMode:
-                showLess2 = 2
+                showLess2 = 1
                 idx2 = np.arange(0,len(allpts2[0])-1)
                 np.random.shuffle(idx2)
                 idx2 = idx2[::showLess2]
@@ -971,16 +966,21 @@ def cloudPlot(widMap, xcMap, densMap, outFoV, pix2FOV, shell=True, plotIt=True):
         vval = 1e9 /dx**3
     
         # |--- Initiate figure ---|
-        ax = plt.figure().add_subplot(projection='3d')
+        fig = plt.figure(figsize=(8, 5), layout='constrained')
+        ax = fig.add_subplot(111, projection='3d')
         # WF1 scatter
-        ax.scatter(allpts[0][idx1], allpts[1][idx1], allpts[2][idx1], c=logd[idx1], cmap='Reds')
+        im = ax.scatter(allpts[0][idx1], allpts[1][idx1], allpts[2][idx1], c=logd[idx1], cmap='Reds')
         if multiMode:
             # WF2 scatter
-            ax.scatter(allpts2[0][idx2], allpts2[1][idx2], allpts2[2][idx2], c=logd2[idx2], cmap='Blues', alpha=alpha2)
-        #ax.scatter(allpts2[0], allpts2[1], allpts2[2], c=logd2, cmap='Blues', alpha=alpha2)
-    
-        # Add contour legend?
-    
+            im2 = ax.scatter(allpts2[0][idx2], allpts2[1][idx2], allpts2[2][idx2], c=logd2[idx2], cmap='Blues', alpha=alpha2)
+
+        # Add contour bar
+        cbar = fig.colorbar(im, ax=ax, orientation='vertical', fraction=.05, pad=0.02, shrink=0.5) 
+        cbar.set_label('Log$_{10}$ Density\n(g cm$^{-3}$)')
+        if multiMode:
+            cbar2 = fig.colorbar(im2, ax=ax, orientation='vertical', fraction=.05, pad=0.02, shrink=0.5, location='left') 
+            cbar2.set_label('Log$_{10}$ Density\n(g cm$^{-3}$)')
+        
         # Prettify
         ax.set_aspect('equal') 
         ax.set_xlabel('x')
@@ -1095,12 +1095,14 @@ def getMasses(widMap, densMap, outFoV, pix2FOV, showLog=False, figName=None):
     minpx, maxpx, minpy, maxpy, downSize = outFoV
     
     dens1 = densMap[0]
+    gidx1 = np.where(dens1 != -10)
     
     #|--- Check for second WF ---|
     multiMode = False
     if type(widMap[2]) != type(None):
         multiMode = True
         dens2 = densMap[1]
+        gidx2 = np.where(dens2 != -10)
 
     #|--- Make the mini FoV grid in pix ---|
     pxs = np.arange(minpx, maxpx+1, downSize)
@@ -1123,10 +1125,10 @@ def getMasses(widMap, densMap, outFoV, pix2FOV, showLog=False, figName=None):
 
     #widRs = [wid  for wid in widMap]
     vol1 = widMap[0] * cellArea * (6.96e10 **3)
-    print ('Inner WF mass (1e15 g)', '{:.2f}'.format(np.sum(dens1*vol1) / 1e15))
+    print ('Inner WF mass (1e15 g)', '{:.2f}'.format(np.sum(dens1[gidx1]*vol1[gidx1]) / 1e15))
     if multiMode:
         vol2 = widMap[2] * cellArea * (6.96e10 **3)
-        print ('Outer WF mass (1e15 g)', '{:.2f}'.format(np.sum(dens2*vol2) / 1e15))
+        print ('Outer WF mass (1e15 g)', '{:.2f}'.format(np.sum(dens2[gidx2]*vol2[gidx2]) / 1e15))
     
 # python3 wombatProcessObs.py 2012-07-12T16:00 2012-07-13T05:00 HI1A rdiffHI
 # python3 wombatProcessObs.py 2012-07-13T20:00 2012-07-14T12:00 HI2A rdiffHI
@@ -1157,28 +1159,16 @@ awf.params = [10., 25.2, -13.5, 77.4, 54.9, 0.3]
 #awf.params = [45.2, 77.4, 26.1, 40.5, 59.4, 0.3] # solohi 2059
 awf.getPoints()
 
-awf2 = wf.wireframe('Sphere') 
+awf2 = wf.wireframe('Half Sphere') 
 awf2.params = [11.2, 25.2, -2.7, 66] # COR2A 17:54
 #awf2.params = [36.2, 43.2, -5.4, 70]
 #awf2.params = [266.74, 25.2, -13.5, 55]
 #awf2.getPoints()
 
-widMap, xcMap, densMap, subMass, outFoV, pix2FOV  = mass2dens(imMap, satDict, awf, massMap, doInner=False,  densRatio=0.8)    
+widMap, xcMap, densMap, subMass, outFoV, pix2FOV  = mass2dens(imMap, satDict, [awf, awf2], massMap, doInner=False,  densRatio=1.8)    
 
-allPts = cloudPlot(widMap, xcMap, densMap,outFoV, pix2FOV, shell=True, plotIt=True)
-#contourDens(densMap, outFoV, pix2FOV)
-#getMasses(widMap, densMap, outFoV, pix2FOV)
-
-
+#allPts = cloudPlot(widMap, xcMap, densMap,outFoV, pix2FOV, shell=True, plotIt=True)
+contourDens(densMap, outFoV, pix2FOV)
+getMasses(widMap, densMap, outFoV, pix2FOV)
 
 
-if False:
-        ax = plt.figure().add_subplot(projection='3d')
-        #ax.scatter(f_fovx, f_fovy, f_fovz, c=widsInt)
-        ax.scatter(f_fovx, f_fovy, f_fovz, c=xcIntnz)
-        plt.show()
-
-if False:
-        fig = plt.figure()
-        plt.imshow(widsIntnz2, extent=[fake_px[0], fake_px[-1], fake_py[0], fake_py[-1]], origin='lower')
-        plt.show()
