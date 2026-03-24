@@ -227,8 +227,16 @@ def map2CartFoV(myMap, points, pixCent=None):
         
     # Convert everyone at the same time
     pts = np.array([xs, ys, zs])      
+    
+    if 'crota' in myMap.meta:
+        rollIt = myMap.meta['crota']
+    elif 'sc_roll' in myMap.meta:
+        rollIt = myMap.meta['sc_roll']
+    else:
+        print ('Neither crota or sc_roll in map metadata. Assuming zero roll')
+        rollIt = 0
 
-    res = StonyCart2CartFoV(pts, satLatD, satLonD, myMap.meta['crota'])
+    res = StonyCart2CartFoV(pts, satLatD, satLonD, rollIt)
 
     return res
 
@@ -285,8 +293,16 @@ def wf2CartFoV(myMap, aWF, pixCent=None):
     z = [*zs, *zwf]
     
     pts = np.array([x, y, z])      
-
-    res = StonyCart2CartFoV(pts, satLatD, satLonD, myMap.meta['crota'])
+    
+    if 'crota' in myMap.meta:
+        rollIt = myMap.meta['crota']
+    elif 'sc_roll' in myMap.meta:
+        rollIt = myMap.meta['sc_roll']
+    else:
+        print ('Neither crota or sc_roll in map metadata. Assuming zero roll')
+        rollIt = 0
+        
+    res = StonyCart2CartFoV(pts, satLatD, satLonD, rollIt)
     
     return res
     
@@ -372,8 +388,8 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
     # with the center pixel at the origin
     downSize = 32
     pixx, pixy = [], []
-    for i in range(myMap.data.shape[1])[::downSize]:
-        for j in range(myMap.data.shape[0])[::downSize]:
+    for j in range(myMap.data.shape[0])[::downSize]:
+        for i in range(myMap.data.shape[1])[::downSize]:
             pixx.append(i)
             pixy.append(j)
 
@@ -385,10 +401,11 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
     maxX = np.max(uniX)
     maxY = np.max(uniY)
     
-    FOVx = np.transpose(ptsOut[0].reshape([len(uniY), len(uniX)]))
-    FOVy = np.transpose(ptsOut[1].reshape([len(uniY), len(uniX)]))
-    FOVz = np.transpose(ptsOut[2].reshape([len(uniY), len(uniX)]))  
-    
+    FOVx = ptsOut[0].reshape([len(uniY), len(uniX)])
+    FOVy = ptsOut[1].reshape([len(uniY), len(uniX)])
+    FOVz = ptsOut[2].reshape([len(uniY), len(uniX)])  
+        
+    # Set interpolators to take (x, y) as input order but python array is [y,x]
     FOV2x = RegularGridInterpolator((uniX, uniY), np.transpose(FOVx), method='linear')
     FOV2y = RegularGridInterpolator((uniX, uniY), np.transpose(FOVy), method='linear')
     FOV2z = RegularGridInterpolator((uniX, uniY), np.transpose(FOVz), method='linear')
@@ -502,22 +519,29 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
     #|-----------------------------------|
     # Need to sum up the masses in all the pixels we are 
     # compressing into a single pix in the smaller FoV
-    
     # Compress along pixel x direction
     subMass = np.zeros([massMap.shape[0], nzpyy.shape[1]])
     for i in range(len(nzpxs)):
         mypx = nzpxs[i]
         subMass[:,i] = 0.5*massMap[:,mypx-halfwid] + np.sum(massMap[:,mypx-halfwid+1:mypx+halfwid], axis=1) + 0.5*massMap[:,mypx+halfwid]
+        if 0 in massMap[:,mypx-halfwid+1:mypx+halfwid]:
+            for k in np.arange(mypx-halfwid+1,mypx+halfwid):
+                idx = np.where(massMap[:,k] == 0)[0]
+                subMass[idx,i] = 0
     
     # Compress along pixel y direction
     subsubMass = np.zeros(nzpyy.shape)
     for i in range(len(nzpys)):
         mypy = nzpys[i]
         subsubMass[i,:] = 0.5*subMass[mypy-halfwid,:] + np.sum(subMass[mypy-halfwid+1:mypy+halfwid,:], axis=0) + 0.5*subMass[mypy+halfwid,:]
+        if 0 in subMass[mypy-halfwid+1:mypy+halfwid,:]:
+            for k in np.arange(mypy-halfwid+1,mypy+halfwid):
+                idx = np.where(subMass[k,:] == 0)[0]
+                subsubMass[i,idx] = 0
     
     # Rename for funsies
     subMass = subsubMass
-        
+
     
     #|--------------------------------------|
     #|--- Get grid cell area on subfield ---|
@@ -734,8 +758,12 @@ def cloudPlot(widMap, xcMap, densMap, outFoV, pix2FOV, shell=True, plotIt=True):
     #|--- Get map of front/back x vals ---|
     maxxMap, minxMap = [], []
     for i in range(3):
-        maxxMap.append(xcMap[i] + 0.5 * widMap[i])
-        minxMap.append(xcMap[i] - 0.5 * widMap[i])
+        if type(widMap[i]) != type(None):
+            maxxMap.append(xcMap[i] + 0.5 * widMap[i])
+            minxMap.append(xcMap[i] - 0.5 * widMap[i])
+        else:
+            maxxMap.append(None)
+            minxMap.append(None)
     
 
     #|--- Get values at non zero wid grid cells---|    
@@ -778,9 +806,9 @@ def cloudPlot(widMap, xcMap, densMap, outFoV, pix2FOV, shell=True, plotIt=True):
                 myxs = dx *(np.arange(-nptsx[i], nptsx[i]+1)) + xcMap[0][iy, iz]
         elif wn0[i] > 0.9*dx:
             myxs = np.array([xcMap[0][iy, iz]])
-    
+        
         # |--- Grab the matching y, z, dens ---|
-        if type(myxs) != type(None):
+        if (type(myxs) != type(None)) & (np.abs(xcMap[0][iy, iz]) < 10*wn0[i]):
             if shell:
                 myys  = fovy[iy, iz] * np.ones(len(myxs))
                 myzs  = zn0[i] * np.ones(len(myxs))
@@ -814,11 +842,13 @@ def cloudPlot(widMap, xcMap, densMap, outFoV, pix2FOV, shell=True, plotIt=True):
                         myzs = myzs[outgap]
                         mydens = mydens[outgap]
                         
-            # |--- Add to output lists ---|    
-            allpts[0] = np.concatenate((allpts[0], myxs))
-            allpts[1] = np.concatenate((allpts[1], myys))
-            allpts[2] = np.concatenate((allpts[2], myzs))
-            allpts[3] = np.concatenate((allpts[3], mydens))
+            # |--- Add to output lists ---|   
+            # Make sure density isn't exactly 0 -> img gaps:
+            if dn0[i] != 0: 
+                allpts[0] = np.concatenate((allpts[0], myxs))
+                allpts[1] = np.concatenate((allpts[1], myys))
+                allpts[2] = np.concatenate((allpts[2], myzs))
+                allpts[3] = np.concatenate((allpts[3], mydens))
             
     #|----------------------------|
     #|--- Repeat for second WF ---|
@@ -920,21 +950,22 @@ def cloudPlot(widMap, xcMap, densMap, outFoV, pix2FOV, shell=True, plotIt=True):
         if shell:
             showLess1 = 1
             idx1 = range(len(allpts[0]))
-            showLess2 = 2
-            idx2 = np.arange(0,len(allpts2[0])-1)
-            np.random.shuffle(idx2)
-            idx2 = idx2[::showLess2]
+            if multiMode:
+                showLess2 = 2
+                idx2 = np.arange(0,len(allpts2[0])-1)
+                np.random.shuffle(idx2)
+                idx2 = idx2[::showLess2]
             alpha2 = 0.3
         else:
             showLess1 = 2
             idx1 = np.arange(0,len(allpts[0])-1)
             np.random.shuffle(idx1)
             idx1 = idx1[::showLess1]
-            
-            showLess2 = 4
-            idx2 = np.arange(0,len(allpts2[0])-1)
-            np.random.shuffle(idx2)
-            idx2 = idx2[::showLess2]
+            if multiMode:
+                showLess2 = 4
+                idx2 = np.arange(0,len(allpts2[0])-1)
+                np.random.shuffle(idx2)
+                idx2 = idx2[::showLess2]
             alpha2   = 0.15
         # Guess at nice density range    
         vval = 1e9 /dx**3
@@ -943,8 +974,9 @@ def cloudPlot(widMap, xcMap, densMap, outFoV, pix2FOV, shell=True, plotIt=True):
         ax = plt.figure().add_subplot(projection='3d')
         # WF1 scatter
         ax.scatter(allpts[0][idx1], allpts[1][idx1], allpts[2][idx1], c=logd[idx1], cmap='Reds')
-        # WF2 scatter
-        ax.scatter(allpts2[0][idx2], allpts2[1][idx2], allpts2[2][idx2], c=logd2[idx2], cmap='Blues', alpha=alpha2)
+        if multiMode:
+            # WF2 scatter
+            ax.scatter(allpts2[0][idx2], allpts2[1][idx2], allpts2[2][idx2], c=logd2[idx2], cmap='Blues', alpha=alpha2)
         #ax.scatter(allpts2[0], allpts2[1], allpts2[2], c=logd2, cmap='Blues', alpha=alpha2)
     
         # Add contour legend?
@@ -970,7 +1002,6 @@ def contourDens(densMap, outFoV, pix2FOV, showLog=False, figName=None):
     minpx, maxpx, minpy, maxpy, downSize = outFoV
     
     dens1 = densMap[0]
-    
 
     #|--- Check for second WF ---|
     multiMode = False
@@ -1019,7 +1050,7 @@ def contourDens(densMap, outFoV, pix2FOV, showLog=False, figName=None):
     if multiMode:
         fig, ax = plt.subplots(1, 2, figsize = (5*scl+4.5,6), sharex=True, layout='constrained')
     else:
-        fig, ax = plt.subplots(1, 1)
+        fig, ax = plt.subplots(1, 1, figsize = (3*scl+3.5,6), layout='constrained')
         ax = [ax]
     
     vval = np.median(np.abs(dens1[dens1 !=0])) * 3 
@@ -1027,13 +1058,13 @@ def contourDens(densMap, outFoV, pix2FOV, showLog=False, figName=None):
     cmap = plt.get_cmap('RdYlBu_r')
     cmap.set_under('k')
     dens1[np.where(dens1 == 0)] = -10
-    im = ax[-1].imshow(dens1, vmin=-vval, vmax=vval, cmap=cmap, extent=[minpx, maxpx, minpy, maxpy])
+    im = ax[-1].imshow(dens1, origin='lower', vmin=-vval, vmax=vval, cmap=cmap, extent=[minpx, maxpx, minpy, maxpy])
     ax[-1].set_xlabel('Pixels')
     ax[-1].set_ylabel('Pixels')
     
     if multiMode:
         dens2[np.where(dens2 == 0)] = -10
-        ax[0].imshow(dens2, vmin=-vval, vmax=vval, cmap=cmap, extent=[minpx, maxpx, minpy, maxpy])
+        ax[0].imshow(dens2, origin='lower',  vmin=-vval, vmax=vval, cmap=cmap, extent=[minpx, maxpx, minpy, maxpy])
         ax[0].set_xlabel('Pixels')
         ax[0].set_ylabel('Pixels')
         ax[-1].set_title('Inner WF')
@@ -1100,30 +1131,39 @@ def getMasses(widMap, densMap, outFoV, pix2FOV, showLog=False, figName=None):
 # python3 wombatProcessObs.py 2012-07-12T16:00 2012-07-13T05:00 HI1A rdiffHI
 # python3 wombatProcessObs.py 2012-07-13T20:00 2012-07-14T12:00 HI2A rdiffHI
 theFile = 'wbPickles/WBGUI_temp.pkl'
+#theFile = 'wbPickles/test_solopsp.pkl'
 
 # Open the pickle
 with open(theFile, 'rb') as file:
     bkgData = pickle.load(file)
 
-tidx = 5
-obs  ='HI1A'
+# testing values 
+# COR2a tidx 17
+# SOLOHI 7
+
+tidx = 17
+obs  ='COR2A'
 satDict = bkgData['satStuff'][obs][0][tidx]
 imMap = bkgData['proImMaps'][obs][0][tidx]
 showMap = bkgData['scaledIms'][obs][0][tidx][0]
 massMap = bkgData['massIms'][obs][tidx]
 
+#print (satDict['DATEOBS'])
 
 awf = wf.wireframe('GCS')
-awf.params = [23.5, 25.2, -13.5, 77.4, 54.9, 0.3]
+#awf.params = [253.5, 25.2, -13.5, 77.4, 54.9, 0.3]
+awf.params = [10., 25.2, -13.5, 77.4, 54.9, 0.3]
 #awf.params = [50, 45, 0, 0., 50.0, 0.25]
+#awf.params = [45.2, 77.4, 26.1, 40.5, 59.4, 0.3] # solohi 2059
 awf.getPoints()
 
-awf2 = wf.wireframe('Sphere')
+awf2 = wf.wireframe('Sphere') 
+awf2.params = [11.2, 25.2, -2.7, 66] # COR2A 17:54
 #awf2.params = [36.2, 43.2, -5.4, 70]
-awf2.params = [56.74, 25.2, -13.5, 55]
-awf2.getPoints()
+#awf2.params = [266.74, 25.2, -13.5, 55]
+#awf2.getPoints()
 
-widMap, xcMap, densMap, subMass, outFoV, pix2FOV  = mass2dens(imMap, satDict, [awf, awf2], massMap, doInner=True,  densRatio=0.8)    
+widMap, xcMap, densMap, subMass, outFoV, pix2FOV  = mass2dens(imMap, satDict, awf, massMap, doInner=False,  densRatio=0.8)    
 
 allPts = cloudPlot(widMap, xcMap, densMap,outFoV, pix2FOV, shell=True, plotIt=True)
 #contourDens(densMap, outFoV, pix2FOV)
