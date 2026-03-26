@@ -207,6 +207,7 @@ def map2CartFoV(myMap, points, pixCent=None):
     
     # Get the OG coords for each pixels in points
     nPoints = len(points[0])
+    #cs = []
     for i in range(nPoints):
         coord0 = myMap.pixel_to_world(points[0][i] * u.pix, points[1][i] * u.pix)
         ell = np.sqrt(coord0.Tx.rad**2 + coord0.Ty.rad**2)
@@ -226,9 +227,24 @@ def map2CartFoV(myMap, points, pixCent=None):
         xs.append(TSxyz0[0]*215)
         ys.append(TSxyz0[1]*215)
         zs.append(TSxyz0[2]*215)
-        
+        #cs.append(myMap.data[points[1][i], points[0][i]])
+    
     # Convert everyone at the same time
     pts = np.array([xs, ys, zs])      
+    
+    '''fig = plt.figure(figsize=(8, 5), layout='constrained')
+    ax = fig.add_subplot(111, projection='3d')
+    # WF1 scatter
+    im = ax.scatter(pts[0][2:], pts[1][2:],pts[2][2:], c=cs, cmap='Greys_r')
+    ax.scatter(0, 0, 0, c='y', s=100)
+    ax.scatter(pts[0][0], pts[1][0],pts[2][0], c='b')
+    
+    awf = wf.wireframe('GCS')
+    awf.params = [45.2, 147.4, 26.1, 20.5, 59.4, 0.3]
+    awf.getPoints()
+    pts = np.transpose(awf.points)
+    ax.scatter(pts[0], pts[1],pts[2], c='g')
+    plt.show()'''
     
     if 'crota' in myMap.meta:
         rollIt = myMap.meta['crota']
@@ -390,13 +406,16 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
     # with the center pixel at the origin
     downSize = 32
     pixx, pixy = [], []
+    mvals = []
     for j in range(myMap.data.shape[0])[::downSize]:
         for i in range(myMap.data.shape[1])[::downSize]:
             pixx.append(i)
             pixy.append(j)
 
+
     #ptsOut = map2CartFoV(myMap, [[0, myMap.data.shape[1]], [myMap.data.shape[0]/2, myMap.data.shape[0]/2]])
     ptsOut = map2CartFoV(myMap, [pixx, pixy])   # is [x,y,z] where each is same len as pixIn  
+        
         
     uniX = np.unique(np.array(pixx))
     uniY = np.unique(np.array(pixy))
@@ -462,7 +481,17 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
         widFuncI = RegularGridInterpolator((yms, zms), np.transpose(wid_smoothI), method='linear', bounds_error=False, fill_value=0) 
         xcFuncI  = RegularGridInterpolator((yms, zms), np.transpose(midxI), method='linear', bounds_error=False, fill_value=0)
         
-    
+    '''
+    # Plot of widths    
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    im = plt.imshow(wids, origin='lower', extent=[FoV[0][0], FoV[0][1], FoV[1][0], FoV[1][1]])
+    cbar = fig.colorbar(im, ax=ax, orientation='vertical', fraction=.05, pad=0.02, shrink=0.5) 
+    ax.set_xlabel('Proj dist (R$_S$)')
+    ax.set_ylabel('Proj dist (R$_S$)')
+    cbar.set_label('Width (R$_S$)')
+    plt.show()
+    print (sd)'''
     
     #|------------------------------------|
     #|--- Get width over full FoV Grid ---|
@@ -491,8 +520,6 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
     if multiMode:
         widsInt2  = widFunc2((f_fovy, f_fovz))
     
-
-
     #|----------------------------------------|
     #|--- Find bounding box where wid != 0 ---|
     #|----------------------------------------|
@@ -562,7 +589,7 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
     dzs[0,:] = dzs[1,:]
     cellArea = dys * dzs
     dx = np.mean(dys)
-
+        
 
     #|----------------------------------------|
     #|--- Get x pos and widths on subfield ---|
@@ -950,7 +977,7 @@ def cloudPlot(widMap, xcMap, densMap, outFoV, pix2FOV, shell=True, plotIt=True):
                 idx2 = np.arange(0,len(allpts2[0])-1)
                 np.random.shuffle(idx2)
                 idx2 = idx2[::showLess2]
-            alpha2 = 0.3
+            alpha2 = 0.1
         else:
             showLess1 = 2
             idx1 = np.arange(0,len(allpts[0])-1)
@@ -1132,8 +1159,10 @@ def getMasses(widMap, densMap, outFoV, pix2FOV, showLog=False, figName=None):
     
 # python3 wombatProcessObs.py 2012-07-12T16:00 2012-07-13T05:00 HI1A rdiffHI
 # python3 wombatProcessObs.py 2012-07-13T20:00 2012-07-14T12:00 HI2A rdiffHI
-theFile = 'wbPickles/WBGUI_temp.pkl'
+#theFile = 'wbPickles/WBGUI_temp.pkl'
 #theFile = 'wbPickles/test_solopsp.pkl'
+
+theFile = 'wbPickles/201207_COR2.pkl'
 
 # Open the pickle
 with open(theFile, 'rb') as file:
@@ -1143,32 +1172,58 @@ with open(theFile, 'rb') as file:
 # COR2a tidx 17
 # SOLOHI 7
 
-tidx = 17
+#tidx = 6
 obs  ='COR2A'
+tidx = 7
+
+if obs == 'COR2B':
+    tidx = 6
+elif obs == 'COR2A':
+    tidx = 9
+
 satDict = bkgData['satStuff'][obs][0][tidx]
 imMap = bkgData['proImMaps'][obs][0][tidx]
 showMap = bkgData['scaledIms'][obs][0][tidx][0]
 massMap = bkgData['massIms'][obs][tidx]
 
-#print (satDict['DATEOBS'])
+print (satDict['DATEOBS'])
 
-awf = wf.wireframe('GCS')
+#awf = wf.wireframe('GCS')
 #awf.params = [253.5, 25.2, -13.5, 77.4, 54.9, 0.3]
-awf.params = [10., 25.2, -13.5, 77.4, 54.9, 0.3]
+#awf.params = [10., 25.2, -13.5, 77.4, 54.9, 0.3]
 #awf.params = [50, 45, 0, 0., 50.0, 0.25]
 #awf.params = [45.2, 77.4, 26.1, 40.5, 59.4, 0.3] # solohi 2059
+
+# 20120712 COR2 at 17:54
+if True:
+    awf = wf.wireframe('GCS')
+    awf.params = [11.54, 5.4, -9.0, 73.8, 45.45, 0.4]
+
 awf.getPoints()
 
-awf2 = wf.wireframe('Half Sphere') 
-awf2.params = [11.2, 25.2, -2.7, 66] # COR2A 17:54
+# 20120712 COR2 at 17:54
+if False:
+    awf2 = wf.wireframe('Sphere') 
+    awf2.params = [11.93, 5.4, -6.3, 60.30]
+    awf2.getPoints()
+else:
+    awf2 = None
+    
+#awf2.params = [11.2, 25.2, -2.7, 66] # COR2A 17:54
 #awf2.params = [36.2, 43.2, -5.4, 70]
 #awf2.params = [266.74, 25.2, -13.5, 55]
 #awf2.getPoints()
 
-widMap, xcMap, densMap, subMass, outFoV, pix2FOV  = mass2dens(imMap, satDict, [awf, awf2], massMap, doInner=False,  densRatio=1.8)    
-
+ds = 1
+dI = False
+if type(awf2) == type(None):
+    widMap, xcMap, densMap, subMass, outFoV, pix2FOV  = mass2dens(imMap, satDict, awf, massMap, doInner=dI,  downSelect=ds)  
+else:
+    widMap, xcMap, densMap, subMass, outFoV, pix2FOV  = mass2dens(imMap, satDict, [awf, awf2], massMap, doInner=dI,  densRatio=1.8, downSelect=ds)  
+    
 #allPts = cloudPlot(widMap, xcMap, densMap,outFoV, pix2FOV, shell=True, plotIt=True)
+#contourDens(densMap, outFoV, pix2FOV, figName = 'DINGO_contour'+obs+'.png')
 contourDens(densMap, outFoV, pix2FOV)
-getMasses(widMap, densMap, outFoV, pix2FOV)
+#getMasses(widMap, densMap, outFoV, pix2FOV)
 
 
