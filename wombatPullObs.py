@@ -335,6 +335,9 @@ def pullSoloHI(times, insts, HItime=30, outFolder='pullFolder/'):
                     print('')
                     print('Downloading', fname) 
                     temp = wget.download(myPath, out=savePath)
+                    
+    # This is what doesn't work, keeping it if we want to fix later                 
+    temp = Fido.fetch(result, a.Provider.sdac , path= 'temp/') 
  
 
 # |------------------------------------------------------------|

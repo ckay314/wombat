@@ -37,7 +37,7 @@ should not be edited for funsies.
 # Dictionary for the colors of the wireframe objects by type
 # Defaults are an attempt to be color blind friends on black/white backgrounds
 # GCS: standard green, Torus: teal, Spheres/Ellipses: blue, slab: orange, Tube:pink
-colorDict = {'GCS':'#9AE630', 'Torus': '#38D5BE', 'Sphere':'#2B7FFF', 'Half Sphere':'#2B7FFF', 'Ellipse':'#2B7FFF', 'Half Ellipse':'#2B7FFF', 'Slab':'#FF8904', 'Tube':'#D858DF'}
+colorDict = {'GCS':'#9AE630', 'Torus': '#00FF7F', 'Sphere':'#00FFFF', 'Half Sphere':'#00FFFF', 'Ellipse':'#00FFFF', 'Half Ellipse':'#00FFFF', 'Slab':'#FF8904', 'Tube':'#D858DF'}
 
 # Extra colors to use if plotting more than one of the same type of WF
 # order is maroon, purple, yellow

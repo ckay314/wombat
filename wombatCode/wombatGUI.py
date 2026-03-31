@@ -198,7 +198,7 @@ class ParamWindow(QMainWindow):
         # |----- Show/Hide WF Button ----|
         hideBut = QPushButton('Show/Hide WF')
         hideBut.released.connect(lambda: self.HBclicked(i))
-        layout.addWidget(hideBut, 5, 6, 1,5)
+        layout.addWidget(hideBut, 5, 6, 1,6)
         
         # |----- Nested parameter layout ----|       
         # Put a layout within the layout for the slider friends
@@ -222,9 +222,9 @@ class ParamWindow(QMainWindow):
         # |----- Background Drop Down Box ----|
         # Background mode drop down box
         label = QLabel('Background Scaling')
-        layout.addWidget(label, 42,0,1,6,alignment=QtCore.Qt.AlignLeft)
+        layout.addWidget(label, 42,0,1,8,alignment=QtCore.Qt.AlignLeft)
         cbox = self.bgComboBox()
-        layout.addWidget(cbox,42,5,1,6,alignment=QtCore.Qt.AlignCenter)
+        layout.addWidget(cbox,42,7,1,6,alignment=QtCore.Qt.AlignCenter)
         self.Bcbox = cbox
         
         # |----- Happy Little Space Padding ----|
@@ -1555,7 +1555,7 @@ class FigWindow(QWidget):
         #|---- Grab min/max from slider ----|     
         slMin = self.MinSlider.value()
         slMax = self.MaxSlider.value()
-        
+
         #|---- Update image ----|     
         self.image.updateImage(image=myIm, levels=(slMin, slMax))
         #self.image.updateImage(image=self.mIms[self.tidx], levels=(-5e9, 5e9))
@@ -1568,13 +1568,12 @@ class FigWindow(QWidget):
             for i in range(nwfs):
                 if type(self.WFmasks[i]) != type(None):
                     bigMask += self.WFmasks[i]
-                    # Get the separation 
                     seps = np.abs(wfs[i].params[1]-self.satStuff[self.didx][self.tidx]['POSLON'])
                     seps[np.where(seps > 90)] = 180 - seps[np.where(seps > 90)]
                     mySep = np.min(np.abs(seps))
                     if mySep > 80:
                         print ('!!!--- Warning PoS separation large, capping at 80 deg ---!!!')
-                        mySep = 80
+                        mySep = 80                                            
                     # Prob need to convert the h to projected...
                     rpos, Bpos = wM.elTheory([wfs[i].params[0]], 0)
                     rsep, Bsep = wM.elTheory([wfs[i].params[0]], mySep)
@@ -1680,6 +1679,7 @@ class OverviewWindow(QWidget):
         self.scattersPt = []
         self.satLabs = []
         self.satStrings = []
+        self.satLatStrs = []
         self.satxys = []
         self.curves = []
         self.fbis = []
@@ -1742,6 +1742,7 @@ class OverviewWindow(QWidget):
                 self.satLabs.append(text_item)
                 self.pWindow.addItem(text_item)
                 self.satStrings.append(myName)
+                self.satLatStrs.append(myName.rjust(5)+':'+'{:.1f}'.format(myPos[0]).rjust(5))
                 self.satxys.append([xsat, ysat])
         
         #|---- Set up arrows/points for the WF in ovw ----|
@@ -1757,7 +1758,17 @@ class OverviewWindow(QWidget):
             self.wfScats.append(wfScat)
             self.pWindow.addItem(wfScat)
             
-            
+        #|---- Add the lat list ----|
+        self.latTit = pg.TextItem('Lat (deg)')
+        self.pWindow.addItem(self.latTit) 
+        self.latTit.setPos(0.75,1.22)
+        self.sLSitems = []
+        sortSLS = np.sort(self.satLatStrs) # alphabetize for OCD
+        for jj in range(len(self.satLatStrs)):      
+            self.sLSitems.append(pg.TextItem(sortSLS[jj], anchor=(1,0)))
+            self.pWindow.addItem(self.sLSitems[jj]) 
+            self.sLSitems[jj].setPos(1.15,1.12-0.1*jj)
+        
         self.setLayout(layoutOV)
     
     def updateArrow(self, i, color='w'):

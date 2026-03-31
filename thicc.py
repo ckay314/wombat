@@ -5,6 +5,8 @@ import sunpy.coordinates
 import numpy as np
 import matplotlib.pyplot as plt
 from sunpy.coordinates import frames
+from sunpy.coordinates import get_horizons_coord
+
 import scipy.ndimage as ndimage
 from scipy.interpolate import RegularGridInterpolator
 import matplotlib.cm as cm
@@ -738,7 +740,7 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
 # |-----------------------------|
 # |--- 3D Density Cloud plot ---|
 # |-----------------------------|
-def cloudPlot(widMap, xcMap, densMap, outFoV, pix2FOV, shell=True, plotIt=True):
+def dingo3d(widMap, xcMap, densMap, outFoV, pix2FOV, shell=True, plotIt=True):
     #|------------------|
     #|--- Prep stuff ---|
     #|------------------|
@@ -1021,7 +1023,7 @@ def cloudPlot(widMap, xcMap, densMap, outFoV, pix2FOV, shell=True, plotIt=True):
 # |----------------------------|
 # |--- Density Contour plot ---|
 # |----------------------------|
-def contourDens(densMap, outFoV, pix2FOV, showLog=False, figName=None):
+def dingo2d(densMap, outFoV, pix2FOV, showLog=False, figName=None):
     #|------------------|
     #|--- Prep stuff ---|
     #|------------------|
@@ -1110,6 +1112,208 @@ def contourDens(densMap, outFoV, pix2FOV, showLog=False, figName=None):
         plt.savefig(figName)
     else:
         plt.show()
+
+# |--------------------|
+# |--- In Situ plot ---|
+# |--------------------|
+def dingo1d(myMap, widMap, xcMap, densMap, outFoV, pix2FOV, obsSat, vCME=400, scaleFactors=[1, 0.2]):
+    # obsSat should be SkyCoord for in situ sat
+    # Get satellite position from the map
+    satLonD = myMap.observer_coordinate.lon.degree
+    satLatD = myMap.observer_coordinate.lat.degree
+    satR = myMap.observer_coordinate.radius.au 
+    satLonR = satLonD * np.pi / 180.
+    satLatR = satLatD * np.pi / 180.
+       
+    # Get vector from sun to sat
+    # (just the cartesian sat loc)
+    satxyz = np.array([np.cos(satLatR)*np.cos(satLonR), np.cos(satLatR)*np.sin(satLonR), np.sin(satLatR)]) * satR
+    
+    pixCent = [imMap.data.shape[1]/2, imMap.data.shape[0]/2] # pix is xy but shape is yx
+
+    # Get the heliprojective coord of the pixel
+    coordM = imMap.pixel_to_world(pixCent[0] * u.pix, pixCent[1] * u.pix)
+    # Get elongation angle -> distance to Thompson Sphere
+    ell = np.sqrt(coordM.Tx.rad**2 + coordM.Ty.rad**2)
+    dM = np.abs(satR * np.abs(np.cos(ell)))
+    # Make skycoord with HPC and distance (transform needs dist if off limb)
+    hpc = SkyCoord(Tx=coordM.Tx, Ty=coordM.Ty, distance=dM*u.au, frame= coordM.frame)
+    # Convert to Stonyhurst, make a Cartesian array
+    ston = hpc.transform_to(frames.HeliographicStonyhurst)
+    TSxyz = np.array([ston.cartesian.x.to_value(), ston.cartesian.y.to_value(), ston.cartesian.z.to_value()])
+    # Vectors we will need
+    LoS = TSxyz - satxyz 
+    usatxyz = satxyz / np.linalg.norm(satxyz)
+    uTSxyz = TSxyz / np.linalg.norm(TSxyz)
+    uLoS = LoS / np.linalg.norm(LoS)
+    
+    # Start coord arrays with sat loc and FoV cent
+    xs = [satxyz[0]*215, TSxyz[0]*215]
+    ys = [satxyz[1]*215, TSxyz[1]*215]
+    zs = [satxyz[2]*215, TSxyz[2]*215]
+    
+    # Add the in situ sat and Sun
+    obsCart = obsSat.cartesian
+    xs.append(obsCart.x.to_value()*215) 
+    ys.append(obsCart.y.to_value()*215)
+    zs.append(obsCart.z.to_value()*215)
+    xs.append(0) 
+    ys.append(0)
+    zs.append(0)
+    xs.append(xs[0]) 
+    ys.append(ys[0])
+    zs.append(zs[0])
+    
+    # Convert everyone at the same time
+    pts = np.array([xs, ys, zs])      
+        
+    if 'crota' in myMap.meta:
+        rollIt = myMap.meta['crota']
+    elif 'sc_roll' in myMap.meta:
+        rollIt = myMap.meta['sc_roll']
+    else:
+        print ('Neither crota or sc_roll in map metadata. Assuming zero roll')
+        rollIt = 0
+
+    res = StonyCart2CartFoV(pts, satLatD, satLonD, rollIt)
+    
+    # Make a line connecting sun to sat
+    npts = 100
+    
+    sat = [res[0][0], res[1][0], res[2][0]]
+    sun = [res[0][1], res[1][1], res[2][1]]
+    # Get the r dist of everyone (from sun)
+    ssline = np.array([np.linspace(sun[0], sat[0], npts), np.linspace(sun[1], sat[1], npts), np.linspace(sun[2], sat[2], npts)])
+    rs = np.sqrt((ssline[0] - sun[0])**2 + (ssline[1] - sun[1])**2 + (ssline[2] - sun[2])**2)
+    ryzs = np.sqrt((ssline[1])**2 + (ssline[2])**2) # wrt FoV cent, not sun
+    maxryz = np.max(ryzs)
+     
+    # Find max r to check for in place version
+    #|--- Unpackage FoV things ---|
+    minpx, maxpx, minpy, maxpy, downSize = outFoV
+
+    #|--- Make the mini FoV grid in pix ---|
+    pxs = np.arange(minpx, maxpx+1, downSize)
+    pys = np.arange(minpy, maxpy+1, downSize)
+    pxx, pyy = np.meshgrid(pxs, pys)
+    
+    #|--- Make the mini FoV grid in Rs ---|
+    fovx = pix2FOV[0]((pxx, pyy))
+    fovy = pix2FOV[1]((pxx, pyy))
+    fovz = pix2FOV[2]((pxx, pyy))
+    fov_ryz = np.sqrt(fovy**2 +fovz**2)
+    maxFOV_ryz = np.max(fov_ryz)
+    
+    # Make a mini line
+    maxIdx = np.min(np.where(ryzs >= maxFOV_ryz))
+    scaleIt = rs[maxIdx] / np.max(rs)
+    miniLine = scaleIt * ssline
+    minirs = np.sqrt((miniLine[0] - sun[0])**2 + (miniLine[1] - sun[1])**2 + (miniLine[2] - sun[2])**2)
+    
+    # Determine within wid for that yz
+    widMap, xcMap, densMap = widMap[0], xcMap[0], densMap[0]
+    midpty, midptz = int(widMap.shape[1]/2), int(widMap.shape[0]/2)
+    gridys = fovy[midptz,:]
+    gridzs = fovz[:,midpty]
+    rIP, nIP = [], []
+    cs = []
+    for i in range(npts):
+        iy0, iyf, iz0, izf = None, None, None, None
+        if (miniLine[1][i] <= np.max(gridys)) & (miniLine[1][i] >= np.min(gridys)):
+            iy0 = np.min(np.where(gridys >= miniLine[1][i])[0])
+            iyf = np.max(np.where(gridys <= miniLine[1][i])[0])
+        if (miniLine[2][i] <= np.max(gridzs)) & (miniLine[2][i] >= np.min(gridzs)):
+            iz0 = np.min(np.where(gridzs >= miniLine[2][i])[0])
+            izf = np.max(np.where(gridzs <= miniLine[2][i])[0])
+            
+        if (type(iy0) != type(None)) & (type(iz0) != type(None)):
+            w11, xc11, d11 = widMap[iz0, iy0], xcMap[iz0, iy0], densMap[iz0, iy0] 
+            w12, xc12, d12 = widMap[iz0, iyf], xcMap[iz0, iyf], densMap[iz0, iyf]
+            w21, xc21, d21 = widMap[izf, iy0], xcMap[izf, iy0], densMap[izf, iy0]
+            w22, xc22, d22 = widMap[izf, iyf], xcMap[izf, iyf], densMap[izf, iyf]
+            # Interp in y
+            gdy = gridys[iyf] - gridys[iy0]
+            fy = (miniLine[1][i] - gridys[iy0]) / gdy
+            w1 = (1-fy) * w11 + fy * w12
+            w2 = (1-fy) * w21 + fy * w22
+            xc1 = (1-fy) * xc11 + fy * xc12
+            xc2 = (1-fy) * xc21 + fy * xc22
+            d1 = (1-fy) * d11 + fy * d12
+            d2 = (1-fy) * d21 + fy * d22
+  
+            # Interp in z
+            gdz = gridzs[izf] - gridzs[iz0]
+            fz = (miniLine[2][i] - gridzs[iz0]) / gdz
+            myw = (1-fz) * w1 + fz * w2
+            myxc = (1-fz) * xc1 + fz * xc2
+            myd = (1-fz) * d1 + fz * d2
+            
+
+            if np.abs(miniLine[1][i] - myxc)<myw:
+                rIP.append(minirs[i])
+                nIP.append(myd)
+                cs.append('m')
+            else:
+                rIP.append(minirs[i])
+                nIP.append(0)
+                cs.append('r')
+        else:
+            rIP.append(minirs[i])
+            nIP.append(0)
+            cs.append('r')
+     
+    rIP = np.array(rIP)
+    nIP = np.array(nIP)
+    # Get dens based on nearest pts
+    scaler = (rIP / scaleFactors[0] / 215)**2 
+    # Use v to translate r to time
+    
+    # propage each r from in place to sat distance
+    isCME = np.where(nIP != 0)[0]
+    rCME  = rIP[isCME]
+    nCME  = nIP[isCME]
+    Rmid0 = 0.5*(rCME[0] + rCME[-1])
+    lilR0 = 0.5*(rCME[-1] - rCME[0])
+    fs = (rCME - Rmid0) / lilR0
+    nu = scaleFactors[1]
+    rArrOverR = (lilR0 + nu * (215 - Rmid0)) / lilR0 /  (1 + nu*fs) 
+    tArrs = (215 - (Rmid0 + lilR0 * fs)) / (vCME + nu * vCME*fs) * 7e5 / 3600
+    fig, ax = plt.subplots(1, 2, layout='constrained')
+    ax[0].plot(rIP, nIP)
+    ax[0].set_xlabel('R (R$_S$)')
+    ax[0].set_ylabel('$\\rho$ (g cm$^{-3}$)')
+    ax[0].set_title('In Place')
+    tIS = rIP * 7e10 / (vCME * 1e5) / 3600
+    non0 = np.min(np.where(nIP !=0)[0])
+    tIS = tIS - tIS[non0]
+    ax[1].plot(tArrs, nCME*scaler[isCME]/rArrOverR / 1.974e-24)
+    ax[1].set_xlabel('t (hr)')
+    ax[1].set_ylabel('n (cm$^{-3}$)')
+    ax[1].set_title('Expected In Situ, v='+str(int(vCME))+'km/s')
+    #plt.savefig('DINGO_1D.png')
+    plt.show()
+    print (sd)
+    
+    # For testing
+   
+    
+    '''fig = plt.figure(figsize=(8, 5), layout='constrained')
+    ax = fig.add_subplot(111, projection='3d')
+    ds =32
+    ax.scatter(fovx[::ds], fovy[::ds], fovz[::ds])
+    
+    #ax.scatter(res[0][0], res[1][0], res[2][0], c='r')
+    ax.scatter(res[0][1], res[1][1], res[2][1], c='y', s=30)
+    #ax.plot( ssline[0], ssline[1], ssline[2], 'k', lw=3 )
+    ax.scatter( miniLine[0], miniLine[1], miniLine[2], c=cs, lw=3 )
+    ax.scatter(res[0][2], res[1][2], res[2][2], c='lightblue')
+
+    plt.show()
+    
+    print (sd) '''   
+    
+
+
 
 # |------------------------------|
 # |--- Calculate total masses ---|
@@ -1221,9 +1425,10 @@ if type(awf2) == type(None):
 else:
     widMap, xcMap, densMap, subMass, outFoV, pix2FOV  = mass2dens(imMap, satDict, [awf, awf2], massMap, doInner=dI,  densRatio=1.8, downSelect=ds)  
     
-#allPts = cloudPlot(widMap, xcMap, densMap,outFoV, pix2FOV, shell=True, plotIt=True)
-#contourDens(densMap, outFoV, pix2FOV, figName = 'DINGO_contour'+obs+'.png')
-contourDens(densMap, outFoV, pix2FOV)
+#allPts = dingo3d(widMap, xcMap, densMap,outFoV, pix2FOV, shell=True, plotIt=True)
+#dingo2d(densMap, outFoV, pix2FOV, figName = 'DINGO_contour'+obs+'.png')
+#dingo2d(densMap, outFoV, pix2FOV)
 #getMasses(widMap, densMap, outFoV, pix2FOV)
 
-
+obsSat = get_horizons_coord('Wind', time=satDict['DATEOBS'])
+dingo1d(imMap, widMap, xcMap, densMap, outFoV, pix2FOV, obsSat, vCME=550, scaleFactors=[0.8, 0.1])
