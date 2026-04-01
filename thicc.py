@@ -1261,56 +1261,60 @@ def dingo1d(myMap, widMap, xcMap, densMap, outFoV, pix2FOV, obsSat, vCME=400, sc
             rIP.append(minirs[i])
             nIP.append(0)
             cs.append('r')
+            
+    # Conver the in place density/size to in situ values at the
+    # observing satellite        
      
     rIP = np.array(rIP)
     nIP = np.array(nIP)
-    # Get dens based on nearest pts
-    scaler = (rIP / scaleFactors[0] / 215)**2 
-    # Use v to translate r to time
     
-    # propage each r from in place to sat distance
+    # Find portion where it is actually CME/nonzero
     isCME = np.where(nIP != 0)[0]
     rCME  = rIP[isCME]
     nCME  = nIP[isCME]
+    
+    # Get midpoint, initial radial width, init dist
     Rmid0 = 0.5*(rCME[0] + rCME[-1])
     lilR0 = 0.5*(rCME[-1] - rCME[0])
+    R0    = rCME[-1]
+    
+    # Make parametric array for the points
+    # Extends from -1 at back to 1 at front
     fs = (rCME - Rmid0) / lilR0
-    nu = scaleFactors[1]
-    rArrOverR = (lilR0 + nu * (215 - Rmid0)) / lilR0 /  (1 + nu*fs) 
-    tArrs = (215 - (Rmid0 + lilR0 * fs)) / (vCME + nu * vCME*fs) * 7e5 / 3600
+    
+    # Get arrival time for each point at sat
+    dSat = satR *215 # satellite distance in Rs 
+    nur  = scaleFactors[1]
+    tArr = (dSat - R0 - lilR0 * fs) / (1 + nur * fs) / vCME * 7e5 / 3600 # in hr, assuming vCME in km/s
+    print (tArr)
+    # Get the radial size at the time of arrival
+    lilRs = lilR0 + nur * vCME * tArr * 3600 / 7e5
+    
+    # Get the front dist for when each parametric point
+    # is at the satellite
+    dFront = dSat + (1 - fs) * lilRs
+    
+    # Get relative size in perp direction
+    rprp0 =  scaleFactors[0] * dFront / rCME
+    
+    # Get ratio of volume at arrival to initial
+    volRat = rprp0**2 * lilRs / lilR0
+    
+    # Scale density
+    nIS = nIP[isCME] / volRat / 1.974e-24
+
     fig, ax = plt.subplots(1, 2, layout='constrained')
     ax[0].plot(rIP, nIP)
     ax[0].set_xlabel('R (R$_S$)')
     ax[0].set_ylabel('$\\rho$ (g cm$^{-3}$)')
     ax[0].set_title('In Place')
-    tIS = rIP * 7e10 / (vCME * 1e5) / 3600
-    non0 = np.min(np.where(nIP !=0)[0])
-    tIS = tIS - tIS[non0]
-    ax[1].plot(tArrs, nCME*scaler[isCME]/rArrOverR / 1.974e-24)
+    
+    ax[1].plot(tArr, nIS)
     ax[1].set_xlabel('t (hr)')
     ax[1].set_ylabel('n (cm$^{-3}$)')
     ax[1].set_title('Expected In Situ, v='+str(int(vCME))+'km/s')
     #plt.savefig('DINGO_1D.png')
     plt.show()
-    print (sd)
-    
-    # For testing
-   
-    
-    '''fig = plt.figure(figsize=(8, 5), layout='constrained')
-    ax = fig.add_subplot(111, projection='3d')
-    ds =32
-    ax.scatter(fovx[::ds], fovy[::ds], fovz[::ds])
-    
-    #ax.scatter(res[0][0], res[1][0], res[2][0], c='r')
-    ax.scatter(res[0][1], res[1][1], res[2][1], c='y', s=30)
-    #ax.plot( ssline[0], ssline[1], ssline[2], 'k', lw=3 )
-    ax.scatter( miniLine[0], miniLine[1], miniLine[2], c=cs, lw=3 )
-    ax.scatter(res[0][2], res[1][2], res[2][2], c='lightblue')
-
-    plt.show()
-    
-    print (sd) '''   
     
 
 
@@ -1431,4 +1435,4 @@ else:
 #getMasses(widMap, densMap, outFoV, pix2FOV)
 
 obsSat = get_horizons_coord('Wind', time=satDict['DATEOBS'])
-dingo1d(imMap, widMap, xcMap, densMap, outFoV, pix2FOV, obsSat, vCME=550, scaleFactors=[0.8, 0.1])
+dingo1d(imMap, widMap, xcMap, densMap, outFoV, pix2FOV, obsSat, vCME=550, scaleFactors=[1., 0.1])
