@@ -1509,16 +1509,30 @@ def arr2maps(dataIn, hdrIn, doDiff=True):
     
     # |--- Get running and base diffs ---|
     if doDiff:
-        for j in range(len(dataIn)-1):
+        # |--- Do some quick checks to throw out bad base imgs ---|
+        rolls = []
+        for j in range(len(dataIn)):
+            myHdr  = hdrIn[j]
+            rolls.append(myHdr['SC_ROLL'])
+        rolls = np.array(rolls)
+        idx0 = 0
+        if np.std(rolls) > 1: 
+            goodIdx = np.where(np.abs(rolls - np.median(rolls)) < np.std(rolls))[0]
+            idx0 = np.min(goodIdx)
+            if idx0 != 0:               
+                print ('Roll at beginning of time series, adjusting base image to', hdrIn[idx0]['DATE-OBS'])
+                
+        # |--- Loop through doing diffs ---|
+        for j in range(len(dataIn)-1 - idx0):
             # Get the data for a time step
-            myData = dataIn[j+1]
-            myHdr  = hdrIn[j+1]
+            myData = dataIn[j+1+idx0]
+            myHdr  = hdrIn[j+1+idx0]
             
             # Get the bases
-            runBase  = dataIn[j]
-            runFile  = hdrIn[j]
-            baseBase = dataIn[0]
-            baseFile = hdrIn[0]
+            runBase  = dataIn[j+idx0]
+            runFile  = hdrIn[j+idx0]
+            baseBase = dataIn[idx0]
+            baseFile = hdrIn[idx0]
             
             # Make sure files are same shape and diff    
             if (myData.shape == runBase.shape) & (myData.shape == baseBase.shape):
@@ -1735,7 +1749,7 @@ def getSatStuff(imMap):
     # Use elongation and Thomson sphere at mid FoV to get pointing wedge
     coordM = imMap.pixel_to_world(imMap.data.shape[1]/2 * u.pix, imMap.data.shape[0]/2 * u.pix)
     ell = np.sqrt(coordM.Tx.rad**2 + coordM.Ty.rad**2)
-    rSat = satDict['POS'][2] / 1.5e11
+    rSat = satDict['POS'][2] / 1.496e11
     dM = np.abs(rSat * np.abs(np.cos(ell)))
     hpc = SkyCoord(Tx=coordM.Tx, Ty=coordM.Ty, distance=dM*u.au, frame= coordM.frame)
     ston = hpc.transform_to(frames.HeliographicStonyhurst)
@@ -1746,7 +1760,7 @@ def getSatStuff(imMap):
     uxyz = xyz / np.linalg.norm(xyz)
     uTSxyz = TSxyz / np.linalg.norm(TSxyz)
     uLoS = LoS / np.linalg.norm(LoS)
-
+    
     coord0 = imMap.pixel_to_world(0 * u.pix, imMap.data.shape[0]/2 * u.pix)
     ell = np.sqrt(coord0.Tx.rad**2 + coord0.Ty.rad**2)
     d0 = np.abs(rSat * np.cos(ell))
