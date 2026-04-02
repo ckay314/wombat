@@ -183,22 +183,37 @@ class ParamWindow(QMainWindow):
 
 
         # |------ WF Type Label ------|
-        label = QLabel('Wireframe Type')
-        layout.addWidget(label, 2,0,1,11,alignment=QtCore.Qt.AlignCenter)
+        label = QLabel('WF Type')
+        layout.addWidget(label, 2,0,1,4,alignment=QtCore.Qt.AlignLeft)
         
         # |----- WF Drop Down Box ----|
         cbox = self.wfComboBox(i)
         self.cbs.append(cbox)
-        layout.addWidget(cbox,3,0,1,11,alignment=QtCore.Qt.AlignCenter)
+        layout.addWidget(cbox,2,4,1,7,alignment=QtCore.Qt.AlignCenter)
         
         # |------ Parameter Section Label ------|
-        label = QLabel('Parameters')
-        layout.addWidget(label, 5,0, 1, 5,alignment=QtCore.Qt.AlignCenter)
+        #label = QLabel('Parameters')
+        #layout.addWidget(label, 3,0, 1, 5,alignment=QtCore.Qt.AlignCenter)
+        
+        # |----- Log Fit Button ----|
+        logBut = QPushButton('Log WF Fit')
+        logBut.released.connect(self.LBclicked)
+        layout.addWidget(logBut, 3, 0, 1,5)
         
         # |----- Show/Hide WF Button ----|
         hideBut = QPushButton('Show/Hide WF')
         hideBut.released.connect(lambda: self.HBclicked(i))
-        layout.addWidget(hideBut, 5, 6, 1,6)
+        layout.addWidget(hideBut, 3, 5, 1,6)
+        
+        # |----- Output Name Label ----|
+        label = QLabel('Output Name')
+        layout.addWidget(label, 4,0, 1, 5,alignment=QtCore.Qt.AlignLeft)
+        
+        # |----- Output Name Text Box ----|
+        oBox = QLineEdit()
+        oBox.setText('WBlog')
+        self.oBox = oBox
+        layout.addWidget(oBox, 4,5,1,6)
         
         # |----- Nested parameter layout ----|       
         # Put a layout within the layout for the slider friends
@@ -265,7 +280,7 @@ class ParamWindow(QMainWindow):
         cbox = QComboBox()
         
         # |----- Add Items ----|
-        cbox.addItem('|----None/Select One----|')
+        cbox.addItem('|-----None-----|')
         cbox.addItem('GCS')
         cbox.addItem('Torus')
         cbox.addItem('Sphere')
@@ -458,16 +473,21 @@ class ParamWindow(QMainWindow):
             b      = switch to base difference
             r      = switch to running difference
             s      = save 
+            l      = log wf params
             m      = calculate mass
      
         """
         #|--- Pull Params/Plot ---|
         if event.key() == QtCore.Qt.Key_Return:
             for iii in range(nwfs):
-                self.updateWFpoints(wfs[iii], self.widges[iii])
-                focused_widget = self.focusWidget()
-                focused_widget.deselect()
-                self.Tslider.setFocus()
+                if type(self.widges[iii]) != type(None):
+                    self.updateWFpoints(wfs[iii], self.widges[iii])
+                    focused_widget = self.focusWidget()
+                    try:
+                        focused_widget.deselect()
+                    except:
+                        pass
+                    self.Tslider.setFocus()
         #|--- Closing things ---|
         elif event.key() == QtCore.Qt.Key_Q: 
             self.close()    
@@ -494,13 +514,15 @@ class ParamWindow(QMainWindow):
             self.Bcbox.setCurrentIndex(2)
         #|--- Mass ---|
         elif event.key() == QtCore.Qt.Key_M:
-            self.MBclicked()
-        
+            self.MBclicked()       
         #|--- Saving ---|
         elif event.key() == QtCore.Qt.Key_S:
             self.SBclicked()
+        #|--- Logging ---|
+        elif event.key() == QtCore.Qt.Key_L:
+            self.LBclicked()
+
         
-            
     def s2b(self, x=None, b=None, dx=None, x0=None, myWF=None, widges=None):
         """
         Event for slider changes. Triggered on enter press, not just a text change
@@ -732,6 +754,8 @@ class ParamWindow(QMainWindow):
             Everything goes bye-bye
         
         """
+        if type(self.logFile) == type(None):
+            self.logFile.close()
         sys.exit()
 
     def HBclicked(self, i):
@@ -758,6 +782,72 @@ class ParamWindow(QMainWindow):
             for aPW in pws:
                 aPW.plotWFs(justN=i)
 
+
+    def LBclicked(self, singleSat=None):
+        """
+        Event for clicking the log button. If called by the parameter
+        window it will log the wf parameters for each of the plot panels. 
+        If called by the plot panel it will only log that panels timestamp
+        It is set to append to existing files rather than rewrite. It also
+        is being difficult about using a global variable for a file name 
+        so have resorted to open/close file on each click bc not noticeably
+        slow. AKA the Robin's nest.
+        
+        Optional Inputs:
+            singleSat: the index of a single plot window
+        
+        Actions:
+            Adds a line in wbOutputs/oBoxText.txt where oBox text is the 
+            current value of the output text box
+        
+            The line contains
+                Time fit is made (real world time)
+                Instrument
+                Time of observation used
+                WFtype
+                Parameters (filled with Nones up to 9 values as needed)
+                Pickle name
+                Time index for that sat
+        
+        """
+        logFile = open('wbOutputs/'+self.oBox.text()+'.txt', 'a')
+        
+        # Check if doing one or all fits
+        if type(singleSat) != type(None):
+            toDo = [singleSat]
+        else:
+            toDo = range(nSats)
+            
+        # Time one is doing the fit
+        nowTime = datetime.datetime.now()  
+        for j in toDo:
+            aPW = pws[j]
+            for k in range(nwfs):
+                aWF = wfs[k]
+                if type(aWF.WFtype) != type(None):
+                    tidx = aPW.tidx
+                    tag = aPW.satStuff[0][tidx]['MYTAG'].replace(' ','_')
+                    obsT = aPW.satStuff[0][tidx]['DATEOBS']
+                    
+                    # Observer and time of obs
+                    outStr = nowTime.strftime("%Y-%m-%dT%H:%M:%S")
+                    outStr += ' ' + tag + ' ' + obsT + ' ' + aWF.WFtype +' '
+                    
+                    # Dump all the params and fill with Nones as needed
+                    for ii in range(9):
+                        if ii < (len(aWF.params)):
+                            outStr += str(aWF.params[ii]) + ' '
+                        else:
+                            outStr += 'None '
+                            
+                    # Add the name of the background pickle and the time index for that data
+                    outStr += bkgpkl + ' ' + str(tidx)            
+            
+                    logFile.write( outStr+ '\n')
+                else:
+                    print('Cannot log WF', k, 'no parameters defined')
+        logFile.close()
+
     def SBclicked(self, singleSat=None):
         """
         Event for clicking the save button. If called by the parameter
@@ -781,7 +871,7 @@ class ParamWindow(QMainWindow):
         #|------------------------------------|
         fileName = 'wombatSummaryFile.txt'        
         outFile = open('wbOutputs/'+fileName, 'w')
-        print ('Saving results in wboutputs/'+fileName)
+        print ('Saving results in wbOutputs/'+fileName)
         
         # |----- Save the wireframe parameters ----|
         for j in range(nwfs):
@@ -1128,10 +1218,14 @@ class FigWindow(QWidget):
         
         #|---- Background mode drop down box ----|
         label = QLabel('Background Scaling')
-        layoutP.addWidget(label, 12,0,1,5,alignment=QtCore.Qt.AlignCenter)
+        layoutP.addWidget(label, 12,0,1,3,alignment=QtCore.Qt.AlignLeft)
         self.cbox = self.bgComboBox()
-        layoutP.addWidget(self.cbox,12,5,1,5,alignment=QtCore.Qt.AlignCenter)
+        layoutP.addWidget(self.cbox,12,3,1,3,alignment=QtCore.Qt.AlignCenter)
         
+        # |----- Log Fit Button ----|
+        logBut = QPushButton('Log WF Fit')
+        logBut.released.connect(self.LBclicked)
+        layoutP.addWidget(logBut, 12, 8, 1,3)
         
         #|---- Fill slider defaults ----|
         for i in range(3):
@@ -1251,6 +1345,7 @@ class FigWindow(QWidget):
             b      = switch to base difference
             r      = switch to running difference
             s      = save
+            l      = log WF parameters
             m      = calculate mass
      
         """
@@ -1271,6 +1366,10 @@ class FigWindow(QWidget):
         elif event.key() == QtCore.Qt.Key_S:
             if 'mainwindow' in globals():
                 mainwindow.SBclicked(singleSat=self.winidx)
+        #|--- Logging ---|
+        elif event.key() == QtCore.Qt.Key_L:
+            if 'mainwindow' in globals():
+                mainwindow.LBclicked(singleSat=self.winidx)
         #|--- Time Slider ---|
         elif event.key()== QtCore.Qt.Key_Right:
             if 'mainwindow' in globals():
@@ -1340,6 +1439,17 @@ class FigWindow(QWidget):
         
         """
         mainwindow.SBclicked(singleSat=self.winidx)
+ 
+    def LBclicked(self):
+        """
+        Event for clicking the log wireframe button
+        
+        Actions:
+            Calls the log WF function in the parameter window but flags
+            to only log results for this window
+        
+        """
+        mainwindow.LBclicked(singleSat=self.winidx)
         
     def MBclicked(self):
         """
@@ -1853,6 +1963,7 @@ class OverviewWindow(QWidget):
             b      = switch to base difference
             r      = switch to running difference
             s      = save
+            l      = log wireframe parameters
             m      = calculate mass
      
         """
@@ -1873,6 +1984,10 @@ class OverviewWindow(QWidget):
         elif event.key() == QtCore.Qt.Key_S:
             if 'mainwindow' in globals():
                 mainwindow.SBclicked()
+        #|--- Logging ---|
+        elif event.key() == QtCore.Qt.Key_L:
+            if 'mainwindow' in globals():
+                mainwindow.LBclicked(singleSat=self.winidx)
         #|--- Time Slider ---|
         elif event.key()== QtCore.Qt.Key_Right:
             if 'mainwindow' in globals():
@@ -2685,7 +2800,6 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, labelPW=True, reloadD
     #|---- Other Global Setup -----|
     #|-----------------------------|
     global mainwindow, pws, nSats, wfs, nwfs, bmodes, ovw, bkgpkl
-    
     
     #|----------------------------------------| 
     #|--- Pull apart background data input ---|
