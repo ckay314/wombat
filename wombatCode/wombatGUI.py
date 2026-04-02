@@ -211,7 +211,7 @@ class ParamWindow(QMainWindow):
         
         # |----- Output Name Text Box ----|
         oBox = QLineEdit()
-        oBox.setText('WBlog')
+        oBox.setText('WomBlog')
         self.oBox = oBox
         layout.addWidget(oBox, 4,5,1,6)
         
@@ -865,11 +865,14 @@ class ParamWindow(QMainWindow):
             Saves fits files of the processed backgrounds (all time steps)
         
         """
-        
         #|------------------------------------| 
         #|-------- Save Reload File ----------|
         #|------------------------------------|
-        fileName = 'wombatSummaryFile.txt'        
+        fileName = 'wombatSummaryFile.txt'
+        if self.oBox.text().lower() in ['womblog', 'wblog']:
+            fileName = 'wombatReload.txt'
+        else:
+            fileName = self.oBox.text() + '_reload.txt'
         outFile = open('wbOutputs/'+fileName, 'w')
         print ('Saving results in wbOutputs/'+fileName)
         
@@ -2632,6 +2635,9 @@ def reloadIt(rD):
         pws[i].MaxSlider.setValue(myMax)
     mainwindow.Tslider.setValue(int(rD['TimeIdx']))
     
+    # |--- Give it its name ---|
+    mainwindow.oBox.setText(rD['myName'])
+    
 # |------------------------------------------------------------|
 # |-------------------- Setup Time Indices --------------------|
 # |------------------------------------------------------------|
@@ -2784,7 +2790,6 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, labelPW=True, reloadD
         WFname2id:  wireframe name to their index number in the WF combo boc
   
     """
-
     #|-----------------------------| 
     #|---- Dictionary Globals -----|
     #|-----------------------------|
@@ -2907,7 +2912,7 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, labelPW=True, reloadD
     
     #|---------------------------------| 
     #|---- Launch Overview Window -----|
-    #|---------------------------------|
+    #|---------------------------------|    
     if overviewPlot:
         ovw = OverviewWindow(satStuff, screenXY=screenXY)
         ovw.show()

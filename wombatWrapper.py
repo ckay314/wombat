@@ -168,6 +168,12 @@ def processReload(fileIn, reloadFold='wbfits/reloads/'):
         bkgData['pickleSource'] = theFile  
         
         overviewPlot = reloadDict['OVWindow']
+        if overviewPlot in ['True', 'true', 'TRUE']:
+            overviewPlot = True
+        elif overviewPlot in ['False', 'false', 'FALSE']:
+            overviewPlot = False
+            
+        reloadDict['myName'] = fileIn.replace('_reload', '').replace('.txt', '').replace('wbOutputs/', '')
         
         return bkgData, reloadDict, nWFs, overviewPlot
         
@@ -570,7 +576,7 @@ def runWombat(args):
     overviewPlot = False
     
     # Assume reload file not pickle if name includes SummaryFile
-    if 'SummaryFile' in theFile:
+    if 'reload' in theFile.lower():
         doReload = True
         bkgData, reloadDict, nWFs, overviewPlot = processReload(theFile)
         #sys.exit("Need to redo loading reload")
@@ -581,7 +587,7 @@ def runWombat(args):
         with open(theFile, 'rb') as file:
             bkgData = pickle.load(file)
         bkgData['pickleSource'] = theFile
-        
+
     nWFs = 1
     if len(args) > 4:
         sys.exit('Too many arguments given, syntax is python3 wombatWrapper.py file nWFs ovw -  where file is a background pickle or reload file and nWFs is the number of wireframes')    
@@ -604,7 +610,6 @@ def runWombat(args):
     
     if nWFs > 5:
         sys.exit('Max limit of 5 wireframes')
-        
         
     releaseTheWombat(bkgData, reloadDict=reloadDict, overviewPlot=overviewPlot, nWFs=nWFs)   
         
