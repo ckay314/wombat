@@ -120,8 +120,8 @@ class ParamWindow(QMainWindow):
         
         # Create holder for the WF types
         self.WFtypes = np.zeros(nTabs)
-        self.WFnum2type = ['None', 'GCS', 'Torus', 'Sphere', 'Half Sphere', 'Ellipse', 'Half Ellipse', 'Slab', 'Tube']
-        self.WFshort = {'GCS':'GCS', 'Torus':'Tor', 'Sphere':'Sph', 'Half Sphere':'HSph', 'Ellipse':'Ell', 'Half Ellipse':'HEll', 'Slab':'Slab', 'Tube':'Tube'}
+        self.WFnum2type = ['None', 'GCS', 'Torus', 'Sphere', 'Half Sphere', 'Ellipse', 'Half Ellipse', 'Slab', 'Tube', 'GCS*']
+        self.WFshort = {'GCS':'GCS', 'Torus':'Tor', 'Sphere':'Sph', 'Half Sphere':'HSph', 'Ellipse':'Ell', 'Half Ellipse':'HEll', 'Slab':'Slab', 'Tube':'Tube', 'GCS*':'GCS*'}
         
         # Create holder for the WF params
         self.WFparams = np.array([np.zeros(10) for i in range(nTabs)])
@@ -274,6 +274,7 @@ class ParamWindow(QMainWindow):
         cbox.addItem('Half Ellipse')
         cbox.addItem('Slab')
         cbox.addItem('Tube')
+        cbox.addItem('GCS*')
         
          # |----- Connect Event ----|
         cbox.currentIndexChanged.connect(lambda x: self.cb_index_changed(x,i))
@@ -2677,7 +2678,7 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, labelPW=True, reloadD
     # generally correct (hopefully) but not the most precise
     occultDict = {'STEREO_SECCHI_COR2':[3,14], 'STEREO_SECCHI_COR1':[1.5,4], 'SOHO_LASCO_C1':[1.1,3], 'SOHO_LASCO_C2':[2,6], 'SOHO_LASCO_C3':[3.7,32], 'STEREO_SECCHI_HI1':[15,80], 'STEREO_SECCHI_HI2':[80,215], 'STEREO_SECCHI_EUVI':[0,1.7],'SDO_AIA':[0,1.35]} 
     # Wireframe name to combo box index 
-    WFname2id = {'GCS':1, 'Torus':2, 'Sphere':3, 'Half Sphere':4, 'Ellipse':5, 'Half Ellipse':6, 'Slab':7, 'Tube':8}
+    WFname2id = {'GCS':1, 'Torus':2, 'Sphere':3, 'Half Sphere':4, 'Ellipse':5, 'Half Ellipse':6, 'Slab':7, 'Tube':8, 'GCS*':9}
     
     
     #|-----------------------------| 

@@ -35,9 +35,9 @@ should not be edited for funsies.
 # |---------------------------------------------------------------------|
 
 # Dictionary for the colors of the wireframe objects by type
-# Defaults are an attempt to be color blind friends on black/white backgrounds
-# GCS: standard green, Torus: teal, Spheres/Ellipses: blue, slab: orange, Tube:pink
-colorDict = {'GCS':'#9AE630', 'Torus': '#00FF7F', 'Sphere':'#00FFFF', 'Half Sphere':'#00FFFF', 'Ellipse':'#00FFFF', 'Half Ellipse':'#00FFFF', 'Slab':'#FF8904', 'Tube':'#D858DF'}
+# Defaults are an attempt to be color blind friendly on black/white backgrounds
+# GCS: standard neon green, Torus: diff green, Spheres/Ellipses: light blue, slab: orange, Tube:pink
+colorDict = {'GCS':'#9AE630', 'Torus': '#00FF7F', 'Sphere':'#00FFFF', 'Half Sphere':'#00FFFF', 'Ellipse':'#00FFFF', 'Half Ellipse':'#00FFFF', 'Slab':'#FF8904', 'Tube':'#D858DF', 'GCS*':'#9AE630'}
 
 # Extra colors to use if plotting more than one of the same type of WF
 # order is maroon, purple, yellow
@@ -48,7 +48,7 @@ bonusColors = ['#FF2056', '#9810FA', '#FFD230']
 # Attempting to keep theta to lon angle and phi to lat angle throughout WOMBAT
 # Everything is defined wrt to CK's Theoryland (which is Cartesian with 'nose' along x-axis
 # and largest non-radial width in the z/vertical direction for antisymmetric shapes)
-gridDict = {'GCS':[5,15,25], 'Torus':[30,25], 'Sphere':[30,25], 'Half Sphere':[20,20], 'Ellipse':[30,25], 'Half Ellipse':[20,20], 'Slab':[10,5,10], 'Tube':[30,20]}
+gridDict = {'GCS':[5,15,25], 'Torus':[30,25], 'Sphere':[30,25], 'Half Sphere':[20,20], 'Ellipse':[30,25], 'Half Ellipse':[20,20], 'Slab':[10,5,10], 'Tube':[30,20], 'GCS*':[5,15,25]}
 
 
 
@@ -64,13 +64,13 @@ gridDict = {'GCS':[5,15,25], 'Torus':[30,25], 'Sphere':[30,25], 'Half Sphere':[2
 # The default ranges for each of the parameter options
 # These will be more COR appropriate than HI appropriate but will
 # switch if the code see HI observations
-rngDict = {'Height (Rs)':[1,50], 'Lon (deg)':[-180,180], 'Lat (deg)':[-90,90], 'Tilt (deg)':[-90,90], 'AW (deg)':[0,90], 'kappa':[0,1], 'AW_FO (deg)':[0,90], 'AW_EO (deg)':[0,90], 'deltaAx':[0,2], 'deltaCS':[0,2], 'ecc1':[0,1], 'ecc2':[0,1], 'Roll (deg)':[-90,90], 'Yaw (deg)':[-90,90], 'Pitch (deg)':[-90,90], 'Lx (Rs)':[0,25], 'Ly (Rs)':[0,25], 'Lz (Rs)':[0,25]}
+rngDict = {'Height (Rs)':[1,50], 'Lon (deg)':[-180,180], 'Lat (deg)':[-90,90], 'Tilt (deg)':[-90,90], 'AW (deg)':[0,90], 'kappa':[0,1], 'AW_FO (deg)':[0,90], 'AW_EO (deg)':[0,90], 'deltaAx':[0,2], 'deltaCS':[0,2], 'ecc1':[0,1], 'ecc2':[0,1], 'Roll (deg)':[-90,90], 'Yaw (deg)':[-90,90], 'Pitch (deg)':[-90,90], 'Lx (Rs)':[0,25], 'Ly (Rs)':[0,25], 'Lz (Rs)':[0,25], 'HeightO (Rs)':[0,5], 'LonO (deg)':[-180,180], 'LatO (deg)':[-90,90],}
 
 # The HI values (only includes ones that change)
-rngDictHI = {'Height (Rs)':[1,215], 'Lx (Rs)':[0,215], 'Ly (Rs)':[0,215], 'Lz (Rs)':[0,215]}
+rngDictHI = {'Height (Rs)':[1,215], 'Lx (Rs)':[0,215], 'Ly (Rs)':[0,215], 'Lz (Rs)':[0,215], 'HeightO (Rs)':[0,25]}
 
 # The default values for each parameter (again COR appropriate)
-defDict = {'Height (Rs)':10, 'Lon (deg)':0, 'Lat (deg)':0, 'Tilt (deg)':0, 'AW (deg)':30, 'AW_FO (deg)':40, 'AW_EO (deg)':15, 'kappa':0.3, 'deltaAx':1, 'deltaCS':1, 'ecc1':0.8, 'ecc2':0.7, 'Roll (deg)':0, 'Yaw (deg)':0, 'Pitch (deg)':0, 'Lx (Rs)':10, 'Ly (Rs)':4, 'Lz (Rs)':10}
+defDict = {'Height (Rs)':10, 'Lon (deg)':0, 'Lat (deg)':0, 'Tilt (deg)':0, 'AW (deg)':30, 'AW_FO (deg)':40, 'AW_EO (deg)':15, 'kappa':0.3, 'deltaAx':1, 'deltaCS':1, 'ecc1':0.8, 'ecc2':0.7, 'Roll (deg)':0, 'Yaw (deg)':0, 'Pitch (deg)':0, 'Lx (Rs)':10, 'Ly (Rs)':4, 'Lz (Rs)':10, 'HeightO (Rs)':0, 'LonO (deg)':0, 'LatO (deg)':0}
 
 
 
@@ -104,7 +104,7 @@ radeg = 180. / np.pi
 pi    = np.pi 
 
 # Dictionary for the number of parameters per WF type
-npDict = {'GCS': 6, 'Torus': 8, 'Sphere':4, 'Half Sphere':4, 'Ellipse':7, 'Half Ellipse':7, 'Slab':9, 'Tube':9}
+npDict = {'GCS': 6, 'Torus': 8, 'Sphere':4, 'Half Sphere':4, 'Ellipse':7, 'Half Ellipse':7, 'Slab':9, 'Tube':9, 'GCS*':9}
 
 
 #|-------------------------------|
@@ -185,6 +185,7 @@ class wireframe():
         Ellipse/Half ellipsoid - height, lon, lat,  tilt, AW, epp (6)
         Slab - height, lon, lat, roll (~tilt), yaw (~lon), pitch (~lat),  Lx, Ly, Lz,  (9)
         Tube - height, lon, lat, roll (~tilt), yaw (~lon), pitch (~lat),  Lx, Ly, Lz,  (9)
+        GCS* parameters - height, lon, lat, tilt, AW, kappa, heightO (origin), lonO, latO (9)
         *** note that the params will be stored in this exact order
     
     We also include a None type option to make a structure as a placeholder without
@@ -210,6 +211,7 @@ class wireframe():
             Ellipse/Half ellipsoid - height, lon, lat,  tilt, AW, epp (6)
             Slab - height, lon, lat, roll (~tilt), yaw (~lon), pitch (~lat),  Lx, Ly, Lz,  (9)
             Tube - height, lon, lat, roll (~tilt), yaw (~lon), pitch (~lat),  Lx, Ly, Lz,  (9)
+            GCS* parameters - height, lon, lat, tilt, AW, kappa, heightO (origin), lonO, latO (9)
             *** note that the params will be store in this exact order
    
         We also include a None type option to make a structure as a placeholder without
@@ -275,6 +277,9 @@ class wireframe():
             self.labels = np.array(['Height (Rs)', 'Lon (deg)', 'Lat (deg)', 'Tilt (deg)', 'AW (deg)', 'ecc1', 'ecc2'])
         elif WFtype in ['Slab', 'Tube']:
             self.labels = np.array(['Height (Rs)', 'Lon (deg)', 'Lat (deg)', 'Roll (deg)', 'Yaw (deg)', 'Pitch (deg)', 'Lx (Rs)', 'Ly (Rs)', 'Lz (Rs)'])
+        elif WFtype == 'GCS*':
+            self.labels = np.array(['Height (Rs)', 'Lon (deg)', 'Lat (deg)', 'Tilt (deg)', 'AW (deg)', 'kappa', 'HeightO (Rs)', 'LonO (deg)', 'LatO (deg)'])
+        
             
     
     # |-----------------------------------------------------------------|
@@ -319,7 +324,7 @@ class wireframe():
         # |---------------------------|
         # |------ GCS Wireframe ------|
         # |---------------------------|
-        if WFtype == 'GCS':           
+        if WFtype in ['GCS', 'GCS*']:           
            # Refine param names to reuse existing code
            lon, lat, tilt, hin, k, alpha = ps[1], ps[2], ps[3], ps[0], ps[5], ps[4]*dtor
            nleg, ncirc, ncross = gps[0], gps[1], gps[2]
@@ -397,6 +402,13 @@ class wireframe():
            
            # Convert from theoryland to StonyCart
            cXYZ = np.transpose(shell) 
+           
+           if WFtype == 'GCS*':
+               origin = [ps[6], ps[8], ps[7]]
+               deltaCart = SPH2CART(origin)
+               for i in range(3):
+                   cXYZ[i,:] += deltaCart[i]
+               
            self.points = np.transpose(rotz(roty(rotx(cXYZ, tilt), -lat), lon))  
            
         # |---------------------------|
