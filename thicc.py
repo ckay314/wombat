@@ -11,7 +11,7 @@ import scipy.ndimage as ndimage
 from scipy.interpolate import RegularGridInterpolator
 import matplotlib.cm as cm
 
-import sys
+import sys, os
 sys.path.append('prepCode/') 
 sys.path.append('wombatCode/') 
 import wombatWF as wf
@@ -184,10 +184,10 @@ def map2CartFoV(myMap, points, pixCent=None):
     # Get the direction the FoV is pointing in Stony frame
     # Use pix cent if provided, otherwise assume middle
     if type(pixCent) == type(None):
-        pixCent = [imMap.data.shape[1]/2, imMap.data.shape[0]/2] # pix is xy but shape is yx
+        pixCent = [myMap.data.shape[1]/2, myMap.data.shape[0]/2] # pix is xy but shape is yx
 
     # Get the heliprojective coord of the pixel
-    coordM = imMap.pixel_to_world(pixCent[0] * u.pix, pixCent[1] * u.pix)
+    coordM = myMap.pixel_to_world(pixCent[0] * u.pix, pixCent[1] * u.pix)
     # Get elongation angle -> distance to Thompson Sphere
     ell = np.sqrt(coordM.Tx.rad**2 + coordM.Ty.rad**2)
     dM = np.abs(satR * np.abs(np.cos(ell)))
@@ -280,10 +280,10 @@ def wf2CartFoV(myMap, aWF, pixCent=None):
     # Get the direction the FoV is pointing in Stony frame
     # Use pix cent if provided, otherwise assume middle
     if type(pixCent) == type(None):
-        pixCent = [imMap.data.shape[1]/2, imMap.data.shape[0]/2] # pix is xy but shape is yx
+        pixCent = [myMap.data.shape[1]/2, myMap.data.shape[0]/2] # pix is xy but shape is yx
 
     # Get the heliprojective coord of the pixel
-    coordM = imMap.pixel_to_world(pixCent[0] * u.pix, pixCent[1] * u.pix)
+    coordM = myMap.pixel_to_world(pixCent[0] * u.pix, pixCent[1] * u.pix)
     # Get elongation angle -> distance to Thompson Sphere
     ell = np.sqrt(coordM.Tx.rad**2 + coordM.Ty.rad**2)
     dM = np.abs(satR * np.abs(np.cos(ell)))
@@ -1129,10 +1129,10 @@ def dingo1d(myMap, widMap, xcMap, densMap, outFoV, pix2FOV, obsSat, vCME=400, sc
     # (just the cartesian sat loc)
     satxyz = np.array([np.cos(satLatR)*np.cos(satLonR), np.cos(satLatR)*np.sin(satLonR), np.sin(satLatR)]) * satR
     
-    pixCent = [imMap.data.shape[1]/2, imMap.data.shape[0]/2] # pix is xy but shape is yx
+    pixCent = [myMap.data.shape[1]/2, myMap.data.shape[0]/2] # pix is xy but shape is yx
 
     # Get the heliprojective coord of the pixel
-    coordM = imMap.pixel_to_world(pixCent[0] * u.pix, pixCent[1] * u.pix)
+    coordM = myMap.pixel_to_world(pixCent[0] * u.pix, pixCent[1] * u.pix)
     # Get elongation angle -> distance to Thompson Sphere
     ell = np.sqrt(coordM.Tx.rad**2 + coordM.Ty.rad**2)
     dM = np.abs(satR * np.abs(np.cos(ell)))
@@ -1151,6 +1151,7 @@ def dingo1d(myMap, widMap, xcMap, densMap, outFoV, pix2FOV, obsSat, vCME=400, sc
     xs = [satxyz[0]*215, TSxyz[0]*215]
     ys = [satxyz[1]*215, TSxyz[1]*215]
     zs = [satxyz[2]*215, TSxyz[2]*215]
+    
     
     # Add the in situ sat and Sun
     obsCart = obsSat.cartesian
@@ -1262,7 +1263,7 @@ def dingo1d(myMap, widMap, xcMap, densMap, outFoV, pix2FOV, obsSat, vCME=400, sc
             nIP.append(0)
             cs.append('r')
             
-    # Conver the in place density/size to in situ values at the
+    # Convert the in place density/size to in situ values at the
     # observing satellite        
      
     rIP = np.array(rIP)
@@ -1286,7 +1287,7 @@ def dingo1d(myMap, widMap, xcMap, densMap, outFoV, pix2FOV, obsSat, vCME=400, sc
     dSat = satR *215 # satellite distance in Rs 
     nur  = scaleFactors[1]
     tArr = (dSat - R0 - lilR0 * fs) / (1 + nur * fs) / vCME * 7e5 / 3600 # in hr, assuming vCME in km/s
-    print (tArr)
+
     # Get the radial size at the time of arrival
     lilRs = lilR0 + nur * vCME * tArr * 3600 / 7e5
     
@@ -1365,7 +1366,275 @@ def getMasses(widMap, densMap, outFoV, pix2FOV, showLog=False, figName=None):
         vol2 = widMap[2] * cellArea * (6.96e10 **3)
         print ('Outer WF mass (1e15 g)', '{:.2f}'.format(np.sum(dens2[gidx2]*vol2[gidx2]) / 1e15))
     
-# python3 wombatProcessObs.py 2012-07-12T16:00 2012-07-13T05:00 HI1A rdiffHI
+
+
+
+
+
+
+# |--------------------|
+# |--- Main Wrapper ---|
+# |--------------------|
+def dingoWrapper(args, doInner=False):
+    """ 
+    Function that goes from the command line to the appropriate DINGO
+    procedure. It can also be used for external calls by passing the 
+    arguments to the function as a single array. The args must be passed
+    in the order shown
+    
+    Inputs:
+        args: an array/list with the following parameters (in order)
+    
+            logFile: the name/path for log file from WOMBAT
+    
+            ids: the integer line number(s) of the fit of interest in the 
+                 logFile. Two fits can be passed (for sheath + eject) using
+                 a plus sign with no spaces (e.g. 10+11 for lines 10 and 11)
+    
+            dingoDim: a strong for the dimensions for the density calculation. 
+                      the option are 0D, 1D, 2D, 3D which correspond to:
+                        0D - total mass
+                        1D - line plot (in place and in situ)
+                        2D - plane of sky contour plot
+                        3D - interactive 3D scatter plot                    
+                        
+            saveName: the name to use when saving figures. this parameter is 
+                      not required and will default to generic names if not
+                      provided
+    
+            target: the name of the in situ satellite of interest. This is only 
+                    needed for the 1D case and otherwise ignored Currently the
+                    supported options are ACE, BepiColombo, DSCOVR, MAVEN, 
+                    PSP, SolO, STEREO-A, STEREO-B, VEX, Wind. Additional
+                    satellites could be added as long as they exist in
+                    sunpy get_horizons_coord and the correct form of the tag
+                    is used. We allow some common short forms of these names 
+                    (e.g Bepi, STA, ...) and nothing is case sensitive. This
+                    is 
+            
+    
+    """
+    
+    #|--- Standard input error message ---|
+    errorStrings = [' ', '  python3 dingo.py logFile id(s) dim saveName target', '          where logFile is a wombat log file', '          ids is an integer or int+int', '          dim set the mode/dimensions from [0D, 1D, 2D, 3D]', '          saveName is an optional name for the outputs', '          and target is the in situ satellite for 1D cases']
+    
+    #|----------------------------------|
+    #|--- Check the number of inputs ---|     
+    #|----------------------------------|
+    if len(args) not in [3, 4, 5]:
+        print ('Incorrect number of parameters provided. Syntax is')
+        for astr in errorStrings:
+            print (astr)
+        sys.exit()
+    
+        
+    #|--------------------------|
+    #|--- Check the log file ---|     
+    #|--------------------------|
+    if not os.path.exists(args[0]):
+        print ('Cannot find log file. Check location and/or call syntax')
+        for astr in errorStrings:
+            print (astr)
+        sys.exit()
+    else:
+        try:
+            logFile = np.genfromtxt(args[0], dtype=str)
+        except:
+            sys.exit('Error opening logFile, check that it is a WOMBAT log file')
+
+    #|-------------------------|
+    #|--- Check the log ids ---|     
+    #|-------------------------|
+    idstr = args[1]
+    if '+' in idstr:
+        split =idstr.find('+')
+        try:
+            id1 = int(idstr[:split])
+            id2 = int(idstr[split+1:])
+        except:
+            print ('Error in splitting id string. Should be a single integer or')
+            print ('integer+integer (e.g. 1+2). Full command line syntax is')
+            for astr in errorStrings:
+                print (astr)
+            sys.exit()
+    else:
+        try:
+            id1 = int(idstr)
+        except:
+            print ('Error in reading single id string. Should be an integer or')
+            print ('integer+integer (e.g. 1+2). Full command line syntax is')
+            for astr in errorStrings:
+                print (astr)
+            sys.exit()
+        id2 = None
+    
+
+    #|-------------------------------|
+    #|--- Check the dimension tag ---|     
+    #|-------------------------------|
+    dim = args[2].lower()
+    if dim in ['0', '0d']:
+        mode = 0
+    elif dim in ['1', '1d']:
+        mode = 1
+    elif dim in ['2', '2d']:
+        mode = 2
+    elif dim in ['3', '3d']:
+        mode = 3
+    else:
+        print ('Error in reading dimension tag. Full command line syntax is')
+        for astr in errorStrings:
+            print (astr)
+        sys.exit()
+    
+    
+    #|---------------------------|
+    #|--- Check for save name ---|     
+    #|---------------------------|
+    if len(args) > 4:
+        saveName = args[3]
+    else:
+        saveName = None
+
+    #|------------------------|
+    #|--- Check the target ---|     
+    #|------------------------|
+    satNames = ['ace', 'bepi', 'bepicolombo', 'dscovr', 'maven', 'parker', 'parkersolarprobe', 'parker_solar_probe', 'psp', 'solarorbiter', 'solo', 'so', 'stereoa', 'stereo-a', 'sta', 'stereob', 'stereo-b', 'stb', 'venusexpress', 'venus_express', 'vex', 've', 'wind']
+    #ACE, BepiColombo, DSCOVR, MAVEN, PSP, SolO, STEREO-A, STEREO-B, VEX, Wind
+    
+    if mode == 1:
+        if len(args) < 4:
+            print ('Too few arguments for 1D mode. Full command line syntax is')
+            for astr in errorStrings:
+                print (astr)
+            sys.exit()
+            
+        #|--- Check if have target but not save name ---|
+        if len(args) == 4:
+            if saveName.lower() in satNames:
+                target = saveName.lower()
+                saveName = None
+            else:
+                print ('Missing target for 1D mode. Full command line syntax is')
+                for astr in errorStrings:
+                    print (astr)
+                sys.exit()
+        else:
+            if args[4].lower() in satNames:
+                targetIn = args[4].lower()
+                # Convert target to a code we know works with get_horizons_coord
+                if targetIn in ['ace', 'dscovr', 'maven', 'wind']:
+                    target = targetIn
+                elif targetIn in ['ace']:
+                    target = -92
+                elif targetIn in ['bepi', 'bepicolombo']:
+                    target = 'bepi'
+                elif targetIn in ['parker', 'parkersolarprobe', 'parker_solar_probe', 'psp']:
+                    target = 'psp'
+                elif targetIn in ['solarorbiter', 'solo', 'so']:
+                    target = 'solo'
+                elif targetIn in ['stereoa', 'stereo-a', 'sta']:
+                    target = 'stereo-a'
+                elif targetIn in ['stereob', 'stereo-b', 'stb']:
+                    target = 'stereo-b'
+                elif targetIn in ['venusexpress', 'venus_express', 'vex']:
+                    target = 'vex'             
+            else:
+                print('Unknown/unsupported in situ satellite passed as target. Options are ')
+                print (satNames)
+                sys.exit()
+    
+    #|-----------------------------|
+    #|--- Check bonus 1D params ---|     
+    #|-----------------------------|            
+
+    #|------------------------------|
+    #|--- Check mass2dens params ---|     
+    #|------------------------------|            
+                
+                
+    #|--------------------------|
+    #|--- Set up run details ---|     
+    #|--------------------------|
+    #|--- Get the line/lines from logFile ---|
+    line = logFile[id1-1,:]
+        
+    if id2:
+        line2 = logFile[id2-1,:]
+        #|--- Check that using same image ---|
+        if (line[13] != line2[13]) or (line[14] != line2[14]) or (line[1] != line2[1]):
+            print (line[13] != line2[13])
+            print (line[14] != line2[14],line[14] ,line2[14] )
+            print (line[1] != line2[1],line[1] ,line2[1] )
+            sys.exit('Cannot combine fits with different instruments, times, or background pickles.')
+        
+    #|--- Open the pickle ---|
+    with open(line[13], 'rb') as file:
+        bkgData = pickle.load(file)
+    
+    obs  = line[1]
+    tidx = int(line[14])
+        
+    satDict = bkgData['satStuff'][obs][0][tidx]
+    imMap = bkgData['proImMaps'][obs][0][tidx]
+    showMap = bkgData['scaledIms'][obs][0][tidx][0]
+    massMap = bkgData['massIms'][obs][tidx]
+
+    #|--- Say what we're gonna do ---|
+    print ('Obtaining ' + str(mode) + 'D results for '+obs+ ' at ' +satDict['DATEOBS'])
+    
+    #|--- Make the wireframe(s) ---|
+    awf = wf.wireframe(line[3])
+    ps = []
+    for i in range(9):
+        if line[i+4] != 'None':
+            ps.append(float(line[i+4]))
+    awf.params = ps
+    awf.getPoints()
+    
+    if id2: 
+        awf2 = wf.wireframe(line2[3])
+        ps2 = []
+        for i in range(9):
+            if line2[i+4] != 'None':
+                ps2.append(float(line2[i+4]))
+        awf2.params = ps2
+        awf2.getPoints()   
+        
+    
+    
+    #|--------------|
+    #|--- Run it ---|     
+    #|--------------|
+    # Need to replace these
+    dI = False
+    ds = 1
+    
+    if type(id2) == type(None):
+        widMap, xcMap, densMap, subMass, outFoV, pix2FOV  = mass2dens(imMap, satDict, awf, massMap, doInner=dI,  downSelect=ds)  
+    else:
+        widMap, xcMap, densMap, subMass, outFoV, pix2FOV  = mass2dens(imMap, satDict, [awf, awf2], massMap, doInner=dI,  densRatio=1.8, downSelect=ds)
+    
+    if mode == 0:
+        getMasses(widMap, densMap, outFoV, pix2FOV)
+    elif mode == 1:
+        obsSat = get_horizons_coord('Wind', time=satDict['DATEOBS'])
+        dingo1d(imMap, widMap, xcMap, densMap, outFoV, pix2FOV, obsSat, vCME=550, scaleFactors=[1., 0.1])
+    elif mode == 2:
+        dingo2d(densMap, outFoV, pix2FOV)
+    elif mode == 3:
+        allPts = dingo3d(widMap, xcMap, densMap,outFoV, pix2FOV, shell=True, plotIt=True)
+
+
+# |-----------------------|
+# |--- Text line input ---|
+# |-----------------------|
+if __name__ == '__main__':
+    dingoWrapper(sys.argv[1:])
+
+
+
+'''# python3 wombatProcessObs.py 2012-07-12T16:00 2012-07-13T05:00 HI1A rdiffHI
 # python3 wombatProcessObs.py 2012-07-13T20:00 2012-07-14T12:00 HI2A rdiffHI
 #theFile = 'wbPickles/WBGUI_temp.pkl'
 #theFile = 'wbPickles/test_solopsp.pkl'
@@ -1382,7 +1651,7 @@ with open(theFile, 'rb') as file:
 
 #tidx = 6
 obs  ='COR2A'
-tidx = 7
+#tidx = 7
 
 if obs == 'COR2B':
     tidx = 6
@@ -1394,7 +1663,9 @@ imMap = bkgData['proImMaps'][obs][0][tidx]
 showMap = bkgData['scaledIms'][obs][0][tidx][0]
 massMap = bkgData['massIms'][obs][tidx]
 
-print (satDict['DATEOBS'])
+#print (satDict['DATEOBS'])
+#print (imMap)
+dingoWrapper(sys.argv[1:])
 
 #awf = wf.wireframe('GCS')
 #awf.params = [253.5, 25.2, -13.5, 77.4, 54.9, 0.3]
@@ -1406,11 +1677,10 @@ print (satDict['DATEOBS'])
 if True:
     awf = wf.wireframe('GCS')
     awf.params = [11.54, 5.4, -9.0, 73.8, 45.45, 0.4]
-
 awf.getPoints()
 
 # 20120712 COR2 at 17:54
-if False:
+if True:
     awf2 = wf.wireframe('Sphere') 
     awf2.params = [11.93, 5.4, -6.3, 60.30]
     awf2.getPoints()
@@ -1428,11 +1698,11 @@ if type(awf2) == type(None):
     widMap, xcMap, densMap, subMass, outFoV, pix2FOV  = mass2dens(imMap, satDict, awf, massMap, doInner=dI,  downSelect=ds)  
 else:
     widMap, xcMap, densMap, subMass, outFoV, pix2FOV  = mass2dens(imMap, satDict, [awf, awf2], massMap, doInner=dI,  densRatio=1.8, downSelect=ds)  
-    
+
 #allPts = dingo3d(widMap, xcMap, densMap,outFoV, pix2FOV, shell=True, plotIt=True)
 #dingo2d(densMap, outFoV, pix2FOV, figName = 'DINGO_contour'+obs+'.png')
 #dingo2d(densMap, outFoV, pix2FOV)
 #getMasses(widMap, densMap, outFoV, pix2FOV)
 
 obsSat = get_horizons_coord('Wind', time=satDict['DATEOBS'])
-dingo1d(imMap, widMap, xcMap, densMap, outFoV, pix2FOV, obsSat, vCME=550, scaleFactors=[1., 0.1])
+dingo1d(imMap, widMap, xcMap, densMap, outFoV, pix2FOV, obsSat, vCME=550, scaleFactors=[1., 0.1])'''
