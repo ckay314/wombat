@@ -101,6 +101,7 @@ class ParamWindow(QMainWindow):
         if type(tlabs) != type(None):    
             self.nTsli = len(tlabs) - 1 # slider goes 0 to val so subtract 1
             self.tlabs = tlabs
+            self.Tsliders = []
         # Hide the time slider if we only have one time
         else:
             self.nTsli = 0 # random number to make it happy
@@ -179,7 +180,7 @@ class ParamWindow(QMainWindow):
         Tslider1.setRange(2,self.nTsli+2)
         Tslider1.valueChanged.connect(self.update_tidx)
         layout.addWidget(Tslider1, 1,0,1,11)
-        self.Tslider = Tslider1
+        self.Tsliders.append(Tslider1)
 
 
         # |------ WF Type Label ------|
@@ -739,6 +740,11 @@ class ParamWindow(QMainWindow):
         # Cannot for the life of me figure out why having tval = 1
         # makes the parameter sliders appear at 0 (values and WFs ok tho)
         # Just avoid 1 so the slider starts at 2 and shift what is passed
+        for ff in range(self.nTabs):
+            # tabIndex = mainwindow.tab_widget.currentIndex()
+            if self.Tsliders[ff].value() != tval:
+                self.Tsliders[ff].setValue(tval) 
+           
         for aPW in pws:
             aPW.tidx = aPW.st2obs[tval-2]
             aPW.plotBackground()    
@@ -826,12 +832,12 @@ class ParamWindow(QMainWindow):
                 aWF = wfs[k]
                 if type(aWF.WFtype) != type(None):
                     tidx = aPW.tidx
-                    tag = aPW.satStuff[0][tidx]['MYTAG'].replace(' ','_')
+                    tag = aPW.satStuff[0][0]['KEY']
                     obsT = aPW.satStuff[0][tidx]['DATEOBS']
                     
                     # Observer and time of obs
                     outStr = nowTime.strftime("%Y-%m-%dT%H:%M:%S")
-                    outStr += ' ' + tag + ' ' + obsT + ' ' + aWF.WFtype +' '
+                    outStr += ' ' + tag + ' ' + obsT + ' ' + aWF.WFtype.replace(' ', '') +' '
                     
                     # Dump all the params and fill with Nones as needed
                     for ii in range(9):
@@ -1728,7 +1734,8 @@ class FigWindow(QWidget):
         
         # Make slider highlighted so key shortcuts work
         if 'mainwindow' in globals():
-            mainwindow.Tslider.setFocus()
+            tabIndex = mainwindow.tab_widget.currentIndex()
+            mainwindow.Tsliders[tabIndex].setFocus()
             
 
 # |------------------------------------------------------------|
@@ -2838,6 +2845,8 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, labelPW=True, reloadD
         massIms[i] = massIms.pop(key)
         sclIms[i]  = sclIms.pop(key)
         satStuff[i] = satStuff.pop(key)
+        for j in range(len(satStuff[i])):
+            satStuff[i][0][j]['KEY'] = key
     # Rename this
     obsFiles = proIms
          
@@ -2926,7 +2935,7 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, labelPW=True, reloadD
     mainwindow = ParamWindow(nwfs, tlabs=tlabs)
     # Set time slider to highlight bc reload will
     # shift focus onto text box
-    mainwindow.Tslider.setFocus()
+    mainwindow.Tsliders[0].setFocus()
     mainwindow.show()
     
 

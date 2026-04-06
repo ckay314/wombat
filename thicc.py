@@ -4,6 +4,7 @@ from astropy.coordinates import SkyCoord
 import sunpy.coordinates
 import numpy as np
 import matplotlib.pyplot as plt
+import datetime
 from sunpy.coordinates import frames
 from sunpy.coordinates import get_horizons_coord
 
@@ -17,6 +18,9 @@ sys.path.append('wombatCode/')
 import wombatWF as wf
 from wombatLoadCTs import *
 
+
+global picType
+picType = '.png' # either '.png' or '.pdf'
 
 def createGrid(FoV, nGridY):
     miny, maxy = FoV[0][0], FoV[0][1]
@@ -1023,7 +1027,7 @@ def dingo3d(widMap, xcMap, densMap, outFoV, pix2FOV, shell=True, plotIt=True):
 # |----------------------------|
 # |--- Density Contour plot ---|
 # |----------------------------|
-def dingo2d(densMap, outFoV, pix2FOV, showLog=False, figName=None):
+def dingo2d(widMap, densMap, outFoV, pix2FOV, showLog=False, figName=None):
     #|------------------|
     #|--- Prep stuff ---|
     #|------------------|
@@ -1113,10 +1117,25 @@ def dingo2d(densMap, outFoV, pix2FOV, showLog=False, figName=None):
     else:
         plt.show()
 
+
 # |--------------------|
 # |--- In Situ plot ---|
 # |--------------------|
-def dingo1d(myMap, widMap, xcMap, densMap, outFoV, pix2FOV, obsSat, vCME=400, scaleFactors=[1, 0.2]):
+def dingo1d(myMap, widMapIn, xcMapIn, densMapIn, outFoV, pix2FOV, obsSat, vCME=400, scaleFactors=[1, 0.2], figName=None, timeMode='hr'):
+    # |---------------------|
+    # |--- Set up figure ---|
+    # |---------------------|
+    fig, ax = plt.subplots(1, 2, layout='constrained')
+    myC = 'k' # to be replace when looping times
+    
+    # |--------------------------------|
+    # |--- Check if multi time mode ---|
+    # |--------------------------------|
+    
+
+    # |------------------------------|
+    # |--- Get Satellite Location ---|
+    # |------------------------------|
     # obsSat should be SkyCoord for in situ sat
     # Get satellite position from the map
     satLonD = myMap.observer_coordinate.lon.degree
@@ -1125,6 +1144,9 @@ def dingo1d(myMap, widMap, xcMap, densMap, outFoV, pix2FOV, obsSat, vCME=400, sc
     satLonR = satLonD * np.pi / 180.
     satLatR = satLatD * np.pi / 180.
        
+    # |-----------------------------|
+    # |--- Get important vectors ---|
+    # |-----------------------------|
     # Get vector from sun to sat
     # (just the cartesian sat loc)
     satxyz = np.array([np.cos(satLatR)*np.cos(satLonR), np.cos(satLatR)*np.sin(satLonR), np.sin(satLatR)]) * satR
@@ -1147,12 +1169,14 @@ def dingo1d(myMap, widMap, xcMap, densMap, outFoV, pix2FOV, obsSat, vCME=400, sc
     uTSxyz = TSxyz / np.linalg.norm(TSxyz)
     uLoS = LoS / np.linalg.norm(LoS)
     
+    # |---------------------------------------|
+    # |--- Package and convert to FoV Cart ---|
+    # |---------------------------------------|
     # Start coord arrays with sat loc and FoV cent
     xs = [satxyz[0]*215, TSxyz[0]*215]
     ys = [satxyz[1]*215, TSxyz[1]*215]
     zs = [satxyz[2]*215, TSxyz[2]*215]
-    
-    
+        
     # Add the in situ sat and Sun
     obsCart = obsSat.cartesian
     xs.append(obsCart.x.to_value()*215) 
@@ -1178,6 +1202,9 @@ def dingo1d(myMap, widMap, xcMap, densMap, outFoV, pix2FOV, obsSat, vCME=400, sc
 
     res = StonyCart2CartFoV(pts, satLatD, satLonD, rollIt)
     
+    # |--------------------------------------|
+    # |--- Get Sun-sat intersect with pts ---|
+    # |--------------------------------------|
     # Make a line connecting sun to sat
     npts = 100
     
@@ -1205,20 +1232,34 @@ def dingo1d(myMap, widMap, xcMap, densMap, outFoV, pix2FOV, obsSat, vCME=400, sc
     fov_ryz = np.sqrt(fovy**2 +fovz**2)
     maxFOV_ryz = np.max(fov_ryz)
     
-    # Make a mini line
+    # Make a mini line where actually needed
     maxIdx = np.min(np.where(ryzs >= maxFOV_ryz))
     scaleIt = rs[maxIdx] / np.max(rs)
     miniLine = scaleIt * ssline
     minirs = np.sqrt((miniLine[0] - sun[0])**2 + (miniLine[1] - sun[1])**2 + (miniLine[2] - sun[2])**2)
     
-    # Determine within wid for that yz
-    widMap, xcMap, densMap = widMap[0], xcMap[0], densMap[0]
+    # |---------------------------------------|
+    # |--- Check if within wireframe width ---|
+    # |---------------------------------------|
+    # Check if we have sheath widths or not
+    incSheath = False
+    if type(np.sum(widMapIn[2])) != type(None):
+        incSheath = True
+        
+    widMap, xcMap, densMap = widMapIn[0], xcMapIn[0], densMapIn[0]
+    if incSheath:
+        widMaps, xcMaps, densMaps = widMapIn[2], xcMapIn[2], densMapIn[1]
+        
     midpty, midptz = int(widMap.shape[1]/2), int(widMap.shape[0]/2)
     gridys = fovy[midptz,:]
     gridzs = fovz[:,midpty]
     rIP, nIP = [], []
     cs = []
+    istype = []
+    rMain = 9999.
+    hitMain = False
     for i in range(npts):
+        # |--- Interpolate to get local width ---|
         iy0, iyf, iz0, izf = None, None, None, None
         if (miniLine[1][i] <= np.max(gridys)) & (miniLine[1][i] >= np.min(gridys)):
             iy0 = np.min(np.where(gridys >= miniLine[1][i])[0])
@@ -1249,23 +1290,61 @@ def dingo1d(myMap, widMap, xcMap, densMap, outFoV, pix2FOV, obsSat, vCME=400, sc
             myxc = (1-fz) * xc1 + fz * xc2
             myd = (1-fz) * d1 + fz * d2
             
+            # |--- Repeat for the sheath ---|
+            if incSheath:
+                w11s, xc11s, d11s = widMaps[iz0, iy0], xcMaps[iz0, iy0], densMaps[iz0, iy0] 
+                w12s, xc12s, d12s = widMaps[iz0, iyf], xcMaps[iz0, iyf], densMaps[iz0, iyf]
+                w21s, xc21s, d21s = widMaps[izf, iy0], xcMaps[izf, iy0], densMaps[izf, iy0]
+                w22s, xc22s, d22s = widMaps[izf, iyf], xcMaps[izf, iyf], densMaps[izf, iyf]
+                # Interp in y
+                gdy = gridys[iyf] - gridys[iy0]
+                fy = (miniLine[1][i] - gridys[iy0]) / gdy
+                w1s = (1-fy) * w11s + fy * w12s
+                w2s = (1-fy) * w21s + fy * w22s
+                xc1s = (1-fy) * xc11s + fy * xc12s
+                xc2s = (1-fy) * xc21s + fy * xc22s
+                d1s = (1-fy) * d11s + fy * d12s
+                d2s = (1-fy) * d21s + fy * d22s
+  
+                # Interp in z
+                gdz = gridzs[izf] - gridzs[iz0]
+                fz = (miniLine[2][i] - gridzs[iz0]) / gdz
+                myws = (1-fz) * w1s + fz * w2s
+                myxcs = (1-fz) * xc1s + fz * xc2s
+                myds = (1-fz) * d1s + fz * d2s
 
-            if np.abs(miniLine[1][i] - myxc)<myw:
+            # |--- Check if in main or sheath ---|
+            if (np.abs(miniLine[1][i] - myxc)<myw) and (myd != 0):
+                if not hitMain:
+                    rMain = minirs[i]
+                    hitMain = True
+                rMain = np.max([minirs[i], rMain])
                 rIP.append(minirs[i])
                 nIP.append(myd)
                 cs.append('m')
+                istype.append('m')
+            elif incSheath and (minirs[i] > rMain):
+                if np.abs(miniLine[1][i] - myxcs)<myws:
+                    rIP.append(minirs[i])
+                    nIP.append(myds)
+                    cs.append('b') 
+                    istype.append('s')
             else:
                 rIP.append(minirs[i])
                 nIP.append(0)
                 cs.append('r')
+                istype.append('a')
         else:
             rIP.append(minirs[i])
             nIP.append(0)
-            cs.append('r')
+            cs.append('a')
             
-    # Convert the in place density/size to in situ values at the
-    # observing satellite        
-     
+    
+    # |-----------------------------------|
+    # |--- Convert in place to in situ ---|
+    # |-----------------------------------|
+    # Scale in place density based on size at the in situ satellite        
+    # Requires some form of simple expansion model
     rIP = np.array(rIP)
     nIP = np.array(nIP)
     
@@ -1303,27 +1382,97 @@ def dingo1d(myMap, widMap, xcMap, densMap, outFoV, pix2FOV, obsSat, vCME=400, sc
     
     # Scale density
     nIS = nIP[isCME] / volRat / 1.974e-24
+    
+    # Convert times to real time using map data
+    # Tend not to use this bc neglects all non-expansion
+    # interplanetary effects so garbage for arrival time
+    deltaT = 3
+    if timeMode == 'rw':
+        remObsDT = myMap.date.datetime
+        insituDT = []
+        for aTime in tArr:
+            insituDT.append(remObsDT + datetime.timedelta(hours = aTime))
+        deltaT = datetime.timedelta(hours=3)
 
-    fig, ax = plt.subplots(1, 2, layout='constrained')
-    ax[0].plot(rIP, nIP)
+    
+    # |---------------------|
+    # |--- Plotting Time ---|
+    # |---------------------|
+    
+    istype = np.array(istype)
+    isAmb = np.where(istype == 'a')[0]
+    isMain = np.where(istype =='m')[0]
+    isSheath = np.where(istype == 's')[0]
+    
+    # |--- In place panel ---|
+    # Don't actually care where is ambient, just throw in zeros
+    # around main + sheath
+    
+    ax[0].plot(rIP[isMain], nIP[isMain], c=myC)
+    ax[0].plot([rIP[isMain[0]], rIP[isMain[0]]], [0, nIP[isMain[0]]], c=myC)
+    ax[0].plot([0.5*rIP[isMain[0]], rIP[isMain[0]]], [0, 0], ':', c=myC)
+    if len(isSheath) != 0:
+        ax[0].plot(rIP[isSheath], nIP[isSheath], '--', c=myC)
+        # Connect to ambient
+        ax[0].plot([rIP[isSheath[-1]], rIP[isSheath[-1]]], [nIP[isSheath[-1]], 0], '--', c=myC)
+        ax[0].plot([rIP[isSheath[-1]], 1.1* rIP[isSheath[-1]]], [0, 0], ':', c=myC)
+        # Connect to main
+        ax[0].plot([rIP[isMain[-1]], rIP[isSheath[0]]], [nIP[isMain[-1]], nIP[isSheath[0]]], c=myC)
+    else:
+        ax[0].plot([rIP[isMain[-1]], rIP[isMain[-1]]], [nIP[isMain[-1]], 0], c=myC)
+        ax[0].plot([rIP[isMain[-1]], 1.1* rIP[isMain[-1]]], [0, 0], ':', c=myC)        
+    
     ax[0].set_xlabel('R (R$_S$)')
     ax[0].set_ylabel('$\\rho$ (g cm$^{-3}$)')
     ax[0].set_title('In Place')
     
-    ax[1].plot(tArr, nIS)
-    ax[1].set_xlabel('t (hr)')
+    # |--- In situ panel ---|
+    # Need new isMain/isSheath bc threw away ambient in IS calc
+    isSheath = isSheath - isMain[0]
+    isMain   = isMain - isMain[0]
+    
+    if timeMode == 'rw':
+        xvals = insituDT
+        #ax[1].plot(insituDT, nIS)
+        plt.gcf().autofmt_xdate() 
+    elif timeMode == 'hr':
+        xvals = tArr
+        #ax[1].plot(tArr, nIS)
+        ax[1].set_xlabel('t (hr)')
+    # same plot script, different vars    
+    # also time is backward from r
+    ax[1].plot(xvals[isMain], nIS[isMain], c=myC)
+    ax[1].plot([xvals[isMain[0]], xvals[isMain[0]]], [0, nIS[isMain[0]]], c=myC)
+    ax[1].plot([xvals[isMain[0]] + deltaT , xvals[isMain[0]]], [0, 0], ':', c=myC)
+    if len(isSheath) != 0:
+        ax[1].plot(xvals[isSheath], nIS[isSheath], '--', c=myC)
+        # Connect to ambient
+        ax[1].plot([xvals[isSheath[-1]], xvals[isSheath[-1]]], [nIS[isSheath[-1]], 0], '--', c=myC)
+        ax[1].plot([xvals[isSheath[-1]], xvals[isSheath[-1]]- deltaT] , [0, 0], ':', c=myC)
+        # Connect to main
+        ax[1].plot([xvals[isMain[-1]], xvals[isSheath[0]]], [nIS[isMain[-1]], nIS[isSheath[0]]], c=myC)
+    else:
+        ax[1].plot([xvals[isMain[-1]], xvals[isMain[-1]]], [nIS[isMain[-1]], 0], c=myC)
+        ax[1].plot([xvals[isMain[-1]], xvals[isMain[-1]] - deltaT], [0, 0], ':', c=myC)      
+        
     ax[1].set_ylabel('n (cm$^{-3}$)')
     ax[1].set_title('Expected In Situ, v='+str(int(vCME))+'km/s')
-    #plt.savefig('DINGO_1D.png')
-    plt.show()
     
-
-
+    if figName:
+        if ('.png' in figName) or ('.pdf' in figName):
+            outName = figName
+        else:
+            outName = figName + picType
+            
+        plt.savefig(figName+'.png')
+    else:
+        plt.show()
+    
 
 # |------------------------------|
 # |--- Calculate total masses ---|
 # |------------------------------|
-def getMasses(widMap, densMap, outFoV, pix2FOV, showLog=False, figName=None):
+def getMasses(widMap, densMap, outFoV, pix2FOV):
     #|------------------|
     #|--- Prep stuff ---|
     #|------------------|
@@ -1366,11 +1515,6 @@ def getMasses(widMap, densMap, outFoV, pix2FOV, showLog=False, figName=None):
         vol2 = widMap[2] * cellArea * (6.96e10 **3)
         print ('Outer WF mass (1e15 g)', '{:.2f}'.format(np.sum(dens2[gidx2]*vol2[gidx2]) / 1e15))
     
-
-
-
-
-
 
 # |--------------------|
 # |--- Main Wrapper ---|
@@ -1416,12 +1560,20 @@ def dingoWrapper(args, doInner=False):
     """
     
     #|--- Standard input error message ---|
-    errorStrings = [' ', '  python3 dingo.py logFile id(s) dim saveName target', '          where logFile is a wombat log file', '          ids is an integer or int+int', '          dim set the mode/dimensions from [0D, 1D, 2D, 3D]', '          saveName is an optional name for the outputs', '          and target is the in situ satellite for 1D cases']
+    errorStrings = [' ', '  python3 dingo.py logFile id(s) dim otherParams', '          where:', '          - logFile is a wombat log file', '          - ids is an integer or int+int', '          - dim set the mode/dimensions from [0D, 1D, 2D, 3D]', '          - otherParams includes target (only for 1D), pic type,', '             save name, expf1_*, expf2_*, vcme_*, and densratio_*']
+    
+    
+    #|-------------------------------------|
+    #|-------------------------------------|
+    #|--- Check the critical parameters ---|     
+    #|-------------------------------------|
+    #|-------------------------------------|
     
     #|----------------------------------|
     #|--- Check the number of inputs ---|     
     #|----------------------------------|
-    if len(args) not in [3, 4, 5]:
+    nArgs = len(args)
+    if (nArgs < 3) or (len(args) > 10):
         print ('Incorrect number of parameters provided. Syntax is')
         for astr in errorStrings:
             print (astr)
@@ -1446,28 +1598,90 @@ def dingoWrapper(args, doInner=False):
     #|--- Check the log ids ---|     
     #|-------------------------|
     idstr = args[1]
-    if '+' in idstr:
-        split =idstr.find('+')
-        try:
-            id1 = int(idstr[:split])
-            id2 = int(idstr[split+1:])
-        except:
-            print ('Error in splitting id string. Should be a single integer or')
-            print ('integer+integer (e.g. 1+2). Full command line syntax is')
-            for astr in errorStrings:
-                print (astr)
-            sys.exit()
-    else:
-        try:
-            id1 = int(idstr)
-        except:
-            print ('Error in reading single id string. Should be an integer or')
-            print ('integer+integer (e.g. 1+2). Full command line syntax is')
-            for astr in errorStrings:
-                print (astr)
-            sys.exit()
-        id2 = None
+    nplus = idstr.count('+')
+    singleWF = True # will overwrite later
     
+    # Will work with no + (= single id)
+    splitstr = idstr.split('+')
+    ids = []
+    for aStr in splitstr:
+        try:
+            ids.append(int(aStr))
+        except:
+            print ('Error in converting id string to individual ids. Error at', aStr)
+            print('Full command line syntax is')
+            for astr in errorStrings:
+                print (astr)
+            sys.exit()
+            
+    # Check that things match as needed
+    if nplus > 0:
+        txtIds = np.array(ids) - 1 # indexing from 0 in python
+        miniLog = logFile[txtIds,:]
+        
+        # |--- Check for pickle/instrument match ---|
+        if (len(np.unique(logFile[:, 13])) != 1) or (len(np.unique(miniLog[:, 1])) != 1):
+            print ('Currently selecting ', np.unique(miniLog[:, 13]))
+            print ('                and ', np.unique(miniLog[:, 1]))
+            sys.exit('Can only combine results using the same wombat pickle and the same instrument.')
+        
+        # |--- Check for two compatible shapes or single ---|
+        uniqTs = np.unique(miniLog[:, 2])
+        uniqShapes = np.unique(miniLog[:, 3])
+        if len(uniqShapes) > 2:
+            print ('Currently selecting ', np.unique(miniLog[:, 3]))
+            sys.exit('Can only combine results using two types of wireframes')
+        elif len(uniqShapes) == 1:
+            nTimes = len(uniqTs)
+            # need to sort miniLog bc unique will sort
+            # and were not doing any additional process for 
+            # multi wf here
+            sortIdx = np.argsort(miniLog[:,2])
+            miniLog = miniLog[sortIdx,:]
+        else:
+            singleWF = False
+            inWFs = ['GCS', 'Torus', 'GCS*', 'Tube']
+            outWFs = ['Sphere', 'HalfSphere', 'Ellipse', 'HalfEllipse']
+            if (uniqShapes[0] in inWFs) and (uniqShapes[1] in outWFs):
+                inWF, outWF = uniqShapes[0], uniqShapes[1]
+            elif (uniqShapes[1] in inWFs) and (uniqShapes[0] in outWFs):
+                inWF, outWF = uniqShapes[1], uniqShapes[0]
+            else:
+                print ('Cannot combine selected WF types. Currently have ', uniqShapes)
+                print ('Need to select one from each of ')
+                print ('   ', inWFs, '(inner)')
+                print ('   ', outWFs, '(outer)')
+            
+            # |--- Make sure each time has both inner/outer ---|
+            pairTimes = []
+            pairIds   = []
+            for aTime in uniqTs:
+                flagIt = False
+                # Find the inner shape at this time
+                inIndex  = np.where((miniLog[:,2] == aTime) & (miniLog[:,3] == inWF))[0]
+                if len(inIndex) == 0:
+                    flagIt = True
+                    print ('Missing inner WF fit ('+inWF+') for', aTime, 'skipping it but running others')
+                elif len(inIndex) > 1:
+                    sys.exit('Multiple fits for ', inWF, ' at time ', aTime, ' cannot proceed')
+                # Find the inner shape at this time    
+                outIndex = np.where((miniLog[:,2] == aTime) & (miniLog[:,3] == outWF))[0]
+                if len(outIndex) == 0:
+                    flagIt = True
+                    print ('Missing outer WF fit ('+outWF+') for', aTime, 'skipping it but running others')
+                elif len(outIndex) > 1:
+                    sys.exit('Multiple fits for ', outWF, ' at time ', aTime, ' cannot proceed')
+                if not flagIt:
+                    pairTimes.append(aTime)
+                    pairIds.append([inIndex[0], outIndex[0]])
+            nTimes = len(pairTimes)     
+    else:
+        line = logFile[ids[0]-1,:]
+        miniLog = np.array(line).reshape([1,-1])
+        uniqTs = np.unique(miniLog[:, 2])
+        uniqShapes = np.unique(miniLog[:, 3])
+        nTimes = 1
+            
 
     #|-------------------------------|
     #|--- Check the dimension tag ---|     
@@ -1488,76 +1702,136 @@ def dingoWrapper(args, doInner=False):
         sys.exit()
     
     
-    #|---------------------------|
-    #|--- Check for save name ---|     
-    #|---------------------------|
-    if len(args) > 4:
-        saveName = args[3]
-    else:
-        saveName = None
-
-    #|------------------------|
-    #|--- Check the target ---|     
-    #|------------------------|
-    satNames = ['ace', 'bepi', 'bepicolombo', 'dscovr', 'maven', 'parker', 'parkersolarprobe', 'parker_solar_probe', 'psp', 'solarorbiter', 'solo', 'so', 'stereoa', 'stereo-a', 'sta', 'stereob', 'stereo-b', 'stb', 'venusexpress', 'venus_express', 'vex', 've', 'wind']
-    #ACE, BepiColombo, DSCOVR, MAVEN, PSP, SolO, STEREO-A, STEREO-B, VEX, Wind
+    #|----------------------------------|
+    #|----------------------------------|
+    #|--- Check the bonus parameters ---|     
+    #|----------------------------------|
+    #|----------------------------------|
     
-    if mode == 1:
-        if len(args) < 4:
-            print ('Too few arguments for 1D mode. Full command line syntax is')
+    #|------------------------------|
+    #|--- Check for bonus params ---|     
+    #|------------------------------|
+    if len(args) >= 4:
+        allBonus = args[3:]
+        
+        #|------------------------|
+        #|--- Check for target ---|     
+        #|------------------------|
+        # Only in 1D mode
+        satNames = ['ace', 'bepi', 'bepicolombo', 'dscovr', 'maven', 'parker', 'parkersolarprobe', 'parker_solar_probe', 'psp', 'solarorbiter', 'solo', 'so', 'stereoa', 'stereo-a', 'sta', 'stereob', 'stereo-b', 'stb', 'venusexpress', 'venus_express', 'vex', 've', 'wind']
+        if mode == 1:
+            target = None
+            temp = []
+            for aTag in allBonus:
+                if aTag.lower() in satNames:
+                    if type(target) == type(None):
+                        targetIn = aTag.lower()
+                        # Convert target to a code we know works with get_horizons_coord
+                        if targetIn in ['ace', 'dscovr', 'maven', 'wind']:
+                            target = targetIn
+                        elif targetIn in ['ace']:
+                            target = -92
+                        elif targetIn in ['bepi', 'bepicolombo']:
+                            target = 'bepi'
+                        elif targetIn in ['parker', 'parkersolarprobe', 'parker_solar_probe', 'psp']:
+                            target = 'psp'
+                        elif targetIn in ['solarorbiter', 'solo', 'so']:
+                            target = 'solo'
+                        elif targetIn in ['stereoa', 'stereo-a', 'sta']:
+                            target = 'stereo-a'
+                        elif targetIn in ['stereob', 'stereo-b', 'stb']:
+                            target = 'stereo-b'
+                        elif targetIn in ['venusexpress', 'venus_express', 'vex']:
+                            target = 'vex'
+                    else:
+                        print('Multiple target tags provided, cannot proceed')
+                        print('   args include', target, aTag.lower())
+                        print('')
+                        sys.exit('(Check that save name is not an exact match to satellite tag)')
+                else:
+                    temp.append(aTag)
+                allBonus = np.array(temp)
+                
+                
+        #|--------------------------|
+        #|--- Check for pic type ---|     
+        #|--------------------------|
+        temp = []
+        for aTag in allBonus:
+            if aTag.lower() in ['png', '.png', 'pdf', '.pdf']:
+                picType = aTag.lower()
+                if picType[0] != '.':
+                    picType = '.' + picType
+            else:
+                temp.append(aTag)
+        allBonus = np.array(temp)      
+                
+        #|----------------------------------------|
+        #|--- Check for string specific params ---|     
+        #|----------------------------------------|
+        # Set the defaults
+        expf1 = 1
+        expf2 = 0.1
+        densratio = 1.8
+        vcme = 400
+        
+        temp = []
+        for aTag in allBonus:
+            if 'expf1_' in aTag.lower():
+                try: 
+                    expf1 = float(aTag.lower().replace('expf1_',''))
+                except:
+                    sys.exit('Error in converting '+aTag+' to expf1 float')
+            elif 'expf2_' in aTag.lower():
+                try: 
+                    expf2 = float(aTag.lower().replace('expf2_',''))
+                except:
+                    sys.exit('Error in converting '+aTag+' to expf2 float')
+            elif 'densratio_' in aTag.lower():
+                try: 
+                    densratio = float(aTag.lower().replace('densratio_',''))
+                except:
+                    sys.exit('Error in converting '+aTag+' to densratio float')
+            elif 'vcme_' in aTag.lower():
+                try: 
+                    vcme = float(aTag.lower().replace('vcme_',''))
+                except:
+                    sys.exit('Error in converting '+aTag+' to vcme float')
+            else:
+                temp.append(aTag)
+        allBonus = np.array(temp)
+        
+        #|-------------------------------------|
+        #|--- Check for remaining save name ---|     
+        #|-------------------------------------|
+        saveName = None
+        if len(allBonus) == 1:
+            saveName = allBonus[0]
+            # Pull out main name, no .txt .png .pdf
+            if '.png' in saveName:
+                saveName = saveName.replace('.png', '')
+                picType  = '.png'
+            elif '.pdf' in saveName:
+                saveName = saveName.replace('.png', '')
+                picType  = '.pdf'
+            elif '.txt' in saveName:
+                saveName = saveName.replace('.txt', '')
+                
+        elif len(allBonus) > 1:
+            print ('Too many unprocessed inputs to assign the last one to save name')
+            print ('Have', allBonus, 'remaining')
+            
+            print ('Full command line syntax is')
             for astr in errorStrings:
                 print (astr)
             sys.exit()
             
-        #|--- Check if have target but not save name ---|
-        if len(args) == 4:
-            if saveName.lower() in satNames:
-                target = saveName.lower()
-                saveName = None
-            else:
-                print ('Missing target for 1D mode. Full command line syntax is')
-                for astr in errorStrings:
-                    print (astr)
-                sys.exit()
-        else:
-            if args[4].lower() in satNames:
-                targetIn = args[4].lower()
-                # Convert target to a code we know works with get_horizons_coord
-                if targetIn in ['ace', 'dscovr', 'maven', 'wind']:
-                    target = targetIn
-                elif targetIn in ['ace']:
-                    target = -92
-                elif targetIn in ['bepi', 'bepicolombo']:
-                    target = 'bepi'
-                elif targetIn in ['parker', 'parkersolarprobe', 'parker_solar_probe', 'psp']:
-                    target = 'psp'
-                elif targetIn in ['solarorbiter', 'solo', 'so']:
-                    target = 'solo'
-                elif targetIn in ['stereoa', 'stereo-a', 'sta']:
-                    target = 'stereo-a'
-                elif targetIn in ['stereob', 'stereo-b', 'stb']:
-                    target = 'stereo-b'
-                elif targetIn in ['venusexpress', 'venus_express', 'vex']:
-                    target = 'vex'             
-            else:
-                print('Unknown/unsupported in situ satellite passed as target. Options are ')
-                print (satNames)
-                sys.exit()
-    
-    #|-----------------------------|
-    #|--- Check bonus 1D params ---|     
-    #|-----------------------------|            
-
-    #|------------------------------|
-    #|--- Check mass2dens params ---|     
-    #|------------------------------|            
-                
-                
+               
     #|--------------------------|
     #|--- Set up run details ---|     
     #|--------------------------|
     #|--- Get the line/lines from logFile ---|
-    line = logFile[id1-1,:]
+    '''line = logFile[id1-1,:]
         
     if id2:
         line2 = logFile[id2-1,:]
@@ -1566,23 +1840,51 @@ def dingoWrapper(args, doInner=False):
             print (line[13] != line2[13])
             print (line[14] != line2[14],line[14] ,line2[14] )
             print (line[1] != line2[1],line[1] ,line2[1] )
-            sys.exit('Cannot combine fits with different instruments, times, or background pickles.')
+            sys.exit('Cannot combine fits with different instruments, times, or background pickles.')'''
         
     #|--- Open the pickle ---|
+    if nplus == 0:
+        line = logFile[ids[0]-1,:]
+        miniLog = np.array(line).reshape([1,-1])
+    else:
+        line = miniLog[0,:]
+    
     with open(line[13], 'rb') as file:
         bkgData = pickle.load(file)
     
+    #|--- Get the instrument ---|
+    # Same for all lines
     obs  = line[1]
-    tidx = int(line[14])
+    
+    satDicts = []
+    imMaps   = []
+    showMaps = []
+    massMaps = []
+    for i in range(nTimes):
+        if singleWF:
+            tidx = int(miniLog[i,14])
+        else:
+            # Inner and outer at same tidx
+            tidx = int(miniLog[pairIds[i][0],14])
         
-    satDict = bkgData['satStuff'][obs][0][tidx]
-    imMap = bkgData['proImMaps'][obs][0][tidx]
-    showMap = bkgData['scaledIms'][obs][0][tidx][0]
-    massMap = bkgData['massIms'][obs][tidx]
+        satDicts.append(bkgData['satStuff'][obs][0][tidx])
+        imMaps.append(bkgData['proImMaps'][obs][0][tidx])
+        showMaps.append(bkgData['scaledIms'][obs][0][tidx][0])
+        massMaps.append(bkgData['massIms'][obs][tidx])
 
+    print (sd)
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
     #|--- Say what we're gonna do ---|
     print ('Obtaining ' + str(mode) + 'D results for '+obs+ ' at ' +satDict['DATEOBS'])
-    
     #|--- Make the wireframe(s) ---|
     awf = wf.wireframe(line[3])
     ps = []
@@ -1609,6 +1911,8 @@ def dingoWrapper(args, doInner=False):
     # Need to replace these
     dI = False
     ds = 1
+    if mode == 3:
+        ds = 8
     
     if type(id2) == type(None):
         widMap, xcMap, densMap, subMass, outFoV, pix2FOV  = mass2dens(imMap, satDict, awf, massMap, doInner=dI,  downSelect=ds)  
@@ -1619,9 +1923,9 @@ def dingoWrapper(args, doInner=False):
         getMasses(widMap, densMap, outFoV, pix2FOV)
     elif mode == 1:
         obsSat = get_horizons_coord('Wind', time=satDict['DATEOBS'])
-        dingo1d(imMap, widMap, xcMap, densMap, outFoV, pix2FOV, obsSat, vCME=550, scaleFactors=[1., 0.1])
+        dingo1d(imMap, widMap, xcMap, densMap, outFoV, pix2FOV, obsSat, vCME=550, scaleFactors=[1., 0.1], figName=saveName)
     elif mode == 2:
-        dingo2d(densMap, outFoV, pix2FOV)
+        dingo2d(widMap, densMap, outFoV, pix2FOV, figName=saveName)
     elif mode == 3:
         allPts = dingo3d(widMap, xcMap, densMap,outFoV, pix2FOV, shell=True, plotIt=True)
 
