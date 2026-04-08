@@ -5,6 +5,7 @@ import sunpy.coordinates
 import numpy as np
 import matplotlib.pyplot as plt
 import datetime
+import math
 from sunpy.coordinates import frames
 from sunpy.coordinates import get_horizons_coord
 
@@ -18,6 +19,20 @@ sys.path.append('wombatCode/')
 import wombatWF as wf
 from wombatLoadCTs import *
 
+# |--------------------------------|
+# |------- Suppress Warnings ------|
+# |--------------------------------|
+# Astropy/sunpy have a lot of thoughts about missing
+# keywords so set the logger to only complain about
+# actual errors not all warnings
+import logging
+logging.basicConfig(level='INFO')
+slogger = logging.getLogger('sunpy')
+slogger.setLevel(logging.ERROR)
+alogger = logging.getLogger('astropy')
+alogger.setLevel(logging.ERROR)
+# Turn off divide warning globally
+np.seterr(divide='ignore')
 
 global picType
 picType = '.png' # either '.png' or '.pdf'
@@ -1027,59 +1042,217 @@ def dingo3d(widMap, xcMap, densMap, outFoV, pix2FOV, shell=True, plotIt=True):
 # |----------------------------|
 # |--- Density Contour plot ---|
 # |----------------------------|
-def dingo2d(widMap, densMap, outFoV, pix2FOV, showLog=False, figName=None):
+def dingo2d(widMaps, densMaps, outFoVs, pix2FOVs, showLog=False, figName=None, times=None):
+    # The first four params need to be packaged as lists, even if passing a single time    
+    
     #|------------------|
     #|--- Prep stuff ---|
     #|------------------|
-    #|--- Unpackage FoV things ---|
-    minpx, maxpx, minpy, maxpy, downSize = outFoV
-    
-    dens1 = densMap[0]
 
+    #|--- Get number of time steps
+    nTimes = len(widMaps)
+    
     #|--- Check for second WF ---|
     multiMode = False
-    if type(widMap[2]) != type(None):
+    if type(widMaps[0][2]) != type(None):
         multiMode = True
-        dens2 = densMap[1]
-
-    #|--- Make the mini FoV grid in pix ---|
-    pxs = np.arange(minpx, maxpx+1, downSize)
-    pys = np.arange(minpy, maxpy+1, downSize)
-    pxx, pyy = np.meshgrid(pxs, pys)
     
-    #|--- Make the mini FoV grid in Rs ---|
-    fovx = pix2FOV[0]((pxx, pyy))
-    fovy = pix2FOV[1]((pxx, pyy))
-    fovz = pix2FOV[2]((pxx, pyy))
-    
-    #|--- Get resolution ---|
-    dys = np.zeros(fovx.shape)
-    dys[:,1:] = fovy[:,1:] - fovy[:,:-1]
-    dys[:,0] = dys[:,1] 
-    dzs = np.zeros(fovx.shape)
-    dzs[1:,:] = fovz[1:,:] - fovz[:-1,:]
-    dzs[0,:] = dzs[1,:]
-    cellArea = dys * dzs
-    
-    # |--- Logify densities ---|
-    if showLog:
-        negPts = np.where(dens1 <= 0)
-        if len(negPts[0]) > 0:
-            minval = np.min(np.abs(dens1[np.where(np.abs(dens1) > 0)]))
-            dens1[negPts] = minval
-        logd1 = np.log10(dens1)
-        
+    #|---------------------|    
+    #|--- Set up figure ---|
+    #|---------------------|    
+    # Base it on number of times/multiMode
+    if nTimes <= 5:
         if multiMode:
-            negPts2 = np.where(dens2 <= 0)
-            if len(negPts2[0]) > 0:
-                minval2 = np.min(np.abs(dens2[np.where(np.abs(dens2) > 0)]))
-                dens2[negPts2] = minval2
-            logd2 = np.log10(dens2)
+            fig, ax = plt.subplots(nTimes, 3, figsize=(2*nTimes+1,5), gridspec_kw={'width_ratios': [1,1,0.5]})
+            # Clean out axis labels
+            for i in range(nTimes-1):
+                ax[i,0].set_xticklabels([])
+                ax[i,1].set_xticklabels([])
+                ax[i,1].set_yticklabels([])
+                ax[i,-1].set_axis_off()
+            ax[-1,-1].set_axis_off()
+            ax[-1,1].set_yticklabels([])
+        else:
+            fig, ax = plt.subplots(nTimes, 2,  figsize=(3*nTimes,4), gridspec_kw={'width_ratios': [1,0.5]})
+            # Clean out axis labels
+            for i in range(nTimes-1):
+                ax[i].set_xticklabels([])
+        
+    else:
+        ny = math.ceil(nTimes/2)
+        if multiMode:
+            fig, ax0 = plt.subplots(ny, 6, figsize=(6,2*ny), gridspec_kw={'width_ratios': [10, 10, 1, 10, 10, 5]})
+            # want to re-sort so 2d array split by inner/out
+            #ax = [[], []]
+            ax = []
+            for i in [0,3]:
+                for j in range(ny):
+                    ax0[j,i].set_aspect('equal')
+                    ax0[j,i+1].set_aspect('equal')
+                    ax.append([ax0[j,i],ax0[j,i+1]])
+            ax = np.array(ax)
+            # Clean out pad axis        
+            for j in range(ny):
+                ax0[j,2].set_axis_off()
+                ax0[j,-1].set_axis_off()
+            # Clean out axis labels
+            for j in [0,1,3,4]:
+                for i in range(ny-1):
+                    ax0[i,j].set_xticklabels([])
+                    if j!=0:
+                        ax0[i,j].set_yticklabels([])
+                if j!= 0:
+                    ax0[-1,j].set_yticklabels([])
+            
+            
+        else:
+            fig, ax0 = plt.subplots(ny+1, 4, gridspec_kw={'width_ratios': [10, 1, 10,5]})
+            # want to re-sort as 1d array 
+            ax = []
+            for i in [0,2]:
+                for j in range(ny):
+                    ax.append(ax0[j,i])
+            ax = np.array(ax)
+            # Clean out pad axis  
+            for j in range(ny):
+                ax0[j,1].set_axis_off()
+                ax0[j,-1].set_axis_off()
+            # Clean out axis labels
+            for j in [0,2]:
+                for i in range(ny-1):
+                    ax0[i,j].set_xticklabels([])
+                    if j!=0:
+                        ax0[i,j].set_yticklabels([])
+                if j!= 0:
+                    ax0[-1,j].set_yticklabels([])
+            for anAx in ax: ax.set_aspect('equal')
+        
+
+    #|--------------------------|    
+    #|--- Unpackage all FoVs ---|
+    #|--------------------------| 
+    minpxs, maxpxs, minpys, maxpys, downSizes = [], [], [], [], []
+    for i in range(nTimes):   
+        minpx, maxpx, minpy, maxpy, downSize = outFoVs[i]
+        minpxs.append(minpx)
+        maxpxs.append(maxpx)
+        minpys.append(minpy)
+        maxpys.append(maxpy)
+        # downsize should be same for all
+    # Get min/max range in each of xy
+    limxs = [np.min(minpxs), np.max(maxpxs)]    
+    limys = [np.min(minpys), np.max(maxpys)]    
+    npx = limxs[1] - limxs[0] + 1
+    npy = limys[1] - limys[0] + 1
+    
+    #|-------------------------|    
+    #|--- Process each time ---|
+    #|-------------------------|
+    # Holders for the results
+    allDens1 = np.zeros([nTimes, npy, npx])
+    if multiMode:
+        allDens2 = np.zeros([nTimes, npy, npx])
+    
+    # |--- Time loop ---|    
+    for i in range(nTimes):   
+        #|--- Unpackage FoV things ---|
+        minpx, maxpx, minpy, maxpy, downSize = outFoVs[i]
+        dx = minpx - limxs[0]
+        dy = minpx - limxs[0]
+        sx = maxpx - minpx
+        sy = maxpy - minpy
+    
+        dens1 = densMaps[i][0]
+        if multiMode:
+            dens2 = densMaps[i][1]
+
+        #|--- Make the mini FoV grid in pix ---|
+        pxs = np.arange(minpx, maxpx+1, downSize)
+        pys = np.arange(minpy, maxpy+1, downSize)
+        pxx, pyy = np.meshgrid(pxs, pys)
+    
+        #|--- Make the mini FoV grid in Rs ---|
+        fovx = pix2FOVs[i][0]((pxx, pyy))
+        fovy = pix2FOVs[i][1]((pxx, pyy))
+        fovz = pix2FOVs[i][2]((pxx, pyy))
+        
+        #|--- Get resolution ---|
+        dys = np.zeros(fovx.shape)
+        dys[:,1:] = fovy[:,1:] - fovy[:,:-1]
+        dys[:,0] = dys[:,1] 
+        dzs = np.zeros(fovx.shape)
+        dzs[1:,:] = fovz[1:,:] - fovz[:-1,:]
+        dzs[0,:] = dzs[1,:]
+        cellArea = dys * dzs
+    
+        allDens1[i,dy:dy+sy+1,dx:dx+sx+1] = dens1
+        if multiMode:
+            allDens2[i,dy:dy+sy+1,dx:dx+sx+1] = dens2
+            
+        # |--- Logify densities ---|
+        if showLog:
+            negPts = np.where(dens1 <= 0)
+            if len(negPts[0]) > 0:
+                minval = np.min(np.abs(dens1[np.where(np.abs(dens1) > 0)]))
+                dens1[negPts] = minval
+            logd1 = np.log10(dens1)
+            
+            if multiMode:
+                negPts2 = np.where(dens2 <= 0)
+                if len(negPts2[0]) > 0:
+                    minval2 = np.min(np.abs(dens2[np.where(np.abs(dens2) > 0)]))
+                    dens2[negPts2] = minval2
+                logd2 = np.log10(dens2)
+            #|--- Replace non log in the holder ---|    
+            allDens1[i,dy:dy+sy+1,dx:dx+sx+1] = logd1
+            if multiMode:
+                allDens2[i,dy:dy+sy+1,dx:dx+sx+1] = logd2
+                
+    #|----------------------|
+    #|--- Fill in figure ---|
+    #|----------------------|
+    # |--- Get density range to set contours ---|
+    vval = np.median(np.abs(allDens1[allDens1 !=0])) * 3 
+    cmap = plt.get_cmap('RdYlBu_r')
+    cmap.set_under('k')
+    
+    power = int(np.log10(vval)) - 1
+    scaleIt = 10 ** power
+    vval = vval / scaleIt
+    
+    for i in range(nTimes):
+        thisdens1 = allDens1[i,:,:]
+        thisdens1[np.where(thisdens1 == 0)] = -10
+        if multiMode:
+            thisdens2 = allDens2[i,:,:]
+            thisdens2[np.where(thisdens2 == 0)] = -10
+            ax[i,0].imshow(thisdens2/scaleIt, origin='lower', vmin=-vval, vmax=vval, cmap=cmap, extent=[limxs[0], limxs[1], limys[0], limys[1]])
+            if i == 0:
+                im = ax[i,1].imshow(thisdens1/scaleIt, origin='lower', vmin=-vval, vmax=vval, cmap=cmap, extent=[limxs[0], limxs[1], limys[0], limys[1]])
+            else:
+                ax[i,1].imshow(thisdens1/scaleIt, origin='lower', vmin=-vval, vmax=vval, cmap=cmap, extent=[limxs[0], limxs[1], limys[0], limys[1]])
+            if type(times) != type(None):
+                ax[i,1].set_title(times[i], fontsize=10,loc='right')
+            
+        else:
+            if i == 0:
+                im = ax[i].imshow(thisdens1/scaleIt, origin='lower', vmin=-vval, vmax=vval, cmap=cmap, extent=[limxs[0], limxs[1], limys[0], limys[1]])
+            else:
+                ax[i].imshow(thisdens1/scaleIt, origin='lower', vmin=-vval, vmax=vval, cmap=cmap, extent=[limxs[0], limxs[1], limys[0], limys[1]])
+            if type(times) != type(None):
+                ax[i].set_title(times[i], fontsize=10,loc='right')
+    cbar = fig.colorbar(im, ax=ax0[:,-1], orientation='vertical', fraction=.2) 
+    ##cbar.ax.yaxis.set_ticks_position('left')
+    cbar.set_label('Density (1e'+str(power)+' g cm$^{-3}$)', rotation=90, labelpad=10)
+    cbar.ax.yaxis.set_label_position('left')
+    #plt.tight_layout()
+    fig.subplots_adjust(wspace=0.05, hspace=0.1)
+    plt.show()        
     
     #|--------------------|
     #|--- Setup Figure ---|
     #|--------------------|
-    scl =  (maxpx-minpx) / (maxpy-minpy) 
+    '''scl =  (maxpx-minpx) / (maxpy-minpy) 
     if multiMode:
         fig, ax = plt.subplots(1, 2, figsize = (5*scl+4.5,6), sharex=True, layout='constrained')
     else:
@@ -1113,9 +1286,9 @@ def dingo2d(widMap, densMap, outFoV, pix2FOV, showLog=False, figName=None):
     #fig.subplots_adjust(wspace=0.1)
     #plt.tight_layout()
     if figName:
-        plt.savefig(figName)
+        plt.savefig('dingo2d_'+figName+picType)
     else:
-        plt.show()
+        plt.show()'''
 
 
 # |--------------------|
@@ -1472,7 +1645,7 @@ def dingo1d(myMap, widMapIn, xcMapIn, densMapIn, outFoV, pix2FOV, obsSat, vCME=4
 # |------------------------------|
 # |--- Calculate total masses ---|
 # |------------------------------|
-def getMasses(widMap, densMap, outFoV, pix2FOV):
+def getMasses(widMap, densMap, outFoV, pix2FOV, printIt=True):
     #|------------------|
     #|--- Prep stuff ---|
     #|------------------|
@@ -1510,10 +1683,18 @@ def getMasses(widMap, densMap, outFoV, pix2FOV):
 
     #widRs = [wid  for wid in widMap]
     vol1 = widMap[0] * cellArea * (6.96e10 **3)
-    print ('Inner WF mass (1e15 g)', '{:.2f}'.format(np.sum(dens1[gidx1]*vol1[gidx1]) / 1e15))
+    mass1 = np.sum(dens1[gidx1]*vol1[gidx1]) / 1e15
+    if printIt:
+        print ('Inner WF mass (1e15 g)', '{:.2f}'.format(mass1))
     if multiMode:
         vol2 = widMap[2] * cellArea * (6.96e10 **3)
-        print ('Outer WF mass (1e15 g)', '{:.2f}'.format(np.sum(dens2[gidx2]*vol2[gidx2]) / 1e15))
+        mass2 = np.sum(dens2[gidx2]*vol2[gidx2]) / 1e15
+        if printIt:
+            print ('Outer WF mass (1e15 g)', '{:.2f}'.format(mass2))
+    if multiMode:
+        return [mass1, mass2]
+    else:
+        return [mass1]
     
 
 # |--------------------|
@@ -1693,8 +1874,12 @@ def dingoWrapper(args, doInner=False):
         mode = 1
     elif dim in ['2', '2d']:
         mode = 2
+        if nTimes > 10:
+            sys.exit('Quitting... 2D mode only supports 10 time steps or fewer.')
     elif dim in ['3', '3d']:
         mode = 3
+        if nTimes > 1:
+            sys.exit('Quitting... 3D mode only supports single time and given more than one.')
     else:
         print ('Error in reading dimension tag. Full command line syntax is')
         for astr in errorStrings:
@@ -1706,11 +1891,7 @@ def dingoWrapper(args, doInner=False):
     #|----------------------------------|
     #|--- Check the bonus parameters ---|     
     #|----------------------------------|
-    #|----------------------------------|
-    
-    #|------------------------------|
-    #|--- Check for bonus params ---|     
-    #|------------------------------|
+    #|----------------------------------|    
     if len(args) >= 4:
         allBonus = args[3:]
         
@@ -1829,19 +2010,7 @@ def dingoWrapper(args, doInner=False):
                
     #|--------------------------|
     #|--- Set up run details ---|     
-    #|--------------------------|
-    #|--- Get the line/lines from logFile ---|
-    '''line = logFile[id1-1,:]
-        
-    if id2:
-        line2 = logFile[id2-1,:]
-        #|--- Check that using same image ---|
-        if (line[13] != line2[13]) or (line[14] != line2[14]) or (line[1] != line2[1]):
-            print (line[13] != line2[13])
-            print (line[14] != line2[14],line[14] ,line2[14] )
-            print (line[1] != line2[1],line[1] ,line2[1] )
-            sys.exit('Cannot combine fits with different instruments, times, or background pickles.')'''
-        
+    #|--------------------------|        
     #|--- Open the pickle ---|
     if nplus == 0:
         line = logFile[ids[0]-1,:]
@@ -1872,47 +2041,105 @@ def dingoWrapper(args, doInner=False):
         showMaps.append(bkgData['scaledIms'][obs][0][tidx][0])
         massMaps.append(bkgData['massIms'][obs][tidx])
 
-    print (sd)
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    #|--- Say what we're gonna do ---|
-    print ('Obtaining ' + str(mode) + 'D results for '+obs+ ' at ' +satDict['DATEOBS'])
     #|--- Make the wireframe(s) ---|
-    awf = wf.wireframe(line[3])
-    ps = []
-    for i in range(9):
-        if line[i+4] != 'None':
-            ps.append(float(line[i+4]))
-    awf.params = ps
-    awf.getPoints()
-    
-    if id2: 
-        awf2 = wf.wireframe(line2[3])
-        ps2 = []
+    wfsI, wfsO = [], []
+    aboutMe = []
+    for i in range(nTimes):
+        # Pull the lines
+        if singleWF:
+            lineI = miniLog[i,:]
+            aboutMe.append(lineI[2] + ' ' + lineI[1]+ ' ' + lineI[3])
+        else:
+            lineI = miniLog[pairIds[i][0],:]
+            lineO = miniLog[pairIds[i][1],:]
+            aboutMe.append(lineI[2]+ ' ' + lineI[1] + ' ' + lineI[3] + ' ' + lineO[3])
+        # Make the wfs
+        aWFi = wf.wireframe(lineI[3])
+        ps = []
         for i in range(9):
-            if line2[i+4] != 'None':
-                ps2.append(float(line2[i+4]))
-        awf2.params = ps2
-        awf2.getPoints()   
-        
-    
-    
+            if lineI[i+4] != 'None':
+                ps.append(float(lineI[i+4]))
+        aWFi.params = ps
+        aWFi.getPoints()
+        wfsI.append(aWFi)
+        if not singleWF:
+            aWFo = wf.wireframe(lineO[3])
+            ps = []
+            for i in range(9):
+                if lineO[i+4] != 'None':
+                    ps.append(float(lineO[i+4]))
+            aWFo.params = ps
+            aWFo.getPoints()
+            wfsO.append(aWFo)
+
+
     #|--------------|
     #|--- Run it ---|     
     #|--------------|
-    # Need to replace these
+    # Replace these with inputs?
     dI = False
     ds = 1
     if mode == 3:
         ds = 8
+        
+    #|--- Process mass maps into density ---|
+    widMaps, xcMaps, densMaps, subMasss, outFoVs, pix2FOVs = [], [], [], [], [], []
+    for i in range(nTimes):
+        print ('Processing', uniqTs[i])
+        if singleWF:
+            widMap, xcMap, densMap, subMass, outFoV, pix2FOV  = mass2dens(imMaps[i], satDicts[i], wfsI[i], massMaps[i], doInner=dI,  downSelect=ds)
+        else:
+            widMap, xcMap, densMap, subMass, outFoV, pix2FOV  = mass2dens(imMaps[i], satDicts[i], [wfsI[i], wfsO[i]], massMaps[i], doInner=dI,  densRatio=densratio, downSelect=ds)
+        # Package it
+        widMaps.append(widMap)
+        xcMaps.append(xcMap)
+        densMaps.append(densMap)
+        subMasss.append(subMass)
+        outFoVs.append(outFoV) 
+        pix2FOVs.append(pix2FOV)    
+    
+    #|-------------------------------|
+    #|-------------------------------|
+    #|--- Send to plotting script ---|
+    #|-------------------------------|
+    #|-------------------------------|
+    
+    #|-----------------------|
+    #|--- 0d - total mass ---|
+    #|-----------------------|
+    if mode == 0:
+        if singleWF:
+            print ('Time Inst WF Mass(1e15 g)')
+        else:
+            print ('Time Inst WF1 WF2 Mass1(1e15 g) Mass2(1e15 g)')
+        for i in range(nTimes):
+            masses = getMasses(widMaps[i], densMaps[i], outFoVs[i], pix2FOVs[i], printIt=False)
+            moreOut = ''
+            for mass in masses:
+                moreOut += '{:.2f}'.format(mass) + ' '
+
+    #|----------------------|
+    #|--- 1d - line plot ---|
+    #|----------------------|
+    
+    #|--------------------------|
+    #|--- 2d - contour plots ---|
+    #|--------------------------|
+    elif mode == 2:
+        dingo2d(widMaps, densMaps, outFoVs, pix2FOVs, figName=saveName, times=uniqTs)
+            
+    
+    #|--------------------------------|
+    #|--- 3d - Interactive scatter ---|
+    #|--------------------------------|
+    elif mode == 3:
+        # Already forced to be single time so can use single versions of these vars
+        allPts = dingo3d(widMap, xcMap, densMap,outFoV, pix2FOV, shell=True, plotIt=True)
+
+    print (sd)       
+    
+    
+    
     
     if type(id2) == type(None):
         widMap, xcMap, densMap, subMass, outFoV, pix2FOV  = mass2dens(imMap, satDict, awf, massMap, doInner=dI,  downSelect=ds)  
