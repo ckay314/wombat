@@ -1274,350 +1274,379 @@ def dingo2d(widMaps, densMaps, outFoVs, pix2FOVs, showLog=False, figName=None, t
 # |--------------------|
 # |--- In Situ plot ---|
 # |--------------------|
-def dingo1d(myMap, widMapIn, xcMapIn, densMapIn, outFoV, pix2FOV, obsSat, vCME=400, scaleFactors=[1, 0.2], figName=None, timeMode='hr'):
+def dingo1d(myMaps, widMapIns, xcMapIns, densMapIns, outFoVs, pix2FoVs, obsSats, vCME=400, scaleFactors=[1, 0.2], figName=None, timeMode='hr'):
+    # The first four params need to be packaged as lists, even if passing a single time    
+    
     # |---------------------|
     # |--- Set up figure ---|
     # |---------------------|
-    fig, ax = plt.subplots(1, 2, layout='constrained')
-    myC = 'k' # to be replace when looping times
+    fig, ax = plt.subplots(1, 2, figsize=(8,5), layout='constrained')
+    ax[0].set_xlabel('R (R$_S$)')
+    ax[0].set_ylabel('$\\rho$ (g cm$^{-3}$)')
+    ax[0].set_title('In Place')
+    ax[1].set_ylabel('n (cm$^{-3}$)')
+    ax[1].set_title('Expected In Situ, v='+str(int(vCME))+'km/s')
     
     # |--------------------------------|
     # |--- Check if multi time mode ---|
     # |--------------------------------|
-    
-
-    # |------------------------------|
-    # |--- Get Satellite Location ---|
-    # |------------------------------|
-    # obsSat should be SkyCoord for in situ sat
-    # Get satellite position from the map
-    satLonD = myMap.observer_coordinate.lon.degree
-    satLatD = myMap.observer_coordinate.lat.degree
-    satR = myMap.observer_coordinate.radius.au 
-    satLonR = satLonD * np.pi / 180.
-    satLatR = satLatD * np.pi / 180.
+    multiMode = False
+    nTimes = len(myMaps)
+    myCols = ['k'] # to be replace when looping times
+    startDiffs = np.zeros(nTimes)
+    if nTimes > 1:
+        multiMode = True
+        
+        # Set up colors
+        times = []
+        myCols = []
+        cmap = plt.get_cmap('inferno')
+        for aMap in myMaps:
+            times.append(aMap.date.datetime)
+        times = np.array(times)
+        minTime = np.min(times)
+        maxTime = np.max(times)
+        dTime   = 1.1*(maxTime - minTime).total_seconds() # keep top out of lightest colors by padding
+        for i in range(nTimes):
+            startDiffs[i]= (times[i]-minTime).total_seconds()
+            myCols.append(cmap(startDiffs[i]/dTime))
+              
+    # |---------------------|
+    # |--- Run time loop ---|
+    # |---------------------|
+    for iii in range(nTimes):
+        myMap = myMaps[iii]
+        widMapIn = widMapIns[iii]
+        xcMapIn = xcMapIns[iii]
+        densMapIn = densMapIns[iii]
+        outFoV    = outFoVs[iii]
+        pix2FoV   = pix2FoVs[iii]
+        obsSat    = obsSats[iii] 
+        myC       = myCols[iii] 
+        
+        # |------------------------------|
+        # |--- Get Satellite Location ---|
+        # |------------------------------|
+        # obsSat should be SkyCoord for in situ sat
+        # Get satellite position from the map
+        satLonD = myMap.observer_coordinate.lon.degree
+        satLatD = myMap.observer_coordinate.lat.degree
+        satR = myMap.observer_coordinate.radius.au 
+        satLonR = satLonD * np.pi / 180.
+        satLatR = satLatD * np.pi / 180.
        
-    # |-----------------------------|
-    # |--- Get important vectors ---|
-    # |-----------------------------|
-    # Get vector from sun to sat
-    # (just the cartesian sat loc)
-    satxyz = np.array([np.cos(satLatR)*np.cos(satLonR), np.cos(satLatR)*np.sin(satLonR), np.sin(satLatR)]) * satR
+        # |-----------------------------|
+        # |--- Get important vectors ---|
+        # |-----------------------------|
+        # Get vector from sun to sat
+        # (just the cartesian sat loc)
+        satxyz = np.array([np.cos(satLatR)*np.cos(satLonR), np.cos(satLatR)*np.sin(satLonR), np.sin(satLatR)]) * satR
     
-    pixCent = [myMap.data.shape[1]/2, myMap.data.shape[0]/2] # pix is xy but shape is yx
+        pixCent = [myMap.data.shape[1]/2, myMap.data.shape[0]/2] # pix is xy but shape is yx
 
-    # Get the heliprojective coord of the pixel
-    coordM = myMap.pixel_to_world(pixCent[0] * u.pix, pixCent[1] * u.pix)
-    # Get elongation angle -> distance to Thompson Sphere
-    ell = np.sqrt(coordM.Tx.rad**2 + coordM.Ty.rad**2)
-    dM = np.abs(satR * np.abs(np.cos(ell)))
-    # Make skycoord with HPC and distance (transform needs dist if off limb)
-    hpc = SkyCoord(Tx=coordM.Tx, Ty=coordM.Ty, distance=dM*u.au, frame= coordM.frame)
-    # Convert to Stonyhurst, make a Cartesian array
-    ston = hpc.transform_to(frames.HeliographicStonyhurst)
-    TSxyz = np.array([ston.cartesian.x.to_value(), ston.cartesian.y.to_value(), ston.cartesian.z.to_value()])
-    # Vectors we will need
-    LoS = TSxyz - satxyz 
-    usatxyz = satxyz / np.linalg.norm(satxyz)
-    uTSxyz = TSxyz / np.linalg.norm(TSxyz)
-    uLoS = LoS / np.linalg.norm(LoS)
+        # Get the heliprojective coord of the pixel
+        coordM = myMap.pixel_to_world(pixCent[0] * u.pix, pixCent[1] * u.pix)
+        # Get elongation angle -> distance to Thompson Sphere
+        ell = np.sqrt(coordM.Tx.rad**2 + coordM.Ty.rad**2)
+        dM = np.abs(satR * np.abs(np.cos(ell)))
+        # Make skycoord with HPC and distance (transform needs dist if off limb)
+        hpc = SkyCoord(Tx=coordM.Tx, Ty=coordM.Ty, distance=dM*u.au, frame= coordM.frame)
+        # Convert to Stonyhurst, make a Cartesian array
+        ston = hpc.transform_to(frames.HeliographicStonyhurst)
+        TSxyz = np.array([ston.cartesian.x.to_value(), ston.cartesian.y.to_value(), ston.cartesian.z.to_value()])
+        # Vectors we will need
+        LoS = TSxyz - satxyz 
+        usatxyz = satxyz / np.linalg.norm(satxyz)
+        uTSxyz = TSxyz / np.linalg.norm(TSxyz)
+        uLoS = LoS / np.linalg.norm(LoS)
     
-    # |---------------------------------------|
-    # |--- Package and convert to FoV Cart ---|
-    # |---------------------------------------|
-    # Start coord arrays with sat loc and FoV cent
-    xs = [satxyz[0]*215, TSxyz[0]*215]
-    ys = [satxyz[1]*215, TSxyz[1]*215]
-    zs = [satxyz[2]*215, TSxyz[2]*215]
+        # |---------------------------------------|
+        # |--- Package and convert to FoV Cart ---|
+        # |---------------------------------------|
+        # Start coord arrays with sat loc and FoV cent
+        xs = [satxyz[0]*215, TSxyz[0]*215]
+        ys = [satxyz[1]*215, TSxyz[1]*215]
+        zs = [satxyz[2]*215, TSxyz[2]*215]
         
-    # Add the in situ sat and Sun
-    obsCart = obsSat.cartesian
-    xs.append(obsCart.x.to_value()*215) 
-    ys.append(obsCart.y.to_value()*215)
-    zs.append(obsCart.z.to_value()*215)
-    xs.append(0) 
-    ys.append(0)
-    zs.append(0)
-    xs.append(xs[0]) 
-    ys.append(ys[0])
-    zs.append(zs[0])
+        # Add the in situ sat and Sun
+        obsCart = obsSat.cartesian
+        xs.append(obsCart.x.to_value()*215) 
+        ys.append(obsCart.y.to_value()*215)
+        zs.append(obsCart.z.to_value()*215)
+        xs.append(0) 
+        ys.append(0)
+        zs.append(0)
+        xs.append(xs[0]) 
+        ys.append(ys[0])
+        zs.append(zs[0])
     
-    # Convert everyone at the same time
-    pts = np.array([xs, ys, zs])      
+        # Convert everyone at the same time
+        pts = np.array([xs, ys, zs])      
         
-    if 'crota' in myMap.meta:
-        rollIt = myMap.meta['crota']
-    elif 'sc_roll' in myMap.meta:
-        rollIt = myMap.meta['sc_roll']
-    else:
-        print ('Neither crota or sc_roll in map metadata. Assuming zero roll')
-        rollIt = 0
+        if 'crota' in myMap.meta:
+            rollIt = myMap.meta['crota']
+        elif 'sc_roll' in myMap.meta:
+            rollIt = myMap.meta['sc_roll']
+        else:
+            print ('Neither crota or sc_roll in map metadata. Assuming zero roll')
+            rollIt = 0
 
-    res = StonyCart2CartFoV(pts, satLatD, satLonD, rollIt)
+        res = StonyCart2CartFoV(pts, satLatD, satLonD, rollIt)
     
-    # |--------------------------------------|
-    # |--- Get Sun-sat intersect with pts ---|
-    # |--------------------------------------|
-    # Make a line connecting sun to sat
-    npts = 100
+        # |--------------------------------------|
+        # |--- Get Sun-sat intersect with pts ---|
+        # |--------------------------------------|
+        # Make a line connecting sun to sat
+        npts = 100
     
-    sat = [res[0][0], res[1][0], res[2][0]]
-    sun = [res[0][1], res[1][1], res[2][1]]
-    # Get the r dist of everyone (from sun)
-    ssline = np.array([np.linspace(sun[0], sat[0], npts), np.linspace(sun[1], sat[1], npts), np.linspace(sun[2], sat[2], npts)])
-    rs = np.sqrt((ssline[0] - sun[0])**2 + (ssline[1] - sun[1])**2 + (ssline[2] - sun[2])**2)
-    ryzs = np.sqrt((ssline[1])**2 + (ssline[2])**2) # wrt FoV cent, not sun
-    maxryz = np.max(ryzs)
+        sat = [res[0][0], res[1][0], res[2][0]]
+        sun = [res[0][1], res[1][1], res[2][1]]
+        # Get the r dist of everyone (from sun)
+        ssline = np.array([np.linspace(sun[0], sat[0], npts), np.linspace(sun[1], sat[1], npts), np.linspace(sun[2], sat[2], npts)])
+        rs = np.sqrt((ssline[0] - sun[0])**2 + (ssline[1] - sun[1])**2 + (ssline[2] - sun[2])**2)
+        ryzs = np.sqrt((ssline[1])**2 + (ssline[2])**2) # wrt FoV cent, not sun
+        maxryz = np.max(ryzs)
      
-    # Find max r to check for in place version
-    #|--- Unpackage FoV things ---|
-    minpx, maxpx, minpy, maxpy, downSize = outFoV
+        # Find max r to check for in place version
+        #|--- Unpackage FoV things ---|
+        minpx, maxpx, minpy, maxpy, downSize = outFoV
 
-    #|--- Make the mini FoV grid in pix ---|
-    pxs = np.arange(minpx, maxpx+1, downSize)
-    pys = np.arange(minpy, maxpy+1, downSize)
-    pxx, pyy = np.meshgrid(pxs, pys)
+        #|--- Make the mini FoV grid in pix ---|
+        pxs = np.arange(minpx, maxpx+1, downSize)
+        pys = np.arange(minpy, maxpy+1, downSize)
+        pxx, pyy = np.meshgrid(pxs, pys)
     
-    #|--- Make the mini FoV grid in Rs ---|
-    fovx = pix2FOV[0]((pxx, pyy))
-    fovy = pix2FOV[1]((pxx, pyy))
-    fovz = pix2FOV[2]((pxx, pyy))
-    fov_ryz = np.sqrt(fovy**2 +fovz**2)
-    maxFOV_ryz = np.max(fov_ryz)
+        #|--- Make the mini FoV grid in Rs ---|
+        fovx = pix2FoV[0]((pxx, pyy))
+        fovy = pix2FoV[1]((pxx, pyy))
+        fovz = pix2FoV[2]((pxx, pyy))
+        fov_ryz = np.sqrt(fovy**2 +fovz**2)
+        maxFOV_ryz = np.max(fov_ryz)
     
-    # Make a mini line where actually needed
-    maxIdx = np.min(np.where(ryzs >= maxFOV_ryz))
-    scaleIt = rs[maxIdx] / np.max(rs)
-    miniLine = scaleIt * ssline
-    minirs = np.sqrt((miniLine[0] - sun[0])**2 + (miniLine[1] - sun[1])**2 + (miniLine[2] - sun[2])**2)
+        # Make a mini line where actually needed
+        maxIdx = np.min(np.where(ryzs >= maxFOV_ryz))
+        scaleIt = rs[maxIdx] / np.max(rs)
+        miniLine = scaleIt * ssline
+        minirs = np.sqrt((miniLine[0] - sun[0])**2 + (miniLine[1] - sun[1])**2 + (miniLine[2] - sun[2])**2)
     
-    # |---------------------------------------|
-    # |--- Check if within wireframe width ---|
-    # |---------------------------------------|
-    # Check if we have sheath widths or not
-    incSheath = False
-    if type(np.sum(widMapIn[2])) != type(None):
-        incSheath = True
+        # |---------------------------------------|
+        # |--- Check if within wireframe width ---|
+        # |---------------------------------------|
+        # Check if we have sheath widths or not
+        incSheath = False
+        if type(np.sum(widMapIn[2])) != type(None):
+            incSheath = True
         
-    widMap, xcMap, densMap = widMapIn[0], xcMapIn[0], densMapIn[0]
-    if incSheath:
-        widMaps, xcMaps, densMaps = widMapIn[2], xcMapIn[2], densMapIn[1]
+        widMap, xcMap, densMap = widMapIn[0], xcMapIn[0], densMapIn[0]
+        if incSheath:
+            widMaps, xcMaps, densMaps = widMapIn[2], xcMapIn[2], densMapIn[1]
         
-    midpty, midptz = int(widMap.shape[1]/2), int(widMap.shape[0]/2)
-    gridys = fovy[midptz,:]
-    gridzs = fovz[:,midpty]
-    rIP, nIP = [], []
-    cs = []
-    istype = []
-    rMain = 9999.
-    hitMain = False
-    for i in range(npts):
-        # |--- Interpolate to get local width ---|
-        iy0, iyf, iz0, izf = None, None, None, None
-        if (miniLine[1][i] <= np.max(gridys)) & (miniLine[1][i] >= np.min(gridys)):
-            iy0 = np.min(np.where(gridys >= miniLine[1][i])[0])
-            iyf = np.max(np.where(gridys <= miniLine[1][i])[0])
-        if (miniLine[2][i] <= np.max(gridzs)) & (miniLine[2][i] >= np.min(gridzs)):
-            iz0 = np.min(np.where(gridzs >= miniLine[2][i])[0])
-            izf = np.max(np.where(gridzs <= miniLine[2][i])[0])
+        midpty, midptz = int(widMap.shape[1]/2), int(widMap.shape[0]/2)
+        gridys = fovy[midptz,:]
+        gridzs = fovz[:,midpty]
+        rIP, nIP = [], []
+        cs = []
+        istype = []
+        rMain = 9999.
+        hitMain = False
+        for i in range(npts):
+            # |--- Interpolate to get local width ---|
+            iy0, iyf, iz0, izf = None, None, None, None
+            if (miniLine[1][i] <= np.max(gridys)) & (miniLine[1][i] >= np.min(gridys)):
+                iy0 = np.min(np.where(gridys >= miniLine[1][i])[0])
+                iyf = np.max(np.where(gridys <= miniLine[1][i])[0])
+            if (miniLine[2][i] <= np.max(gridzs)) & (miniLine[2][i] >= np.min(gridzs)):
+                iz0 = np.min(np.where(gridzs >= miniLine[2][i])[0])
+                izf = np.max(np.where(gridzs <= miniLine[2][i])[0])
             
-        if (type(iy0) != type(None)) & (type(iz0) != type(None)):
-            w11, xc11, d11 = widMap[iz0, iy0], xcMap[iz0, iy0], densMap[iz0, iy0] 
-            w12, xc12, d12 = widMap[iz0, iyf], xcMap[iz0, iyf], densMap[iz0, iyf]
-            w21, xc21, d21 = widMap[izf, iy0], xcMap[izf, iy0], densMap[izf, iy0]
-            w22, xc22, d22 = widMap[izf, iyf], xcMap[izf, iyf], densMap[izf, iyf]
-            # Interp in y
-            gdy = gridys[iyf] - gridys[iy0]
-            fy = (miniLine[1][i] - gridys[iy0]) / gdy
-            w1 = (1-fy) * w11 + fy * w12
-            w2 = (1-fy) * w21 + fy * w22
-            xc1 = (1-fy) * xc11 + fy * xc12
-            xc2 = (1-fy) * xc21 + fy * xc22
-            d1 = (1-fy) * d11 + fy * d12
-            d2 = (1-fy) * d21 + fy * d22
-  
-            # Interp in z
-            gdz = gridzs[izf] - gridzs[iz0]
-            fz = (miniLine[2][i] - gridzs[iz0]) / gdz
-            myw = (1-fz) * w1 + fz * w2
-            myxc = (1-fz) * xc1 + fz * xc2
-            myd = (1-fz) * d1 + fz * d2
-            
-            # |--- Repeat for the sheath ---|
-            if incSheath:
-                w11s, xc11s, d11s = widMaps[iz0, iy0], xcMaps[iz0, iy0], densMaps[iz0, iy0] 
-                w12s, xc12s, d12s = widMaps[iz0, iyf], xcMaps[iz0, iyf], densMaps[iz0, iyf]
-                w21s, xc21s, d21s = widMaps[izf, iy0], xcMaps[izf, iy0], densMaps[izf, iy0]
-                w22s, xc22s, d22s = widMaps[izf, iyf], xcMaps[izf, iyf], densMaps[izf, iyf]
+            if (type(iy0) != type(None)) & (type(iz0) != type(None)):
+                w11, xc11, d11 = widMap[iz0, iy0], xcMap[iz0, iy0], densMap[iz0, iy0] 
+                w12, xc12, d12 = widMap[iz0, iyf], xcMap[iz0, iyf], densMap[iz0, iyf]
+                w21, xc21, d21 = widMap[izf, iy0], xcMap[izf, iy0], densMap[izf, iy0]
+                w22, xc22, d22 = widMap[izf, iyf], xcMap[izf, iyf], densMap[izf, iyf]
                 # Interp in y
                 gdy = gridys[iyf] - gridys[iy0]
                 fy = (miniLine[1][i] - gridys[iy0]) / gdy
-                w1s = (1-fy) * w11s + fy * w12s
-                w2s = (1-fy) * w21s + fy * w22s
-                xc1s = (1-fy) * xc11s + fy * xc12s
-                xc2s = (1-fy) * xc21s + fy * xc22s
-                d1s = (1-fy) * d11s + fy * d12s
-                d2s = (1-fy) * d21s + fy * d22s
+                w1 = (1-fy) * w11 + fy * w12
+                w2 = (1-fy) * w21 + fy * w22
+                xc1 = (1-fy) * xc11 + fy * xc12
+                xc2 = (1-fy) * xc21 + fy * xc22
+                d1 = (1-fy) * d11 + fy * d12
+                d2 = (1-fy) * d21 + fy * d22
   
                 # Interp in z
                 gdz = gridzs[izf] - gridzs[iz0]
                 fz = (miniLine[2][i] - gridzs[iz0]) / gdz
-                myws = (1-fz) * w1s + fz * w2s
-                myxcs = (1-fz) * xc1s + fz * xc2s
-                myds = (1-fz) * d1s + fz * d2s
+                myw = (1-fz) * w1 + fz * w2
+                myxc = (1-fz) * xc1 + fz * xc2
+                myd = (1-fz) * d1 + fz * d2
+            
+                # |--- Repeat for the sheath ---|
+                if incSheath:
+                    w11s, xc11s, d11s = widMaps[iz0, iy0], xcMaps[iz0, iy0], densMaps[iz0, iy0] 
+                    w12s, xc12s, d12s = widMaps[iz0, iyf], xcMaps[iz0, iyf], densMaps[iz0, iyf]
+                    w21s, xc21s, d21s = widMaps[izf, iy0], xcMaps[izf, iy0], densMaps[izf, iy0]
+                    w22s, xc22s, d22s = widMaps[izf, iyf], xcMaps[izf, iyf], densMaps[izf, iyf]
+                    # Interp in y
+                    gdy = gridys[iyf] - gridys[iy0]
+                    fy = (miniLine[1][i] - gridys[iy0]) / gdy
+                    w1s = (1-fy) * w11s + fy * w12s
+                    w2s = (1-fy) * w21s + fy * w22s
+                    xc1s = (1-fy) * xc11s + fy * xc12s
+                    xc2s = (1-fy) * xc21s + fy * xc22s
+                    d1s = (1-fy) * d11s + fy * d12s
+                    d2s = (1-fy) * d21s + fy * d22s
+  
+                    # Interp in z
+                    gdz = gridzs[izf] - gridzs[iz0]
+                    fz = (miniLine[2][i] - gridzs[iz0]) / gdz
+                    myws = (1-fz) * w1s + fz * w2s
+                    myxcs = (1-fz) * xc1s + fz * xc2s
+                    myds = (1-fz) * d1s + fz * d2s
 
-            # |--- Check if in main or sheath ---|
-            if (np.abs(miniLine[1][i] - myxc)<myw) and (myd != 0):
-                if not hitMain:
-                    rMain = minirs[i]
-                    hitMain = True
-                rMain = np.max([minirs[i], rMain])
-                rIP.append(minirs[i])
-                nIP.append(myd)
-                cs.append('m')
-                istype.append('m')
-            elif incSheath and (minirs[i] > rMain):
-                if np.abs(miniLine[1][i] - myxcs)<myws:
+                # |--- Check if in main or sheath ---|
+                if (np.abs(miniLine[1][i] - myxc)<myw) and (myd != 0):
+                    if not hitMain:
+                        rMain = minirs[i]
+                        hitMain = True
+                    rMain = np.max([minirs[i], rMain])
                     rIP.append(minirs[i])
-                    nIP.append(myds)
-                    cs.append('b') 
-                    istype.append('s')
+                    nIP.append(myd)
+                    cs.append('m')
+                    istype.append('m')
+                elif incSheath and (minirs[i] > rMain):
+                    if np.abs(miniLine[1][i] - myxcs)<myws:
+                        rIP.append(minirs[i])
+                        nIP.append(myds)
+                        cs.append('b') 
+                        istype.append('s')
+                else:
+                    rIP.append(minirs[i])
+                    nIP.append(0)
+                    cs.append('r')
+                    istype.append('a')
             else:
                 rIP.append(minirs[i])
                 nIP.append(0)
-                cs.append('r')
-                istype.append('a')
-        else:
-            rIP.append(minirs[i])
-            nIP.append(0)
-            cs.append('a')
+                cs.append('a')
             
     
-    # |-----------------------------------|
-    # |--- Convert in place to in situ ---|
-    # |-----------------------------------|
-    # Scale in place density based on size at the in situ satellite        
-    # Requires some form of simple expansion model
-    rIP = np.array(rIP)
-    nIP = np.array(nIP)
+        # |-----------------------------------|
+        # |--- Convert in place to in situ ---|
+        # |-----------------------------------|
+        # Scale in place density based on size at the in situ satellite        
+        # Requires some form of simple expansion model
+        rIP = np.array(rIP)
+        nIP = np.array(nIP)
     
-    # Find portion where it is actually CME/nonzero
-    isCME = np.where(nIP != 0)[0]
-    rCME  = rIP[isCME]
-    nCME  = nIP[isCME]
+        # Find portion where it is actually CME/nonzero
+        isCME = np.where(nIP != 0)[0]
+        rCME  = rIP[isCME]
+        nCME  = nIP[isCME]
     
-    # Get midpoint, initial radial width, init dist
-    Rmid0 = 0.5*(rCME[0] + rCME[-1])
-    lilR0 = 0.5*(rCME[-1] - rCME[0])
-    R0    = rCME[-1]
+        # Get midpoint, initial radial width, init dist
+        Rmid0 = 0.5*(rCME[0] + rCME[-1])
+        lilR0 = 0.5*(rCME[-1] - rCME[0])
+        R0    = rCME[-1]
     
-    # Make parametric array for the points
-    # Extends from -1 at back to 1 at front
-    fs = (rCME - Rmid0) / lilR0
+        # Make parametric array for the points
+        # Extends from -1 at back to 1 at front
+        fs = (rCME - Rmid0) / lilR0
     
-    # Get arrival time for each point at sat
-    dSat = satR *215 # satellite distance in Rs 
-    nur  = scaleFactors[1]
-    tArr = (dSat - R0 - lilR0 * fs) / (1 + nur * fs) / vCME * 7e5 / 3600 # in hr, assuming vCME in km/s
+        # Get arrival time for each point at sat
+        dSat = satR *215 # satellite distance in Rs 
+        nur  = scaleFactors[1]
+        tArr = (dSat - R0 - lilR0 * fs) / (1 + nur * fs) / vCME * 7e5 / 3600 # in hr, assuming vCME in km/s
 
-    # Get the radial size at the time of arrival
-    lilRs = lilR0 + nur * vCME * tArr * 3600 / 7e5
+        # Get the radial size at the time of arrival
+        lilRs = lilR0 + nur * vCME * tArr * 3600 / 7e5
     
-    # Get the front dist for when each parametric point
-    # is at the satellite
-    dFront = dSat + (1 - fs) * lilRs
+        # Get the front dist for when each parametric point
+        # is at the satellite
+        dFront = dSat + (1 - fs) * lilRs
     
-    # Get relative size in perp direction
-    rprp0 =  scaleFactors[0] * dFront / rCME
+        # Get relative size in perp direction
+        rprp0 =  scaleFactors[0] * dFront / rCME
     
-    # Get ratio of volume at arrival to initial
-    volRat = rprp0**2 * lilRs / lilR0
+        # Get ratio of volume at arrival to initial
+        volRat = rprp0**2 * lilRs / lilR0
     
-    # Scale density
-    nIS = nIP[isCME] / volRat / 1.974e-24
+        # Scale density
+        nIS = nIP[isCME] / volRat / 1.974e-24
     
-    # Convert times to real time using map data
-    # Tend not to use this bc neglects all non-expansion
-    # interplanetary effects so garbage for arrival time
-    deltaT = 3
-    if timeMode == 'rw':
-        remObsDT = myMap.date.datetime
-        insituDT = []
-        for aTime in tArr:
-            insituDT.append(remObsDT + datetime.timedelta(hours = aTime))
-        deltaT = datetime.timedelta(hours=3)
+        # Convert times to real time using map data
+        # Tend not to use this bc neglects all non-expansion
+        # interplanetary effects so garbage for arrival time
+        deltaT = 3
+        if timeMode == 'rw':
+            remObsDT = myMap.date.datetime
+            insituDT = []
+            for aTime in tArr:
+                insituDT.append(remObsDT + datetime.timedelta(hours = aTime))
+            deltaT = datetime.timedelta(hours=3)
 
     
-    # |---------------------|
-    # |--- Plotting Time ---|
-    # |---------------------|
+        # |---------------------|
+        # |--- Plotting Time ---|
+        # |---------------------|
     
-    istype = np.array(istype)
-    isAmb = np.where(istype == 'a')[0]
-    isMain = np.where(istype =='m')[0]
-    isSheath = np.where(istype == 's')[0]
+        istype = np.array(istype)
+        isAmb = np.where(istype == 'a')[0]
+        isMain = np.where(istype =='m')[0]
+        isSheath = np.where(istype == 's')[0]
     
-    # |--- In place panel ---|
-    # Don't actually care where is ambient, just throw in zeros
-    # around main + sheath
+        # |--- In place panel ---|
+        # Don't actually care where is ambient, just throw in zeros
+        # around main + sheath
+        label = myMap.date.datetime.strftime("%Y-%m-%d %H:%M")
+        ax[0].plot(rIP[isMain], nIP[isMain], c=myC, label=label)
+        ax[0].plot([rIP[isMain[0]], rIP[isMain[0]]], [0, nIP[isMain[0]]], c=myC)
+        ax[0].plot([0.5*rIP[isMain[0]], rIP[isMain[0]]], [0, 0], ':', c=myC)
+        if len(isSheath) != 0:
+            ax[0].plot(rIP[isSheath], nIP[isSheath], '--', c=myC)
+            # Connect to ambient
+            ax[0].plot([rIP[isSheath[-1]], rIP[isSheath[-1]]], [nIP[isSheath[-1]], 0], '--', c=myC)
+            ax[0].plot([rIP[isSheath[-1]], 1.1* rIP[isSheath[-1]]], [0, 0], ':', c=myC)
+            # Connect to main
+            ax[0].plot([rIP[isMain[-1]], rIP[isSheath[0]]], [nIP[isMain[-1]], nIP[isSheath[0]]], c=myC)
+        else:
+            ax[0].plot([rIP[isMain[-1]], rIP[isMain[-1]]], [nIP[isMain[-1]], 0], c=myC)
+            ax[0].plot([rIP[isMain[-1]], 1.1* rIP[isMain[-1]]], [0, 0], ':', c=myC)        
     
-    ax[0].plot(rIP[isMain], nIP[isMain], c=myC)
-    ax[0].plot([rIP[isMain[0]], rIP[isMain[0]]], [0, nIP[isMain[0]]], c=myC)
-    ax[0].plot([0.5*rIP[isMain[0]], rIP[isMain[0]]], [0, 0], ':', c=myC)
-    if len(isSheath) != 0:
-        ax[0].plot(rIP[isSheath], nIP[isSheath], '--', c=myC)
-        # Connect to ambient
-        ax[0].plot([rIP[isSheath[-1]], rIP[isSheath[-1]]], [nIP[isSheath[-1]], 0], '--', c=myC)
-        ax[0].plot([rIP[isSheath[-1]], 1.1* rIP[isSheath[-1]]], [0, 0], ':', c=myC)
-        # Connect to main
-        ax[0].plot([rIP[isMain[-1]], rIP[isSheath[0]]], [nIP[isMain[-1]], nIP[isSheath[0]]], c=myC)
-    else:
-        ax[0].plot([rIP[isMain[-1]], rIP[isMain[-1]]], [nIP[isMain[-1]], 0], c=myC)
-        ax[0].plot([rIP[isMain[-1]], 1.1* rIP[isMain[-1]]], [0, 0], ':', c=myC)        
+        ax[0].legend(loc='upper right')
     
-    ax[0].set_xlabel('R (R$_S$)')
-    ax[0].set_ylabel('$\\rho$ (g cm$^{-3}$)')
-    ax[0].set_title('In Place')
+        # |--- In situ panel ---|
+        # Need new isMain/isSheath bc threw away ambient in IS calc
+        isSheath = isSheath - isMain[0]
+        isMain   = isMain - isMain[0]
     
-    # |--- In situ panel ---|
-    # Need new isMain/isSheath bc threw away ambient in IS calc
-    isSheath = isSheath - isMain[0]
-    isMain   = isMain - isMain[0]
-    
-    if timeMode == 'rw':
-        xvals = insituDT
-        #ax[1].plot(insituDT, nIS)
-        plt.gcf().autofmt_xdate() 
-    elif timeMode == 'hr':
-        xvals = tArr
-        #ax[1].plot(tArr, nIS)
-        ax[1].set_xlabel('t (hr)')
-    # same plot script, different vars    
-    # also time is backward from r
-    ax[1].plot(xvals[isMain], nIS[isMain], c=myC)
-    ax[1].plot([xvals[isMain[0]], xvals[isMain[0]]], [0, nIS[isMain[0]]], c=myC)
-    ax[1].plot([xvals[isMain[0]] + deltaT , xvals[isMain[0]]], [0, 0], ':', c=myC)
-    if len(isSheath) != 0:
-        ax[1].plot(xvals[isSheath], nIS[isSheath], '--', c=myC)
-        # Connect to ambient
-        ax[1].plot([xvals[isSheath[-1]], xvals[isSheath[-1]]], [nIS[isSheath[-1]], 0], '--', c=myC)
-        ax[1].plot([xvals[isSheath[-1]], xvals[isSheath[-1]]- deltaT] , [0, 0], ':', c=myC)
-        # Connect to main
-        ax[1].plot([xvals[isMain[-1]], xvals[isSheath[0]]], [nIS[isMain[-1]], nIS[isSheath[0]]], c=myC)
-    else:
-        ax[1].plot([xvals[isMain[-1]], xvals[isMain[-1]]], [nIS[isMain[-1]], 0], c=myC)
-        ax[1].plot([xvals[isMain[-1]], xvals[isMain[-1]] - deltaT], [0, 0], ':', c=myC)      
+        if timeMode == 'rw':
+            xvals = insituDT
+            #ax[1].plot(insituDT, nIS)
+            plt.gcf().autofmt_xdate() 
+        elif timeMode == 'hr':
+            xvals = tArr + startDiffs[iii] / 3600.
+            #ax[1].plot(tArr, nIS)
+            ax[1].set_xlabel('t (hr)')
+        # same plot script, different vars    
+        # also time is backward from r
+        ax[1].plot(xvals[isMain], nIS[isMain], c=myC)
+        ax[1].plot([xvals[isMain[0]], xvals[isMain[0]]], [0, nIS[isMain[0]]], c=myC)
+        ax[1].plot([xvals[isMain[0]] + deltaT , xvals[isMain[0]]], [0, 0], ':', c=myC)
+        if len(isSheath) != 0:
+            ax[1].plot(xvals[isSheath], nIS[isSheath], '--', c=myC)
+            # Connect to ambient
+            ax[1].plot([xvals[isSheath[-1]], xvals[isSheath[-1]]], [nIS[isSheath[-1]], 0], '--', c=myC)
+            ax[1].plot([xvals[isSheath[-1]], xvals[isSheath[-1]]- deltaT] , [0, 0], ':', c=myC)
+            # Connect to main
+            ax[1].plot([xvals[isMain[-1]], xvals[isSheath[0]]], [nIS[isMain[-1]], nIS[isSheath[0]]], c=myC)
+        else:
+            ax[1].plot([xvals[isMain[-1]], xvals[isMain[-1]]], [nIS[isMain[-1]], 0], c=myC)
+            ax[1].plot([xvals[isMain[-1]], xvals[isMain[-1]] - deltaT], [0, 0], ':', c=myC)      
         
-    ax[1].set_ylabel('n (cm$^{-3}$)')
-    ax[1].set_title('Expected In Situ, v='+str(int(vCME))+'km/s')
     
     if figName:
-        if ('.png' in figName) or ('.pdf' in figName):
-            outName = figName
-        else:
-            outName = figName + picType
-            
-        plt.savefig(figName+'.png')
+        plt.savefig('dingo1d_'+figName+picType)
     else:
         plt.show()
     
@@ -1761,6 +1790,7 @@ def dingoWrapper(args, doInner=False):
     idstr = args[1]
     nplus = idstr.count('+')
     singleWF = True # will overwrite later
+    saveName = None
     
     # Will work with no + (= single id)
     splitstr = idstr.split('+')
@@ -2101,7 +2131,12 @@ def dingoWrapper(args, doInner=False):
     #|----------------------|
     #|--- 1d - line plot ---|
     #|----------------------|
-    
+    elif mode ==1:
+        obsSats = []
+        for i in range(nTimes):
+            obsSats.append(get_horizons_coord(target, time=satDicts[i]['DATEOBS']))
+        dingo1d(imMaps, widMaps, xcMaps, densMaps, outFoVs, pix2FOVs, obsSats, vCME=vcme, scaleFactors=[expf1, expf2], figName=saveName)
+        
     #|--------------------------|
     #|--- 2d - contour plots ---|
     #|--------------------------|
@@ -2116,25 +2151,6 @@ def dingoWrapper(args, doInner=False):
         # Already forced to be single time so can use single versions of these vars
         allPts = dingo3d(widMap, xcMap, densMap,outFoV, pix2FOV, shell=True, plotIt=True)
 
-    print (sd)       
-    
-    
-    
-    
-    if type(id2) == type(None):
-        widMap, xcMap, densMap, subMass, outFoV, pix2FOV  = mass2dens(imMap, satDict, awf, massMap, doInner=dI,  downSelect=ds)  
-    else:
-        widMap, xcMap, densMap, subMass, outFoV, pix2FOV  = mass2dens(imMap, satDict, [awf, awf2], massMap, doInner=dI,  densRatio=1.8, downSelect=ds)
-    
-    if mode == 0:
-        getMasses(widMap, densMap, outFoV, pix2FOV)
-    elif mode == 1:
-        obsSat = get_horizons_coord('Wind', time=satDict['DATEOBS'])
-        dingo1d(imMap, widMap, xcMap, densMap, outFoV, pix2FOV, obsSat, vCME=550, scaleFactors=[1., 0.1], figName=saveName)
-    elif mode == 2:
-        dingo2d(widMap, densMap, outFoV, pix2FOV, figName=saveName)
-    elif mode == 3:
-        allPts = dingo3d(widMap, xcMap, densMap,outFoV, pix2FOV, shell=True, plotIt=True)
 
 
 # |-----------------------|
