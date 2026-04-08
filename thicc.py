@@ -8,7 +8,7 @@ import datetime
 import math
 from sunpy.coordinates import frames
 from sunpy.coordinates import get_horizons_coord
-
+import matplotlib.gridspec as gridspec
 import scipy.ndimage as ndimage
 from scipy.interpolate import RegularGridInterpolator
 import matplotlib.cm as cm
@@ -1054,83 +1054,93 @@ def dingo2d(widMaps, densMaps, outFoVs, pix2FOVs, showLog=False, figName=None, t
     
     #|--- Check for second WF ---|
     multiMode = False
+    mmtag = 's'
     if type(widMaps[0][2]) != type(None):
         multiMode = True
+        mmtag = 'm'
     
     #|---------------------|    
     #|--- Set up figure ---|
-    #|---------------------|    
-    # Base it on number of times/multiMode
-    if nTimes <= 5:
-        if multiMode:
-            fig, ax = plt.subplots(nTimes, 3, figsize=(2*nTimes+1,5), gridspec_kw={'width_ratios': [1,1,0.5]})
-            # Clean out axis labels
-            for i in range(nTimes-1):
-                ax[i,0].set_xticklabels([])
-                ax[i,1].set_xticklabels([])
-                ax[i,1].set_yticklabels([])
-                ax[i,-1].set_axis_off()
-            ax[-1,-1].set_axis_off()
-            ax[-1,1].set_yticklabels([])
+    #|---------------------|
+    myStyle = str(nTimes) + mmtag # eg 1s, 3m for single or multi
+    # Figure size dictionary
+    fSizes  = {'1s':(6.8,5.),'2s':(4,5), '3s':(4,8.), '4s':(4,10.), '5s':(8,8.), '6s':(8,8.), '7s':(6.5,11.), '8s':(6.5,11.), '1m':(7,3.8),'2m':(7,6.6), '3m':(7,8.), '4m':(7,10.), '5m':(10,7.), '6m':(10,7.), '7m':(10,9.), '8m':(10,9.)}
+    # Number of plot panels and width_ratios
+    rval = 0.88
+    lval = 0.1
+    if (nTimes <= 4) and not multiMode:
+        gnx = 2
+        gny = nTimes
+        gx  = [0]
+        ios = [0] # inner (0) or outer (1)
+        widRats = [1,0.1]
+        if nTimes != 1:
+            rval = 0.80
         else:
-            fig, ax = plt.subplots(nTimes, 2,  figsize=(3*nTimes,4), gridspec_kw={'width_ratios': [1,0.5]})
-            # Clean out axis labels
-            for i in range(nTimes-1):
-                ax[i].set_xticklabels([])
-        
-    else:
-        ny = math.ceil(nTimes/2)
-        if multiMode:
-            fig, ax0 = plt.subplots(ny, 6, figsize=(6,2*ny), gridspec_kw={'width_ratios': [10, 10, 1, 10, 10, 5]})
-            # want to re-sort so 2d array split by inner/out
-            #ax = [[], []]
-            ax = []
-            for i in [0,3]:
-                for j in range(ny):
-                    ax0[j,i].set_aspect('equal')
-                    ax0[j,i+1].set_aspect('equal')
-                    ax.append([ax0[j,i],ax0[j,i+1]])
-            ax = np.array(ax)
-            # Clean out pad axis        
-            for j in range(ny):
-                ax0[j,2].set_axis_off()
-                ax0[j,-1].set_axis_off()
-            # Clean out axis labels
-            for j in [0,1,3,4]:
-                for i in range(ny-1):
-                    ax0[i,j].set_xticklabels([])
-                    if j!=0:
-                        ax0[i,j].set_yticklabels([])
-                if j!= 0:
-                    ax0[-1,j].set_yticklabels([])
-            
-            
-        else:
-            fig, ax0 = plt.subplots(ny+1, 4, gridspec_kw={'width_ratios': [10, 1, 10,5]})
-            # want to re-sort as 1d array 
-            ax = []
-            for i in [0,2]:
-                for j in range(ny):
-                    ax.append(ax0[j,i])
-            ax = np.array(ax)
-            # Clean out pad axis  
-            for j in range(ny):
-                ax0[j,1].set_axis_off()
-                ax0[j,-1].set_axis_off()
-            # Clean out axis labels
-            for j in [0,2]:
-                for i in range(ny-1):
-                    ax0[i,j].set_xticklabels([])
-                    if j!=0:
-                        ax0[i,j].set_yticklabels([])
-                if j!= 0:
-                    ax0[-1,j].set_yticklabels([])
-            for anAx in ax: ax.set_aspect('equal')
-        
+            rval = 0.85
+            lval = 0.15
+    elif (nTimes <= 4) and multiMode:
+        gnx = 3
+        gny = nTimes
+        gx  = [1, 0]
+        ios = [0, 1]
+        widRats = [1,1,0.1]
+    elif (nTimes > 4) and not multiMode:
+        gnx = 4
+        gny = math.ceil(nTimes/2)
+        gx  = [0, 2]
+        ios = [0, 0]
+        widRats = [1, 0.1, 1, 0.1]    
+    elif (nTimes > 4) and multiMode:
+        gnx = 6
+        gny = math.ceil(nTimes/2)
+        gx  = [1, 0, 4, 3]
+        ios = [0, 1, 0, 1]
+        widRats = [1, 1, 0.1, 1, 1, 0.1]
+    # indices of where we actually want contour panels
+    gy = range(gny)
+    
+    fig = plt.figure(figsize=fSizes[myStyle])
+    gs = gridspec.GridSpec(gny, gnx, width_ratios=widRats)
+    gs.update(wspace=0.05)
+    gs.update(hspace=0.15)
+    
+    axes = [[], []]
+    count = [1,1]
+    for i in range(len(gx)):
+        for j in gy:
+            if count[ios[i]] <= nTimes:
+                anAx = plt.subplot(gs[j,gx[i]])        
+                axes[ios[i]].append(anAx)
+                anAx.set_aspect('equal')
+                # Turn off tick labels or add main label
+                if gx[i] != 0:
+                    anAx.set_yticklabels([])
+                else:
+                    anAx.set_ylabel('Pixels')
+                
+                if (j != (gny-1)) and (count[ios[i]] != nTimes):
+                    anAx.set_xticklabels([])
+                else:
+                    anAx.set_xlabel('Pixels')
+                count[ios[i]] += 1    
+
+    # Make cbar axis
+    if gny <=2:
+        cax = plt.subplot(gs[:,-1])
+    elif gny == 3:
+        cax = plt.subplot(gs[1,-1])
+    elif gny == 4:
+        cax = plt.subplot(gs[1:3,-1])
+    
 
     #|--------------------------|    
     #|--- Unpackage all FoVs ---|
     #|--------------------------| 
+    # The FoV is a square surrounding the nonzero region
+    # but each time will have a diff square
+    # The values are pix wrt the original size given to
+    # mass2dens (probably 1024 unless adventurous code usage)
     minpxs, maxpxs, minpys, maxpys, downSizes = [], [], [], [], []
     for i in range(nTimes):   
         minpx, maxpx, minpy, maxpy, downSize = outFoVs[i]
@@ -1144,14 +1154,21 @@ def dingo2d(widMaps, densMaps, outFoVs, pix2FOVs, showLog=False, figName=None, t
     limys = [np.min(minpys), np.max(maxpys)]    
     npx = limxs[1] - limxs[0] + 1
     npy = limys[1] - limys[0] + 1
+    nsq = np.max([npx, npy])
+    if npx < nsq:
+        limxs[1] += nsq - npx 
+    elif npy < nsq:
+        limys[1] += nsq - npy 
     
     #|-------------------------|    
     #|--- Process each time ---|
     #|-------------------------|
     # Holders for the results
-    allDens1 = np.zeros([nTimes, npy, npx])
+    allDens1 = np.zeros([nTimes, nsq, nsq])
+    allpxx   = np.zeros([nTimes, nsq, nsq])
+    allpyy   = np.zeros([nTimes, nsq, nsq])
     if multiMode:
-        allDens2 = np.zeros([nTimes, npy, npx])
+        allDens2 = np.zeros([nTimes, nsq, nsq])
     
     # |--- Time loop ---|    
     for i in range(nTimes):   
@@ -1159,8 +1176,8 @@ def dingo2d(widMaps, densMaps, outFoVs, pix2FOVs, showLog=False, figName=None, t
         minpx, maxpx, minpy, maxpy, downSize = outFoVs[i]
         dx = minpx - limxs[0]
         dy = minpx - limxs[0]
-        sx = maxpx - minpx
-        sy = maxpy - minpy
+        sx = maxpx - minpx + 1
+        sy = maxpy - minpy + 1
     
         dens1 = densMaps[i][0]
         if multiMode:
@@ -1185,9 +1202,11 @@ def dingo2d(widMaps, densMaps, outFoVs, pix2FOVs, showLog=False, figName=None, t
         dzs[0,:] = dzs[1,:]
         cellArea = dys * dzs
     
-        allDens1[i,dy:dy+sy+1,dx:dx+sx+1] = dens1
+        allDens1[i,dy:dy+sy,dx:dx+sx] = dens1
+        allpxx[i,dy:dy+sy,dx:dx+sx] = pxx
+        allpyy[i,dy:dy+sy,dx:dx+sx] = pyy
         if multiMode:
-            allDens2[i,dy:dy+sy+1,dx:dx+sx+1] = dens2
+            allDens2[i,dy:dy+sy,dx:dx+sx] = dens2
             
         # |--- Logify densities ---|
         if showLog:
@@ -1204,9 +1223,9 @@ def dingo2d(widMaps, densMaps, outFoVs, pix2FOVs, showLog=False, figName=None, t
                     dens2[negPts2] = minval2
                 logd2 = np.log10(dens2)
             #|--- Replace non log in the holder ---|    
-            allDens1[i,dy:dy+sy+1,dx:dx+sx+1] = logd1
+            allDens1[i,dy:dy+sy,dx:dx+sx] = logd1
             if multiMode:
-                allDens2[i,dy:dy+sy+1,dx:dx+sx+1] = logd2
+                allDens2[i,dy:dy+sy,dx:dx+sx] = logd2
                 
     #|----------------------|
     #|--- Fill in figure ---|
@@ -1222,73 +1241,34 @@ def dingo2d(widMaps, densMaps, outFoVs, pix2FOVs, showLog=False, figName=None, t
     
     for i in range(nTimes):
         thisdens1 = allDens1[i,:,:]
-        thisdens1[np.where(thisdens1 == 0)] = -10
+        thisdens1[np.where(thisdens1 == 0)] = -9999
+        # Grab the first for the cbar
+        if i == 0:
+            im = axes[0][i].imshow(thisdens1/scaleIt, origin='lower', vmin=-vval, vmax=vval, cmap=cmap, extent=[limxs[0], limxs[1], limys[0], limys[1]])
+        else:
+            axes[0][i].imshow(thisdens1/scaleIt, origin='lower', vmin=-vval, vmax=vval, cmap=cmap, extent=[limxs[0], limxs[1], limys[0], limys[1]])
+        if type(times) != type(None):
+            axes[0][i].set_title(times[i], fontsize=10,loc='right')
+        
         if multiMode:
             thisdens2 = allDens2[i,:,:]
-            thisdens2[np.where(thisdens2 == 0)] = -10
-            ax[i,0].imshow(thisdens2/scaleIt, origin='lower', vmin=-vval, vmax=vval, cmap=cmap, extent=[limxs[0], limxs[1], limys[0], limys[1]])
-            if i == 0:
-                im = ax[i,1].imshow(thisdens1/scaleIt, origin='lower', vmin=-vval, vmax=vval, cmap=cmap, extent=[limxs[0], limxs[1], limys[0], limys[1]])
-            else:
-                ax[i,1].imshow(thisdens1/scaleIt, origin='lower', vmin=-vval, vmax=vval, cmap=cmap, extent=[limxs[0], limxs[1], limys[0], limys[1]])
-            if type(times) != type(None):
-                ax[i,1].set_title(times[i], fontsize=10,loc='right')
-            
-        else:
-            if i == 0:
-                im = ax[i].imshow(thisdens1/scaleIt, origin='lower', vmin=-vval, vmax=vval, cmap=cmap, extent=[limxs[0], limxs[1], limys[0], limys[1]])
-            else:
-                ax[i].imshow(thisdens1/scaleIt, origin='lower', vmin=-vval, vmax=vval, cmap=cmap, extent=[limxs[0], limxs[1], limys[0], limys[1]])
-            if type(times) != type(None):
-                ax[i].set_title(times[i], fontsize=10,loc='right')
-    cbar = fig.colorbar(im, ax=ax0[:,-1], orientation='vertical', fraction=.2) 
-    ##cbar.ax.yaxis.set_ticks_position('left')
-    cbar.set_label('Density (1e'+str(power)+' g cm$^{-3}$)', rotation=90, labelpad=10)
-    cbar.ax.yaxis.set_label_position('left')
-    #plt.tight_layout()
-    fig.subplots_adjust(wspace=0.05, hspace=0.1)
-    plt.show()        
+            thisdens2[np.where(thisdens2 == 0)] = -9999
+            axes[1][i].imshow(thisdens2/scaleIt, origin='lower', vmin=-vval, vmax=vval, cmap=cmap, extent=[limxs[0], limxs[1], limys[0], limys[1]])
+            xs = np.arange(limxs[0], limxs[1]+1, 1)
+            ys = np.arange(limys[0], limys[1]+1, 1)
+            xxxs, yyys = np.meshgrid(xs, ys)
+            axes[0][i].contour(xxxs, yyys,thisdens2, levels=[-9999], linestyles='--', colors='w')
+            axes[1][i].contour(xxxs, yyys,thisdens1, levels=[-9999], linestyles='--', colors='k')
     
-    #|--------------------|
-    #|--- Setup Figure ---|
-    #|--------------------|
-    '''scl =  (maxpx-minpx) / (maxpy-minpy) 
-    if multiMode:
-        fig, ax = plt.subplots(1, 2, figsize = (5*scl+4.5,6), sharex=True, layout='constrained')
-    else:
-        fig, ax = plt.subplots(1, 1, figsize = (3*scl+3.5,6), layout='constrained')
-        ax = [ax]
-    
-    vval = np.median(np.abs(dens1[dens1 !=0])) * 3 
-    
-    cmap = plt.get_cmap('RdYlBu_r')
-    cmap.set_under('k')
-    dens1[np.where(dens1 == 0)] = -10
-    im = ax[-1].imshow(dens1, origin='lower', vmin=-vval, vmax=vval, cmap=cmap, extent=[minpx, maxpx, minpy, maxpy])
-    ax[-1].set_xlabel('Pixels')
-    ax[-1].set_ylabel('Pixels')
-    
-    if multiMode:
-        dens2[np.where(dens2 == 0)] = -10
-        ax[0].imshow(dens2, origin='lower',  vmin=-vval, vmax=vval, cmap=cmap, extent=[minpx, maxpx, minpy, maxpy])
-        ax[0].set_xlabel('Pixels')
-        ax[0].set_ylabel('Pixels')
-        ax[-1].set_title('Inner WF')
-        ax[0].set_title('Outer WF')
-        
-        ax[-1].contour(pxx,pyy,dens2, levels=[-10], linestyles='--', colors='w')
-        ax[0].contour(pxx,pyy,dens1, levels=[-10], linestyles='--', colors='k')
-        
-    cbar = fig.colorbar(im, ax=ax, orientation='vertical', fraction=.03, pad=0.02) #
-    cbar.set_label('Density (g cm$^{-3}$)')
-    
-    ax[0].set_aspect('equal')
-    #fig.subplots_adjust(wspace=0.1)
-    #plt.tight_layout()
+    # Add the color bar
+    cbar = plt.colorbar(im, cax=cax, orientation='vertical')     
+    cbar.set_label('Density (1e'+str(power)+' g cm$^{-3}$)', rotation=270, labelpad=15)
+    fig.subplots_adjust(right=rval, left=lval, top=0.95,bottom=0.1)
     if figName:
         plt.savefig('dingo2d_'+figName+picType)
     else:
-        plt.show()'''
+        plt.show()
+    
 
 
 # |--------------------|
@@ -1844,14 +1824,14 @@ def dingoWrapper(args, doInner=False):
                     flagIt = True
                     print ('Missing inner WF fit ('+inWF+') for', aTime, 'skipping it but running others')
                 elif len(inIndex) > 1:
-                    sys.exit('Multiple fits for ', inWF, ' at time ', aTime, ' cannot proceed')
+                    sys.exit('Multiple fits for '+inWF+ ' at time '+ aTime + ' cannot proceed')
                 # Find the inner shape at this time    
                 outIndex = np.where((miniLog[:,2] == aTime) & (miniLog[:,3] == outWF))[0]
                 if len(outIndex) == 0:
                     flagIt = True
                     print ('Missing outer WF fit ('+outWF+') for', aTime, 'skipping it but running others')
                 elif len(outIndex) > 1:
-                    sys.exit('Multiple fits for ', outWF, ' at time ', aTime, ' cannot proceed')
+                    sys.exit('Multiple fits for '+ outWF+ ' at time '+ aTime + ' cannot proceed')
                 if not flagIt:
                     pairTimes.append(aTime)
                     pairIds.append([inIndex[0], outIndex[0]])
@@ -1874,8 +1854,8 @@ def dingoWrapper(args, doInner=False):
         mode = 1
     elif dim in ['2', '2d']:
         mode = 2
-        if nTimes > 10:
-            sys.exit('Quitting... 2D mode only supports 10 time steps or fewer.')
+        if nTimes > 8:
+            sys.exit('Quitting... 2D mode only supports 8 time steps or fewer.')
     elif dim in ['3', '3d']:
         mode = 3
         if nTimes > 1:
