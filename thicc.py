@@ -1274,7 +1274,7 @@ def dingo2d(widMaps, densMaps, outFoVs, pix2FOVs, showLog=False, figName=None, t
 # |--------------------|
 # |--- In Situ plot ---|
 # |--------------------|
-def dingo1d(myMaps, widMapIns, xcMapIns, densMapIns, outFoVs, pix2FoVs, obsSats, vCME=400, scaleFactors=[1, 0.2], figName=None, timeMode='hr'):
+def dingo1d(myMaps, widMapIns, xcMapIns, densMapIns, outFoVs, pix2FoVs, obsSats, vCME=400, scaleFactors=[1, 0.2], figName=None, timeMode='hr', writeIt=True):
     # The first four params need to be packaged as lists, even if passing a single time    
     
     # |---------------------|
@@ -1310,6 +1310,23 @@ def dingo1d(myMaps, widMapIns, xcMapIns, densMapIns, outFoVs, pix2FoVs, obsSats,
         for i in range(nTimes):
             startDiffs[i]= (times[i]-minTime).total_seconds()
             myCols.append(cmap(startDiffs[i]/dTime))
+            
+    # |-------------------------|
+    # |--- Set up save files ---|    
+    # |-------------------------|
+    if (type(figName) == type(None)):
+        writeIt = False
+    if writeIt:
+        if not os.path.exists('dingoOutputs/'):
+            # Make if if it doesn't exist
+            os.mkdir('dingoOutputs/')
+        
+        # File for in place data    
+        outFileIP = open('dingoOutputs/dingo1d_IP_'+figName+'.dat', 'w')
+        
+        # File for in situ data    
+        outFileIS = open('dingoOutputs/dingo1d_IS_'+figName+'.dat', 'w')
+            
               
     # |---------------------|
     # |--- Run time loop ---|
@@ -1615,6 +1632,20 @@ def dingo1d(myMaps, widMapIns, xcMapIns, densMapIns, outFoVs, pix2FoVs, obsSats,
     
         ax[0].legend(loc='upper right')
     
+        # |---------------------|
+        # |--- Write IP data ---|    
+        # |---------------------|
+        if writeIt:
+            myTime = times[iii].strftime("%Y-%m-%d %H:%M:%S")
+            for i in isMain:
+                if nIP[i] != 0:
+                    aLine = str(rIP[i]) + ' ' + str(nIP[i]) + ' Inner'
+                    outFileIP.write(myTime + ' ' + aLine + '\n')
+            for i in isSheath:
+                if nIP[i] != 0:
+                    aLine = str(rIP[i]) + ' ' + str(nIP[i]) + ' Outer'
+                    outFileIP.write(myTime + ' ' + aLine + '\n')
+
         # |--- In situ panel ---|
         # Need new isMain/isSheath bc threw away ambient in IS calc
         isSheath = isSheath - isMain[0]
@@ -1643,8 +1674,31 @@ def dingo1d(myMaps, widMapIns, xcMapIns, densMapIns, outFoVs, pix2FoVs, obsSats,
         else:
             ax[1].plot([xvals[isMain[-1]], xvals[isMain[-1]]], [nIS[isMain[-1]], 0], c=myC)
             ax[1].plot([xvals[isMain[-1]], xvals[isMain[-1]] - deltaT], [0, 0], ':', c=myC)      
-        
+                            
+        # |---------------------|
+        # |--- Write IS data ---|    
+        # |---------------------|
+        if writeIt:
+            myTime = times[iii].strftime("%Y-%m-%d %H:%M:%S")
+            for i in isSheath[::-1]:
+                aLine = str(xvals[i]) + ' ' + str(nIS[i]) + ' Outer'
+                outFileIS.write(myTime + ' ' + aLine + '\n')
+            for i in isMain[::-1]:
+                aLine = str(xvals[i]) + ' ' + str(nIS[i]) + ' Inner'
+                outFileIS.write(myTime + ' ' + aLine + '\n')
+                
+            
+    # |------------------------|
+    # |--- Close save files ---|    
+    # |------------------------|
+    if writeIt:
+        outFileIP.close() 
+        outFileIS.close() 
     
+    
+    # |-------------------|
+    # |--- Save figure ---|    
+    # |-------------------|
     if figName:
         plt.savefig('dingo1d_'+figName+picType)
     else:
@@ -1709,7 +1763,7 @@ def getMasses(widMap, densMap, outFoV, pix2FOV, printIt=True):
 # |--------------------|
 # |--- Main Wrapper ---|
 # |--------------------|
-def dingoWrapper(args, doInner=False):
+def dingoWrapper(args):
     """ 
     Function that goes from the command line to the appropriate DINGO
     procedure. It can also be used for external calls by passing the 
@@ -1717,8 +1771,9 @@ def dingoWrapper(args, doInner=False):
     in the order shown
     
     Inputs:
-        args: an array/list with the following parameters (in order)
+        args: an array/list with the following parameters
     
+            MAIN PARAMS: (required, in order)
             logFile: the name/path for log file from WOMBAT
     
             ids: the integer line number(s) of the fit of interest in the 
@@ -1731,10 +1786,13 @@ def dingoWrapper(args, doInner=False):
                         1D - line plot (in place and in situ)
                         2D - plane of sky contour plot
                         3D - interactive 3D scatter plot                    
+
+            BONUS PARAMS: (not required, order doesn't matter as long as after main 3)
                         
             saveName: the name to use when saving figures. this parameter is 
                       not required and will default to generic names if not
                       provided
+    
     
             target: the name of the in situ satellite of interest. This is only 
                     needed for the 1D case and otherwise ignored Currently the
@@ -1763,13 +1821,74 @@ def dingoWrapper(args, doInner=False):
     #|--- Check the number of inputs ---|     
     #|----------------------------------|
     nArgs = len(args)
-    if (nArgs < 3) or (len(args) > 10):
+    textInput = False
+    if (nArgs == 2) or (len(args) > 10):
         print ('Incorrect number of parameters provided. Syntax is')
         for astr in errorStrings:
             print (astr)
         sys.exit()
+    # |--- Allow for single input if passing txt file ---|
+    elif nArgs == 1:
+        try:
+            inputData = np.genfromtxt(args[0], dtype=str)
+            textInput = True
+        except:
+            sys.exit('One have one input and cannot process as dingo config file')
     
+    #|--------------------------|
+    #|--- Process input file ---|     
+    #|--------------------------|
+    if textInput:
+        tags = inputData[:,0]
+        inputDict = {}
+        args = []
+        for i in range(len(tags)):
+            aTag= tags[i].replace(':','').lower()
+            inputDict[aTag] = inputData[i,1]
+
+        # |--- Log file ---|    
+        if 'logfile' in inputDict.keys():
+            args.append(inputDict['logfile'])
+        else:
+            sys.exit('Dingo config file missing logfile entry')
+        # |--- IDs ---|    
+        if 'ids' in inputDict.keys():
+            args.append(inputDict['ids'])
+        else:
+            sys.exit('Dingo config file missing ids entry')
+        # |--- dim ---|    
+        if 'dim' in inputDict.keys():
+            args.append(inputDict['dim'])
+        else:
+            sys.exit('Dingo config file missing dim entry')
         
+        # |--- Optional params ---|
+        if 'pictype' in inputDict.keys():
+            if inputDict['pictype'].lower() in ['.png', '.pdf', 'png', 'pdf']:
+                args.append(inputDict['pictype'])
+            else:
+                sys.exit('Dingo config error - pictype must be .png or .pdf')
+        for atag in ['expf1', 'expf2', 'densratio', 'vcme']:
+            if atag in inputDict.keys():
+                try:
+                    temp = float(inputDict[atag])
+                except:
+                    sys.exit('Dingo config error - '+atag+' must be float')
+                args.append(atag+'_'+inputDict[atag])
+        if 'ds' in inputDict.keys():
+            try:
+                temp = int(inputDict['ds'])
+            except:
+                sys.exit('Dingo config error - ds must be integer')
+            args.append('ds_'+temp)
+        if 'doinner' in inputDict.keys():
+            if inputDict['doinner'] in [True, 'True', 'true', '1']:
+                args.append('doinner')   
+        if 'target' in  inputDict.keys():
+            args.append(inputDict['target'])
+        if 'savename' in inputDict.keys():
+            args.append(inputDict['savename'])
+                  
     #|--------------------------|
     #|--- Check the log file ---|     
     #|--------------------------|
@@ -1811,7 +1930,7 @@ def dingoWrapper(args, doInner=False):
         miniLog = logFile[txtIds,:]
         
         # |--- Check for pickle/instrument match ---|
-        if (len(np.unique(logFile[:, 13])) != 1) or (len(np.unique(miniLog[:, 1])) != 1):
+        if (len(np.unique(miniLog[:, 13])) != 1) or (len(np.unique(miniLog[:, 1])) != 1):
             print ('Currently selecting ', np.unique(miniLog[:, 13]))
             print ('                and ', np.unique(miniLog[:, 1]))
             sys.exit('Can only combine results using the same wombat pickle and the same instrument.')
@@ -1901,7 +2020,17 @@ def dingoWrapper(args, doInner=False):
     #|----------------------------------|
     #|--- Check the bonus parameters ---|     
     #|----------------------------------|
-    #|----------------------------------|    
+    #|----------------------------------|  
+    # Set the defaults
+    expf1 = 1
+    expf2 = 0.1
+    densratio = 1.8
+    vcme = 400
+    ds = 1
+    if mode == 3:
+        ds = 8
+    dI = False # doInner - take out mid gap of WFs
+      
     if len(args) >= 4:
         allBonus = args[3:]
         
@@ -1942,6 +2071,8 @@ def dingoWrapper(args, doInner=False):
                 else:
                     temp.append(aTag)
                 allBonus = np.array(temp)
+            if type(target) == type(None):
+                sys.exit('No target given for 1d mode, cannot proceed')
                 
                 
         #|--------------------------|
@@ -1960,11 +2091,6 @@ def dingoWrapper(args, doInner=False):
         #|----------------------------------------|
         #|--- Check for string specific params ---|     
         #|----------------------------------------|
-        # Set the defaults
-        expf1 = 1
-        expf2 = 0.1
-        densratio = 1.8
-        vcme = 400
         
         temp = []
         for aTag in allBonus:
@@ -1988,6 +2114,13 @@ def dingoWrapper(args, doInner=False):
                     vcme = float(aTag.lower().replace('vcme_',''))
                 except:
                     sys.exit('Error in converting '+aTag+' to vcme float')
+            elif 'ds_' in aTag.lower():
+                try: 
+                    ds = int(aTag.lower().replace('ds_',''))
+                except:
+                    sys.exit('Error in converting '+aTag+' to ds int')
+            elif aTag.lower() == 'doinner':
+                dI = True
             else:
                 temp.append(aTag)
         allBonus = np.array(temp)
@@ -2064,7 +2197,7 @@ def dingoWrapper(args, doInner=False):
             lineO = miniLog[pairIds[i][1],:]
             aboutMe.append(lineI[2]+ ' ' + lineI[1] + ' ' + lineI[3] + ' ' + lineO[3])
         # Make the wfs
-        aWFi = wf.wireframe(lineI[3])
+        aWFi = wf.wireframe(lineI[3].replace('Half', 'Half '))
         ps = []
         for i in range(9):
             if lineI[i+4] != 'None':
@@ -2073,7 +2206,7 @@ def dingoWrapper(args, doInner=False):
         aWFi.getPoints()
         wfsI.append(aWFi)
         if not singleWF:
-            aWFo = wf.wireframe(lineO[3])
+            aWFo = wf.wireframe(lineO[3].replace('Half', 'Half '))
             ps = []
             for i in range(9):
                 if lineO[i+4] != 'None':
@@ -2086,11 +2219,6 @@ def dingoWrapper(args, doInner=False):
     #|--------------|
     #|--- Run it ---|     
     #|--------------|
-    # Replace these with inputs?
-    dI = False
-    ds = 1
-    if mode == 3:
-        ds = 8
         
     #|--- Process mass maps into density ---|
     widMaps, xcMaps, densMaps, subMasss, outFoVs, pix2FOVs = [], [], [], [], [], []
@@ -2125,8 +2253,10 @@ def dingoWrapper(args, doInner=False):
         for i in range(nTimes):
             masses = getMasses(widMaps[i], densMaps[i], outFoVs[i], pix2FOVs[i], printIt=False)
             moreOut = ''
+            out = aboutMe[i] + ' '
             for mass in masses:
                 moreOut += '{:.2f}'.format(mass) + ' '
+            print (out+moreOut)
 
     #|----------------------|
     #|--- 1d - line plot ---|
@@ -2159,77 +2289,3 @@ def dingoWrapper(args, doInner=False):
 if __name__ == '__main__':
     dingoWrapper(sys.argv[1:])
 
-
-
-'''# python3 wombatProcessObs.py 2012-07-12T16:00 2012-07-13T05:00 HI1A rdiffHI
-# python3 wombatProcessObs.py 2012-07-13T20:00 2012-07-14T12:00 HI2A rdiffHI
-#theFile = 'wbPickles/WBGUI_temp.pkl'
-#theFile = 'wbPickles/test_solopsp.pkl'
-
-theFile = 'wbPickles/201207_COR2.pkl'
-
-# Open the pickle
-with open(theFile, 'rb') as file:
-    bkgData = pickle.load(file)
-
-# testing values 
-# COR2a tidx 17
-# SOLOHI 7
-
-#tidx = 6
-obs  ='COR2A'
-#tidx = 7
-
-if obs == 'COR2B':
-    tidx = 6
-elif obs == 'COR2A':
-    tidx = 9
-
-satDict = bkgData['satStuff'][obs][0][tidx]
-imMap = bkgData['proImMaps'][obs][0][tidx]
-showMap = bkgData['scaledIms'][obs][0][tidx][0]
-massMap = bkgData['massIms'][obs][tidx]
-
-#print (satDict['DATEOBS'])
-#print (imMap)
-dingoWrapper(sys.argv[1:])
-
-#awf = wf.wireframe('GCS')
-#awf.params = [253.5, 25.2, -13.5, 77.4, 54.9, 0.3]
-#awf.params = [10., 25.2, -13.5, 77.4, 54.9, 0.3]
-#awf.params = [50, 45, 0, 0., 50.0, 0.25]
-#awf.params = [45.2, 77.4, 26.1, 40.5, 59.4, 0.3] # solohi 2059
-
-# 20120712 COR2 at 17:54
-if True:
-    awf = wf.wireframe('GCS')
-    awf.params = [11.54, 5.4, -9.0, 73.8, 45.45, 0.4]
-awf.getPoints()
-
-# 20120712 COR2 at 17:54
-if True:
-    awf2 = wf.wireframe('Sphere') 
-    awf2.params = [11.93, 5.4, -6.3, 60.30]
-    awf2.getPoints()
-else:
-    awf2 = None
-    
-#awf2.params = [11.2, 25.2, -2.7, 66] # COR2A 17:54
-#awf2.params = [36.2, 43.2, -5.4, 70]
-#awf2.params = [266.74, 25.2, -13.5, 55]
-#awf2.getPoints()
-
-ds = 1
-dI = False
-if type(awf2) == type(None):
-    widMap, xcMap, densMap, subMass, outFoV, pix2FOV  = mass2dens(imMap, satDict, awf, massMap, doInner=dI,  downSelect=ds)  
-else:
-    widMap, xcMap, densMap, subMass, outFoV, pix2FOV  = mass2dens(imMap, satDict, [awf, awf2], massMap, doInner=dI,  densRatio=1.8, downSelect=ds)  
-
-#allPts = dingo3d(widMap, xcMap, densMap,outFoV, pix2FOV, shell=True, plotIt=True)
-#dingo2d(densMap, outFoV, pix2FOV, figName = 'DINGO_contour'+obs+'.png')
-#dingo2d(densMap, outFoV, pix2FOV)
-#getMasses(widMap, densMap, outFoV, pix2FOV)
-
-obsSat = get_horizons_coord('Wind', time=satDict['DATEOBS'])
-dingo1d(imMap, widMap, xcMap, densMap, outFoV, pix2FOV, obsSat, vCME=550, scaleFactors=[1., 0.1])'''
