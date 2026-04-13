@@ -193,7 +193,7 @@ class wireframe():
     
      
     """
-    def __init__(self, WFtype, WFidx=-1):
+    def __init__(self, WFtype, WFidx=-1, doBack=False):
         """
         Initial set up for a wireframe object 
         
@@ -237,6 +237,7 @@ class wireframe():
             self.points   = None # the WF grid points in theoryland coords
             self.showMe   = True
             self.WFidx  = WFidx
+            self.doBack   = doBack
             
         
         #|-------------------------------|
@@ -315,6 +316,7 @@ class wireframe():
         WFtype = self.WFtype
         ps = self.params
         gps = self.gPoints
+        doBack = self.doBack
         
         # |-------------------------------------------------------|
         # |-------------------------------------------------------|
@@ -452,10 +454,10 @@ class wireframe():
         # |------ Spherioid F/H ------|
         # |---------------------------|
         elif WFtype in ['Sphere', 'Half Sphere']:
-            if WFtype == 'Sphere':
-                thetas = np.linspace(-pi, pi, gps[0], endpoint=True)
-            else:
+            if WFtype == 'Half Sphere' and not doBack:
                 thetas = np.linspace(-pi/2, pi/2, gps[0], endpoint=True)
+            else:
+                thetas = np.linspace(-pi, pi, gps[0], endpoint=True)
             phis   = np.linspace(0, pi, gps[1], endpoint=True)
             
             # H is height of front, not center so gotta do some math
@@ -469,6 +471,11 @@ class wireframe():
             # Make a sphere in cartesian
             sphere = r*np.array([np.sin(phiMEGA)*np.cos(thetaMEGA), np.sin(phiMEGA)*np.sin(thetaMEGA), np.cos(phiMEGA)])
             
+            # Flatten the back part of halfsies case
+            if (WFtype == 'Half Sphere') and doBack:
+                back = np.where(np.abs(thetaMEGA) > np.pi/2)
+                sphere[0,back] = 0.
+            
             # Adjust it along the x axis
             sphere[0] += h - r
             
@@ -479,12 +486,12 @@ class wireframe():
         # |------ Ellipse F/H ------|
         # |-------------------------|
         elif WFtype in ['Ellipse', 'Half Ellipse']: 
-            if WFtype == 'Ellipse':
-                thetas = np.linspace(-pi, pi, gps[0], endpoint=True)
-            else:
+            if WFtype == 'Half Ellipse' and not doBack:
                 thetas = np.linspace(-pi/2, pi/2, gps[0], endpoint=True)
+            else:
+                thetas = np.linspace(-pi, pi, gps[0], endpoint=True)
             phis   = np.linspace(0, pi, gps[1], endpoint=True)
-            
+                        
             # H is height of front, not center so gotta do some math
             h, aw, ep, er = ps[0], ps[4]*dtor, ps[5], ps[6]
             
@@ -497,7 +504,15 @@ class wireframe():
             thetaMEGA = np.array([thetas]*gps[1]).reshape([-1])
             phiMEGA = np.array([[phis[i]]*gps[0] for i in range(gps[1])]).reshape([-1])
             # Make a sphere in cartesian
-            ell = np.array([rr*np.sin(phiMEGA)*np.cos(thetaMEGA) + h-rr, rp*np.sin(phiMEGA)*np.sin(thetaMEGA), r*np.cos(phiMEGA)])
+            ell = np.array([rr*np.sin(phiMEGA)*np.cos(thetaMEGA), rp*np.sin(phiMEGA)*np.sin(thetaMEGA), r*np.cos(phiMEGA)])
+            
+            # Flatten the back part of halfsies case
+            if (WFtype == 'Half Ellipse') and doBack:
+                back = np.where(np.abs(thetaMEGA) > np.pi/2)
+                ell[0,back] = 0.
+            
+            # Adjust it along the x axis    
+            ell[0] += h - rr    
             
             # Convert from theoryland to StonyCart
             self.points = np.transpose(rotz(roty(rotx(ell, ps[3]), -ps[2]), ps[1])) 

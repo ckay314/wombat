@@ -414,8 +414,9 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
         else:
             multiMode = True
             awf2 = awf[1]
-            awf  = awf[0]
+            awf  = awf[0]            
 
+            
     # save downselect input as the final downselect
     # (will use same var name for interp downselects in middle)
     downSelectF = downSelect
@@ -1100,7 +1101,48 @@ def dingo2d(widMaps, densMaps, outFoVs, pix2FOVs, showLog=False, figName=None, t
     # indices of where we actually want contour panels
     gy = range(gny)
     
-    fig = plt.figure(figsize=fSizes[myStyle])
+
+    #|--------------------------|    
+    #|--- Unpackage all FoVs ---|
+    #|--------------------------| 
+    # The FoV is a square surrounding the nonzero region
+    # but each time will have a diff square
+    # The values are pix wrt the original size given to
+    # mass2dens (probably 1024 unless adventurous code usage)
+    minpxs, maxpxs, minpys, maxpys, downSizes = [], [], [], [], []
+    for i in range(nTimes):   
+        minpx, maxpx, minpy, maxpy, downSize = outFoVs[i]
+        minpxs.append(minpx)
+        maxpxs.append(maxpx)
+        minpys.append(minpy)
+        maxpys.append(maxpy)
+        # downsize should be same for all
+    # Get min/max range in each of xy
+    limxs = [np.min(minpxs), np.max(maxpxs)]    
+    limys = [np.min(minpys), np.max(maxpys)]    
+    npx = limxs[1] - limxs[0] + 1
+    npy = limys[1] - limys[0] + 1
+    
+    # Ignoring posibility of weirdly wide but short
+    aspR = npx / npy
+    if aspR > 0.9:
+        nsq = np.max([npx, npy])
+        if npx < nsq:
+            limxs[1] += nsq - npx 
+        elif npy < nsq:
+            limys[1] += nsq - npy 
+        picx, picy = nsq, nsq
+        figmod = 1
+    else:
+        picx, picy = npx, npy
+        figmod = 0.1 + 0.9*aspR
+    
+
+    #|----------------------------|    
+    #|--- Actually make figure ---|
+    #|----------------------------|
+    fsize = fSizes[myStyle]
+    fig = plt.figure(figsize=(fsize[0]*figmod, fsize[1]))
     gs = gridspec.GridSpec(gny, gnx, width_ratios=widRats)
     gs.update(wspace=0.05)
     gs.update(hspace=0.15)
@@ -1133,42 +1175,16 @@ def dingo2d(widMaps, densMaps, outFoVs, pix2FOVs, showLog=False, figName=None, t
     elif gny == 4:
         cax = plt.subplot(gs[1:3,-1])
     
-
-    #|--------------------------|    
-    #|--- Unpackage all FoVs ---|
-    #|--------------------------| 
-    # The FoV is a square surrounding the nonzero region
-    # but each time will have a diff square
-    # The values are pix wrt the original size given to
-    # mass2dens (probably 1024 unless adventurous code usage)
-    minpxs, maxpxs, minpys, maxpys, downSizes = [], [], [], [], []
-    for i in range(nTimes):   
-        minpx, maxpx, minpy, maxpy, downSize = outFoVs[i]
-        minpxs.append(minpx)
-        maxpxs.append(maxpx)
-        minpys.append(minpy)
-        maxpys.append(maxpy)
-        # downsize should be same for all
-    # Get min/max range in each of xy
-    limxs = [np.min(minpxs), np.max(maxpxs)]    
-    limys = [np.min(minpys), np.max(maxpys)]    
-    npx = limxs[1] - limxs[0] + 1
-    npy = limys[1] - limys[0] + 1
-    nsq = np.max([npx, npy])
-    if npx < nsq:
-        limxs[1] += nsq - npx 
-    elif npy < nsq:
-        limys[1] += nsq - npy 
     
     #|-------------------------|    
     #|--- Process each time ---|
     #|-------------------------|
     # Holders for the results
-    allDens1 = np.zeros([nTimes, nsq, nsq])
-    allpxx   = np.zeros([nTimes, nsq, nsq])
-    allpyy   = np.zeros([nTimes, nsq, nsq])
+    allDens1 = np.zeros([nTimes, picy, picx])
+    allpxx   = np.zeros([nTimes, picy, picx])
+    allpyy   = np.zeros([nTimes, picy, picx])
     if multiMode:
-        allDens2 = np.zeros([nTimes, nsq, nsq])
+        allDens2 = np.zeros([nTimes, picy, picx])
     
     # |--- Time loop ---|    
     for i in range(nTimes):   
@@ -1414,7 +1430,7 @@ def dingo1d(myMaps, widMapIns, xcMapIns, densMapIns, outFoVs, pix2FoVs, obsSats,
         # |--- Get Sun-sat intersect with pts ---|
         # |--------------------------------------|
         # Make a line connecting sun to sat
-        npts = 100
+        npts = 300
     
         sat = [res[0][0], res[1][0], res[2][0]]
         sun = [res[0][1], res[1][1], res[2][1]]
@@ -2001,6 +2017,8 @@ def dingoWrapper(args):
         mode = 0
     elif dim in ['1', '1d']:
         mode = 1
+        if len(args) < 4:
+            sys.exit('Missing arguments (probably target) for 1d mode')
     elif dim in ['2', '2d']:
         mode = 2
         if nTimes > 8:
@@ -2073,7 +2091,6 @@ def dingoWrapper(args):
                 allBonus = np.array(temp)
             if type(target) == type(None):
                 sys.exit('No target given for 1d mode, cannot proceed')
-                
                 
         #|--------------------------|
         #|--- Check for pic type ---|     
@@ -2197,7 +2214,7 @@ def dingoWrapper(args):
             lineO = miniLog[pairIds[i][1],:]
             aboutMe.append(lineI[2]+ ' ' + lineI[1] + ' ' + lineI[3] + ' ' + lineO[3])
         # Make the wfs
-        aWFi = wf.wireframe(lineI[3].replace('Half', 'Half '))
+        aWFi = wf.wireframe(lineI[3].replace('Half', 'Half '), doBack=True)
         ps = []
         for i in range(9):
             if lineI[i+4] != 'None':
@@ -2206,7 +2223,7 @@ def dingoWrapper(args):
         aWFi.getPoints()
         wfsI.append(aWFi)
         if not singleWF:
-            aWFo = wf.wireframe(lineO[3].replace('Half', 'Half '))
+            aWFo = wf.wireframe(lineO[3].replace('Half', 'Half '), doBack=True)
             ps = []
             for i in range(9):
                 if lineO[i+4] != 'None':
