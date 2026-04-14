@@ -902,7 +902,7 @@ class ParamWindow(QMainWindow):
         # Check if doing single sat or all
         outStr = 'BkgPickle: ' + bkgpkl + '\n'
         outFile.write(outStr)
-        outStr = 'TimeIdx: ' +str(self.Tslider.value())
+        outStr = 'TimeIdx: ' +str(self.Tsliders[0].value())
         outFile.write(outStr+'\n')
         if ovw:
             outStr = 'OVWindow:  True'

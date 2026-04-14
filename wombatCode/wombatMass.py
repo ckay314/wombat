@@ -61,12 +61,19 @@ def elTheory(Rin,theta, center=False, limb=0.63, returnAll=False):
     if not center:
         const = const/(1-u/3) # convert to mean solar brightness
     
-    if theta >= 90:
-        theta = 180 - theta
-    if theta <= -90:
-        theta = 180 + theta
-    if np.abs(theta) > 90:
-        sys.exit('Theta greater than 90 in elTheory, should check why')
+    if type(theta) in [type(float), type(int)]:
+        if theta >= 90:
+            theta = 180 - theta
+        if theta <= -90:
+            theta = 180 + theta
+        if np.abs(theta) > 90:
+            sys.exit('Theta greater than 90 in elTheory, should check why')
+    if isinstance(theta, np.ndarray):
+        gt90 = np.where(theta > 90)
+        theta[gt90] = 180 - theta[gt90]
+        lt90 = np.where(theta < -90)
+        theta[lt90] = 180 + theta[gt90]
+
     
     # Deproject distance    
     R = Rin/np.cos(theta/radeg)
