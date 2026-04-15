@@ -1,3 +1,116 @@
+"""
+Density Inferred from Nice Grid Object (DINGO) Module
+
+Set of functions to take a wombat pickle and recon log file and line(s)
+of interest, convert the mass/pixel map into densities, and compute 
+results in zero to three dimensions.
+    
+    0D - total mass
+    1D - density profile both in place at the time of the remote obs
+         and propagated to a specific target satellite 
+    2d - contour map of density
+    3d - interactive 3d scatter plot of densities
+
+The script is run either by passing a series of arguments via the command
+line or by passing a single dingo_config text file. For the command line 
+the arguments are
+
+    MAIN PARAMS: (required, in order)
+        logFile: the name/path for log file from WOMBAT
+
+        ids: the integer line number(s) of the fit of interest in the 
+             logFile. Two fits can be passed (for sheath + eject) using
+             a plus sign with no spaces (e.g. 10+11 for lines 10 and 11)
+
+        dingoDim: a strong for the dimensions for the density calculation. 
+                  the option are 0D, 1D, 2D, 3D which correspond to:
+                    0D - total mass
+                    1D - line plot (in place and in situ)
+                    2D - plane of sky contour plot
+                    3D - interactive 3D scatter plot                    
+
+    BONUS PARAMS: (not required, order doesn't matter as long as after main 3)
+                    
+        saveName: the name to use when saving figures. this parameter is 
+                  not required and will default to generic names if not
+                  provided
+
+
+        target: the name of the in situ satellite of interest. This is only 
+                needed for the 1D case and otherwise ignored Currently the
+                supported options are ACE, BepiColombo, DSCOVR, MAVEN, 
+                PSP, SolO, STEREO-A, STEREO-B, VEX, Wind. Additional
+                satellites could be added as long as they exist in
+                sunpy get_horizons_coord and the correct form of the tag
+                is used. We allow some common short forms of these names 
+                (e.g Bepi, STA, ...) and nothing is case sensitive. 
+
+        *** Flags - must be included as shown below, all default to false if they
+            are not included ***
+
+        doinner: a flag to try and remove the space corresponding to an internal 
+                 gap between the legs of a GCS/torus wireframe. This is only meant
+                 to be used if the gap is obscured from the satellites PoV, the 
+                 gap will automatically be included when it is observed. This is not
+                 fully tested and discourage use for now.
+
+        projoff: a flag to not include projection effects when converting masses to
+                 densities. The code calculates the Billings factor for each pixel 
+                 using the corresponding wireframe center at that point and corrects
+                 the observed mass. This correction factor is capped at a max of 10
+                 and warns about large plane-of-sky separations
+                 (defaults to including projection)
+        
+        logplot: a flag to plot 2d contours in a log scale instead of linear
+
+
+
+        *** Prefix tags - the following options all require using the listed prefix 
+            with the # replaced by the desired value (e.g. expf1_0.4 would set  
+            expf1 at 0.4) ***
+           
+        expf1_#: the first expansion factor which sets the amount of the expansion
+                 in the nonradial direction. The value is the ratio of the physical
+                 size at the time of impact (width in perp direction) compared to what
+                 it would be with self-similar expansion
+                 (Only used in 1D, defaults to 1)
+
+        expf2_#: the second expansion factor which sets the rate of the radial
+                 expansion speed relative to the radial propagation speed. The 
+                 # should be a decimal value between 0 and 1 (and likely closer to 0)
+                 (Only used in 1D, defaults to 0.1)
+
+        densratio_#: the ratio between the inner and outer wireframe densities (n1/n2).
+                     the densities vary from pixel to pixel but the ratio between the 
+                     two remains the same in any overlapping regions
+                     (defaults to 1.)
+
+        vcme_#: the average interplanetary velocity of the CME. this allows conversion
+                of the initial distances into in situ times which only should be taken
+                as representative as DINGO does not include any IP evolution beyond expansion
+                (Only used in 1D, defaults to 400)
+
+        ds_#: an integer indicating how much to downselect the resolution from the input 
+              mass maps. Running full resolution is fine for modes 0-2 but it will break
+              3d scatter plots.
+              (defaults to 8 for 3D mode, 1 for everything else)
+
+
+Alternatively, one can just pass a dingo_config text file. This is a simple text file 
+with two columns containing the nametag+':' (nametag from the above options) and the 
+corresponding values. For example, a file could contain:
+    logFile:	wbOutputs/WomBlog.txt
+    ids:		5+6
+    dim:		2d
+    logplot:	True
+                
+The code will either save a plot (if saveName is given) or pop up a window with the
+desired figure. In the case of a 1D figure, the a save name will also be used to save
+the in place and in situ profile as text files (dingo_IP/IS_savename.dat)
+
+"""
+
+
 import pickle
 import astropy.units as u
 from astropy.coordinates import SkyCoord
@@ -33,7 +146,7 @@ slogger.setLevel(logging.ERROR)
 alogger = logging.getLogger('astropy')
 alogger.setLevel(logging.ERROR)
 # Turn off divide warning globally
-np.seterr(divide='ignore')
+np.seterr(divide='ignore', invalid='ignore')
 
 global picType
 picType = '.png' # either '.png' or '.pdf'
@@ -745,15 +858,21 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
         sun_dz = sunxyz[2] - f_fovz
         sun_vec = np.array([sun_dx1, sun_dy, sun_dz] )
         sunDists = np.sqrt(sun_dx1**2 + sun_dy**2 + sun_dz**2)* maskMap[0]
-        
-        sun_uvec = sun_vec / sunDists
 
         projR = np.sqrt(sun_dy **2 + sun_dz**2)
         PoSang = np.arctan2(-sun_dx1, projR) * 180 / np.pi
         
         rdp, Bfact = elTheory(projR, PoSang)
         rdp0, Bfact0 = elTheory(projR, 0)
-        deprojScale[0] = Bfact/Bfact0 * maskMap[0]       
+        deprojScale[0] = Bfact/Bfact0 * maskMap[0]  
+        bigProj = np.where((deprojScale[0] < 0.1) & (deprojScale[0] != 0.))  
+        allProj = np.where(deprojScale[0] != 0.)
+        if len(bigProj[0]) > 0:
+            deprojScale[0][bigProj] = 0.1
+            print ('!!!------ Warning ------!!!')
+            print ('Wireframe shape includes points far from plane of sky')
+            print (str(len(bigProj[0])) + ' pixels ('+'{:3.1f}'.format(100*len(bigProj[0])/len(allProj[0]))+'%) have deprojection factor of 10x or greater' )
+            print( 'Capping these points at 10x')
         
         if multiMode:
             sun_dx1 = sunxyz[0] - xcMap[2]
@@ -770,6 +889,15 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
             rdp, Bfact = elTheory(projR, PoSang)
             rdp0, Bfact0 = elTheory(projR, 0)
             deprojScale[1] = Bfact/Bfact0 * maskMap[2]
+            bigProj = np.where((deprojScale[1] < 0.1) & (deprojScale[1] != 0.))  
+            allProj = np.where(deprojScale[1] != 0.)
+            if len(bigProj[0]) > 0:
+                deprojScale[1][bigProj] = 0.1
+                print ('!!!------ Warning ------!!!')
+                print ('Wireframe 2 shape includes points far from plane of sky')
+                print (str(len(bigProj[0])) + ' pixels ('+'{:3.1f}'.format(100*len(bigProj[0])/len(allProj[0]))+'%) have deprojection factor of 10x or greater' )
+                print( 'Capping these points at 10x')
+            
         
         #fig = plt.figure()
         #plt.imshow(deprojScale[1], origin='lower')
@@ -1174,7 +1302,7 @@ def dingo3d(widMap, xcMap, densMap, outFoV, pix2FOV, shell=True, plotIt=True):
 # |----------------------------|
 # |--- Density Contour plot ---|
 # |----------------------------|
-def dingo2d(widMaps, densMaps, outFoVs, pix2FOVs, showLog=False, figName=None, times=None):
+def dingo2d(widMaps, densMaps, maskMaps, outFoVs, pix2FOVs, showLog=False, figName=None, times=None):
     # The first four params need to be packaged as lists, even if passing a single time    
     
     #|------------------|
@@ -1198,7 +1326,7 @@ def dingo2d(widMaps, densMaps, outFoVs, pix2FOVs, showLog=False, figName=None, t
     # Figure size dictionary
     fSizes  = {'1s':(6.8,5.),'2s':(4,5), '3s':(4,8.), '4s':(4,10.), '5s':(8,8.), '6s':(8,8.), '7s':(6.5,11.), '8s':(6.5,11.), '1m':(7,3.8),'2m':(7,6.6), '3m':(7,8.), '4m':(7,10.), '5m':(10,7.), '6m':(10,7.), '7m':(10,9.), '8m':(10,9.)}
     # Number of plot panels and width_ratios
-    rval = 0.88
+    rval = 0.85
     lval = 0.1
     if (nTimes <= 4) and not multiMode:
         gnx = 2
@@ -1266,7 +1394,7 @@ def dingo2d(widMaps, densMaps, outFoVs, pix2FOVs, showLog=False, figName=None, t
         figmod = 1
     else:
         picx, picy = npx, npy
-        figmod = 0.1 + 0.9*aspR
+        figmod = 0.3 + 0.7*aspR
     
 
     #|----------------------------|    
@@ -1349,11 +1477,11 @@ def dingo2d(widMaps, densMaps, outFoVs, pix2FOVs, showLog=False, figName=None, t
         dzs[0,:] = dzs[1,:]
         cellArea = dys * dzs
     
-        allDens1[i,dy:dy+sy,dx:dx+sx] = dens1
+        allDens1[i,dy:dy+sy,dx:dx+sx] = dens1 * maskMaps[i][0]
         allpxx[i,dy:dy+sy,dx:dx+sx] = pxx
         allpyy[i,dy:dy+sy,dx:dx+sx] = pyy
         if multiMode:
-            allDens2[i,dy:dy+sy,dx:dx+sx] = dens2
+            allDens2[i,dy:dy+sy,dx:dx+sx] = dens2 * maskMaps[i][2]
             
         # |--- Logify densities ---|
         if showLog:
@@ -1370,9 +1498,9 @@ def dingo2d(widMaps, densMaps, outFoVs, pix2FOVs, showLog=False, figName=None, t
                     dens2[negPts2] = minval2
                 logd2 = np.log10(dens2)
             #|--- Replace non log in the holder ---|    
-            allDens1[i,dy:dy+sy,dx:dx+sx] = logd1
+            allDens1[i,dy:dy+sy,dx:dx+sx] = logd1 * maskMaps[i][0]
             if multiMode:
-                allDens2[i,dy:dy+sy,dx:dx+sx] = logd2
+                allDens2[i,dy:dy+sy,dx:dx+sx] = logd2 * maskMaps[i][2]
                 
     #|----------------------|
     #|--- Fill in figure ---|
@@ -1384,32 +1512,45 @@ def dingo2d(widMaps, densMaps, outFoVs, pix2FOVs, showLog=False, figName=None, t
     
     power = int(np.log10(vval)) - 1
     scaleIt = 10 ** power
-    vval = vval / scaleIt
+    vvals = [-vval / scaleIt, vval / scaleIt]
+    
+    if showLog:
+        nz = allDens1[allDens1 !=0]
+        scaleIt = 1
+        vmax = int(np.percentile(nz, 90))
+        vvals = [vmax-3, vmax]
+        
     
     for i in range(nTimes):
         thisdens1 = allDens1[i,:,:]
+        mask1 = np.array(maskMaps[i][0])
         thisdens1[np.where(thisdens1 == 0)] = -9999
         # Grab the first for the cbar
         if i == 0:
-            im = axes[0][i].imshow(thisdens1/scaleIt, origin='lower', vmin=-vval, vmax=vval, cmap=cmap, extent=[limxs[0], limxs[1], limys[0], limys[1]])
+            im = axes[0][i].imshow(thisdens1/scaleIt, origin='lower', vmin=vvals[0], vmax=vvals[1], cmap=cmap, extent=[limxs[0], limxs[1], limys[0], limys[1]])
         else:
-            axes[0][i].imshow(thisdens1/scaleIt, origin='lower', vmin=-vval, vmax=vval, cmap=cmap, extent=[limxs[0], limxs[1], limys[0], limys[1]])
+            axes[0][i].imshow(thisdens1/scaleIt, origin='lower', vmin=vvals[0], vmax=vvals[1], cmap=cmap, extent=[limxs[0], limxs[1], limys[0], limys[1]])
         if type(times) != type(None):
             axes[0][i].set_title(times[i], fontsize=10,loc='right')
         
         if multiMode:
             thisdens2 = allDens2[i,:,:]
+            mask2 = np.array(maskMaps[i][2])
             thisdens2[np.where(thisdens2 == 0)] = -9999
-            axes[1][i].imshow(thisdens2/scaleIt, origin='lower', vmin=-vval, vmax=vval, cmap=cmap, extent=[limxs[0], limxs[1], limys[0], limys[1]])
+            axes[1][i].imshow(thisdens2/scaleIt, origin='lower', vmin=vvals[0], vmax=vvals[1], cmap=cmap, extent=[limxs[0], limxs[1], limys[0], limys[1]])
             xs = np.arange(limxs[0], limxs[1]+1, 1)
             ys = np.arange(limys[0], limys[1]+1, 1)
             xxxs, yyys = np.meshgrid(xs, ys)
-            axes[0][i].contour(xxxs, yyys,thisdens2, levels=[-9999], linestyles='--', colors='w')
-            axes[1][i].contour(xxxs, yyys,thisdens1, levels=[-9999], linestyles='--', colors='k')
-    
+            
+            axes[0][i].contour(xxxs, yyys, mask2, levels=[0], linestyles='--', colors='w')
+            axes[1][i].contour(xxxs, yyys, mask1, levels=[0], linestyles='--', colors='k')
+            
     # Add the color bar
-    cbar = plt.colorbar(im, cax=cax, orientation='vertical')     
-    cbar.set_label('Density (1e'+str(power)+' g cm$^{-3}$)', rotation=270, labelpad=15)
+    cbar = plt.colorbar(im, cax=cax, orientation='vertical')   
+    if showLog:
+        cbar.set_label('Log$_{10}$ Density (g cm$^{-3}$)', rotation=270, labelpad=15)
+    else:  
+        cbar.set_label('Density (1e'+str(power)+' g cm$^{-3}$)', rotation=270, labelpad=15)
     fig.subplots_adjust(right=rval, left=lval, top=0.95,bottom=0.1)
     if figName:
         plt.savefig('dingo2d_'+figName+picType)
@@ -1907,6 +2048,343 @@ def getMasses(widMap, densMap, outFoV, pix2FOV, printIt=True):
         return [mass1]
     
 
+
+# |--------------------------------------|
+# |--- Covert text file to args array ---|
+# |--------------------------------------|
+def input2args(inputData):
+    tags = inputData[:,0]
+    inputDict = {}
+    args = []
+    for i in range(len(tags)):
+        aTag= tags[i].replace(':','').lower()
+        inputDict[aTag] = inputData[i,1]
+
+    # |--- Log file ---|    
+    if 'logfile' in inputDict.keys():
+        args.append(inputDict['logfile'])
+    else:
+        sys.exit('Dingo config file missing logfile entry')
+    # |--- IDs ---|    
+    if 'ids' in inputDict.keys():
+        args.append(inputDict['ids'])
+    else:
+        sys.exit('Dingo config file missing ids entry')
+    # |--- dim ---|    
+    if 'dim' in inputDict.keys():
+        args.append(inputDict['dim'])
+    else:
+        sys.exit('Dingo config file missing dim entry')
+    
+    # |--- Optional params ---|
+    if 'pictype' in inputDict.keys():
+        if inputDict['pictype'].lower() in ['.png', '.pdf', 'png', 'pdf']:
+            args.append(inputDict['pictype'])
+        else:
+            sys.exit('Dingo config error - pictype must be .png or .pdf')
+    for atag in ['expf1', 'expf2', 'densratio', 'vcme']:
+        if atag in inputDict.keys():
+            try:
+                temp = float(inputDict[atag])
+            except:
+                sys.exit('Dingo config error - '+atag+' must be float')
+            args.append(atag+'_'+inputDict[atag])
+    if 'ds' in inputDict.keys():
+        try:
+            temp = int(inputDict['ds'])
+        except:
+            sys.exit('Dingo config error - ds must be integer')
+        args.append('ds_'+temp)
+        
+    for atag in ['doinner', 'projoff', 'logplot']:    
+        if atag in inputDict.keys():
+            if inputDict[atag] in [True, 'True', 'true', '1']:
+                args.append(atag)   
+    if 'target' in  inputDict.keys():
+        args.append(inputDict['target'])
+    if 'savename' in inputDict.keys():
+        args.append(inputDict['savename'])
+    
+    return args
+
+# |-----------------------------|
+# |--- Process Required Args ---|
+# |-----------------------------|
+def processArgs(args):
+    #|--------------------------|
+    #|--- Check the log file ---|     
+    #|--------------------------|
+    if not os.path.exists(args[0]):
+        print ('Cannot find log file. Check location and/or call syntax')
+        for astr in errorStrings:
+            print (astr)
+        sys.exit()
+    else:
+        try:
+            logFile = np.genfromtxt(args[0], dtype=str)
+        except:
+            sys.exit('Error opening logFile, check that it is a WOMBAT log file')
+            
+    #|-------------------------|
+    #|--- Check the log ids ---|     
+    #|-------------------------|
+    idstr = args[1]
+    nplus = idstr.count('+')
+    singleWF = True # will overwrite later
+    saveName = None
+    
+    # Will work with no + (= single id)
+    splitstr = idstr.split('+')
+    ids = []
+    for aStr in splitstr:
+        try:
+            ids.append(int(aStr))
+        except:
+            print ('Error in converting id string to individual ids. Error at', aStr)
+            print('Full command line syntax is')
+            for astr in errorStrings:
+                print (astr)
+            sys.exit()
+            
+    # Check that things match as needed
+    pairTimes = None
+    pairIds   = None
+    if nplus > 0:
+        txtIds = np.array(ids) - 1 # indexing from 0 in python
+        miniLog = logFile[txtIds,:]
+        
+        # |--- Check for pickle/instrument match ---|
+        if (len(np.unique(miniLog[:, 13])) != 1) or (len(np.unique(miniLog[:, 1])) != 1):
+            print ('Currently selecting ', np.unique(miniLog[:, 13]))
+            print ('                and ', np.unique(miniLog[:, 1]))
+            sys.exit('Can only combine results using the same wombat pickle and the same instrument.')
+        
+        # |--- Check for two compatible shapes or single ---|
+        uniqTs = np.unique(miniLog[:, 2])
+        uniqShapes = np.unique(miniLog[:, 3])
+        if len(uniqShapes) > 2:
+            print ('Currently selecting ', np.unique(miniLog[:, 3]))
+            sys.exit('Can only combine results using two types of wireframes')
+        elif len(uniqShapes) == 1:
+            nTimes = len(uniqTs)
+            # need to sort miniLog bc unique will sort
+            # and were not doing any additional process for 
+            # multi wf here
+            sortIdx = np.argsort(miniLog[:,2])
+            miniLog = miniLog[sortIdx,:]
+        else:
+            singleWF  = False
+            inWFs = ['GCS', 'Torus', 'GCS*', 'Tube']
+            outWFs = ['Sphere', 'HalfSphere', 'Ellipse', 'HalfEllipse']
+            if (uniqShapes[0] in inWFs) and (uniqShapes[1] in outWFs):
+                inWF, outWF = uniqShapes[0], uniqShapes[1]
+            elif (uniqShapes[1] in inWFs) and (uniqShapes[0] in outWFs):
+                inWF, outWF = uniqShapes[1], uniqShapes[0]
+            else:
+                print ('Cannot combine selected WF types. Currently have ', uniqShapes)
+                print ('Need to select one from each of ')
+                print ('   ', inWFs, '(inner)')
+                print ('   ', outWFs, '(outer)')
+            
+            # |--- Make sure each time has both inner/outer ---|
+            pairTimes = []
+            pairIds   = []
+            for aTime in uniqTs:
+                flagIt = False
+                # Find the inner shape at this time
+                inIndex  = np.where((miniLog[:,2] == aTime) & (miniLog[:,3] == inWF))[0]
+                if len(inIndex) == 0:
+                    flagIt = True
+                    print ('Missing inner WF fit ('+inWF+') for', aTime, 'skipping it but running others')
+                elif len(inIndex) > 1:
+                    sys.exit('Multiple fits for '+inWF+ ' at time '+ aTime + ' cannot proceed')
+                # Find the inner shape at this time    
+                outIndex = np.where((miniLog[:,2] == aTime) & (miniLog[:,3] == outWF))[0]
+                if len(outIndex) == 0:
+                    flagIt = True
+                    print ('Missing outer WF fit ('+outWF+') for', aTime, 'skipping it but running others')
+                elif len(outIndex) > 1:
+                    sys.exit('Multiple fits for '+ outWF+ ' at time '+ aTime + ' cannot proceed')
+                if not flagIt:
+                    pairTimes.append(aTime)
+                    pairIds.append([inIndex[0], outIndex[0]])
+            nTimes = len(pairTimes)     
+    else:
+        line = logFile[ids[0]-1,:]
+        miniLog = np.array(line).reshape([1,-1])
+        uniqTs = np.unique(miniLog[:, 2])
+        uniqShapes = np.unique(miniLog[:, 3])
+        nTimes = 1
+        
+    #|-------------------------------|
+    #|--- Check the dimension tag ---|     
+    #|-------------------------------|
+    dim = args[2].lower()
+    if dim in ['0', '0d']:
+        mode = 0
+    elif dim in ['1', '1d']:
+        mode = 1
+        if len(args) < 4:
+            sys.exit('Missing arguments (probably target) for 1d mode')
+    elif dim in ['2', '2d']:
+        mode = 2
+        if nTimes > 8:
+            sys.exit('Quitting... 2D mode only supports 8 time steps or fewer.')
+    elif dim in ['3', '3d']:
+        mode = 3
+        if nTimes > 1:
+            sys.exit('Quitting... 3D mode only supports single time and given more than one.')
+    else:
+        print ('Error in reading dimension tag. Full command line syntax is')
+        for astr in errorStrings:
+            print (astr)
+        sys.exit()
+         
+    return logFile, miniLog, uniqTs, uniqShapes, nTimes, singleWF, saveName, mode, pairTimes, pairIds
+
+# |--------------------------|
+# |--- Process Bonus Args ---|
+# |--------------------------|
+def processBonusArgs(allBonus, mode):
+    # Set the defaults
+    expf1 = 1
+    expf2 = 0.1
+    densratio = 1.
+    vcme = 400
+    ds = 1
+    if mode == 3:
+        ds = 8
+    # Binary options, set at defaults
+    dI = False # doInner - take out mid gap of WFs
+    logPlot = False
+    deproj  = True
+    target = None
+    
+    #|------------------------|
+    #|--- Check for target ---|     
+    #|------------------------|
+    # Only in 1D mode
+    satNames = ['ace', 'bepi', 'bepicolombo', 'dscovr', 'maven', 'parker', 'parkersolarprobe', 'parker_solar_probe', 'psp', 'solarorbiter', 'solo', 'so', 'stereoa', 'stereo-a', 'sta', 'stereob', 'stereo-b', 'stb', 'venusexpress', 'venus_express', 'vex', 've', 'wind']
+    
+    if mode == 1:
+        temp = []
+        for aTag in allBonus:
+            if aTag.lower() in satNames:
+                if type(target) == type(None):
+                    targetIn = aTag.lower()
+                    # Convert target to a code we know works with get_horizons_coord
+                    if targetIn in ['ace', 'dscovr', 'maven', 'wind']:
+                        target = targetIn
+                    elif targetIn in ['ace']:
+                        target = -92
+                    elif targetIn in ['bepi', 'bepicolombo']:
+                        target = 'bepi'
+                    elif targetIn in ['parker', 'parkersolarprobe', 'parker_solar_probe', 'psp']:
+                        target = 'psp'
+                    elif targetIn in ['solarorbiter', 'solo', 'so']:
+                        target = 'solo'
+                    elif targetIn in ['stereoa', 'stereo-a', 'sta']:
+                        target = 'stereo-a'
+                    elif targetIn in ['stereob', 'stereo-b', 'stb']:
+                        target = 'stereo-b'
+                    elif targetIn in ['venusexpress', 'venus_express', 'vex']:
+                        target = 'vex'
+                else:
+                    print('Multiple target tags provided, cannot proceed')
+                    print('   args include', target, aTag.lower())
+                    print('')
+                    sys.exit('(Check that save name is not an exact match to satellite tag)')
+            else:
+                temp.append(aTag)
+            allBonus = np.array(temp)
+        if type(target) == type(None):
+            sys.exit('No target given for 1d mode, cannot proceed')
+            
+    #|--------------------------|
+    #|--- Check for pic type ---|     
+    #|--------------------------|
+    temp = []
+    for aTag in allBonus:
+        if aTag.lower() in ['png', '.png', 'pdf', '.pdf']:
+            picType = aTag.lower()
+            if picType[0] != '.':
+                picType = '.' + picType
+        else:
+            temp.append(aTag)
+    allBonus = np.array(temp)      
+            
+    #|----------------------------------------|
+    #|--- Check for string specific params ---|     
+    #|----------------------------------------|
+    
+    temp = []
+    for aTag in allBonus:
+        if 'expf1_' in aTag.lower():
+            try: 
+                expf1 = float(aTag.lower().replace('expf1_',''))
+            except:
+                sys.exit('Error in converting '+aTag+' to expf1 float')
+        elif 'expf2_' in aTag.lower():
+            try: 
+                expf2 = float(aTag.lower().replace('expf2_',''))
+            except:
+                sys.exit('Error in converting '+aTag+' to expf2 float')
+        elif 'densratio_' in aTag.lower():
+            try: 
+                densratio = float(aTag.lower().replace('densratio_',''))
+            except:
+                sys.exit('Error in converting '+aTag+' to densratio float')
+        elif 'vcme_' in aTag.lower():
+            try: 
+                vcme = float(aTag.lower().replace('vcme_',''))
+            except:
+                sys.exit('Error in converting '+aTag+' to vcme float')
+        elif 'ds_' in aTag.lower():
+            try: 
+                ds = int(aTag.lower().replace('ds_',''))
+            except:
+                sys.exit('Error in converting '+aTag+' to ds int')
+        elif aTag.lower() == 'doinner':
+            dI = True
+        elif aTag.lower() == 'projoff':
+            deproj = False
+        elif aTag.lower() == 'logplot':
+            logPlot = True    
+        
+        else:
+            temp.append(aTag)
+    allBonus = np.array(temp)
+    
+    #|-------------------------------------|
+    #|--- Check for remaining save name ---|     
+    #|-------------------------------------|
+    saveName = None
+    if len(allBonus) == 1:
+        saveName = allBonus[0]
+        # Pull out main name, no .txt .png .pdf
+        if '.png' in saveName:
+            saveName = saveName.replace('.png', '')
+            picType  = '.png'
+        elif '.pdf' in saveName:
+            saveName = saveName.replace('.png', '')
+            picType  = '.pdf'
+        elif '.txt' in saveName:
+            saveName = saveName.replace('.txt', '')
+            
+    elif len(allBonus) > 1:
+        print ('Too many unprocessed inputs to assign the last one to save name')
+        print ('Have', allBonus, 'remaining')
+        
+        print ('Full command line syntax is')
+        for astr in errorStrings:
+            print (astr)
+        sys.exit()
+            
+            
+    return target, expf1, expf2, densratio, vcme, ds, dI, logPlot, deproj
+    
+
+
 # |--------------------|
 # |--- Main Wrapper ---|
 # |--------------------|
@@ -1954,16 +2432,17 @@ def dingoWrapper(args):
     
     """
     
+    #|--------------|
+    #|--------------|
+    #|--- Set up ---|
+    #|--------------|
+    #|--------------|    
+    
     #|--- Standard input error message ---|
+    global errorStrings
     errorStrings = [' ', '  python3 dingo.py logFile id(s) dim otherParams', '          where:', '          - logFile is a wombat log file', '          - ids is an integer or int+int', '          - dim set the mode/dimensions from [0D, 1D, 2D, 3D]', '          - otherParams includes target (only for 1D), pic type,', '             save name, expf1_*, expf2_*, vcme_*, and densratio_*']
     
-    
-    #|-------------------------------------|
-    #|-------------------------------------|
-    #|--- Check the critical parameters ---|     
-    #|-------------------------------------|
-    #|-------------------------------------|
-    
+
     #|----------------------------------|
     #|--- Check the number of inputs ---|     
     #|----------------------------------|
@@ -1986,329 +2465,39 @@ def dingoWrapper(args):
     #|--- Process input file ---|     
     #|--------------------------|
     if textInput:
-        tags = inputData[:,0]
-        inputDict = {}
-        args = []
-        for i in range(len(tags)):
-            aTag= tags[i].replace(':','').lower()
-            inputDict[aTag] = inputData[i,1]
-
-        # |--- Log file ---|    
-        if 'logfile' in inputDict.keys():
-            args.append(inputDict['logfile'])
-        else:
-            sys.exit('Dingo config file missing logfile entry')
-        # |--- IDs ---|    
-        if 'ids' in inputDict.keys():
-            args.append(inputDict['ids'])
-        else:
-            sys.exit('Dingo config file missing ids entry')
-        # |--- dim ---|    
-        if 'dim' in inputDict.keys():
-            args.append(inputDict['dim'])
-        else:
-            sys.exit('Dingo config file missing dim entry')
+        args = input2args(inputData) 
         
-        # |--- Optional params ---|
-        if 'pictype' in inputDict.keys():
-            if inputDict['pictype'].lower() in ['.png', '.pdf', 'png', 'pdf']:
-                args.append(inputDict['pictype'])
-            else:
-                sys.exit('Dingo config error - pictype must be .png or .pdf')
-        for atag in ['expf1', 'expf2', 'densratio', 'vcme']:
-            if atag in inputDict.keys():
-                try:
-                    temp = float(inputDict[atag])
-                except:
-                    sys.exit('Dingo config error - '+atag+' must be float')
-                args.append(atag+'_'+inputDict[atag])
-        if 'ds' in inputDict.keys():
-            try:
-                temp = int(inputDict['ds'])
-            except:
-                sys.exit('Dingo config error - ds must be integer')
-            args.append('ds_'+temp)
-        if 'doinner' in inputDict.keys():
-            if inputDict['doinner'] in [True, 'True', 'true', '1']:
-                args.append('doinner')   
-        if 'target' in  inputDict.keys():
-            args.append(inputDict['target'])
-        if 'savename' in inputDict.keys():
-            args.append(inputDict['savename'])
-                  
-    #|--------------------------|
-    #|--- Check the log file ---|     
-    #|--------------------------|
-    if not os.path.exists(args[0]):
-        print ('Cannot find log file. Check location and/or call syntax')
-        for astr in errorStrings:
-            print (astr)
-        sys.exit()
-    else:
-        try:
-            logFile = np.genfromtxt(args[0], dtype=str)
-        except:
-            sys.exit('Error opening logFile, check that it is a WOMBAT log file')
-
-    #|-------------------------|
-    #|--- Check the log ids ---|     
-    #|-------------------------|
-    idstr = args[1]
-    nplus = idstr.count('+')
-    singleWF = True # will overwrite later
-    saveName = None
-    
-    # Will work with no + (= single id)
-    splitstr = idstr.split('+')
-    ids = []
-    for aStr in splitstr:
-        try:
-            ids.append(int(aStr))
-        except:
-            print ('Error in converting id string to individual ids. Error at', aStr)
-            print('Full command line syntax is')
-            for astr in errorStrings:
-                print (astr)
-            sys.exit()
-            
-    # Check that things match as needed
-    if nplus > 0:
-        txtIds = np.array(ids) - 1 # indexing from 0 in python
-        miniLog = logFile[txtIds,:]
-        
-        # |--- Check for pickle/instrument match ---|
-        if (len(np.unique(miniLog[:, 13])) != 1) or (len(np.unique(miniLog[:, 1])) != 1):
-            print ('Currently selecting ', np.unique(miniLog[:, 13]))
-            print ('                and ', np.unique(miniLog[:, 1]))
-            sys.exit('Can only combine results using the same wombat pickle and the same instrument.')
-        
-        # |--- Check for two compatible shapes or single ---|
-        uniqTs = np.unique(miniLog[:, 2])
-        uniqShapes = np.unique(miniLog[:, 3])
-        if len(uniqShapes) > 2:
-            print ('Currently selecting ', np.unique(miniLog[:, 3]))
-            sys.exit('Can only combine results using two types of wireframes')
-        elif len(uniqShapes) == 1:
-            nTimes = len(uniqTs)
-            # need to sort miniLog bc unique will sort
-            # and were not doing any additional process for 
-            # multi wf here
-            sortIdx = np.argsort(miniLog[:,2])
-            miniLog = miniLog[sortIdx,:]
-        else:
-            singleWF = False
-            inWFs = ['GCS', 'Torus', 'GCS*', 'Tube']
-            outWFs = ['Sphere', 'HalfSphere', 'Ellipse', 'HalfEllipse']
-            if (uniqShapes[0] in inWFs) and (uniqShapes[1] in outWFs):
-                inWF, outWF = uniqShapes[0], uniqShapes[1]
-            elif (uniqShapes[1] in inWFs) and (uniqShapes[0] in outWFs):
-                inWF, outWF = uniqShapes[1], uniqShapes[0]
-            else:
-                print ('Cannot combine selected WF types. Currently have ', uniqShapes)
-                print ('Need to select one from each of ')
-                print ('   ', inWFs, '(inner)')
-                print ('   ', outWFs, '(outer)')
-            
-            # |--- Make sure each time has both inner/outer ---|
-            pairTimes = []
-            pairIds   = []
-            for aTime in uniqTs:
-                flagIt = False
-                # Find the inner shape at this time
-                inIndex  = np.where((miniLog[:,2] == aTime) & (miniLog[:,3] == inWF))[0]
-                if len(inIndex) == 0:
-                    flagIt = True
-                    print ('Missing inner WF fit ('+inWF+') for', aTime, 'skipping it but running others')
-                elif len(inIndex) > 1:
-                    sys.exit('Multiple fits for '+inWF+ ' at time '+ aTime + ' cannot proceed')
-                # Find the inner shape at this time    
-                outIndex = np.where((miniLog[:,2] == aTime) & (miniLog[:,3] == outWF))[0]
-                if len(outIndex) == 0:
-                    flagIt = True
-                    print ('Missing outer WF fit ('+outWF+') for', aTime, 'skipping it but running others')
-                elif len(outIndex) > 1:
-                    sys.exit('Multiple fits for '+ outWF+ ' at time '+ aTime + ' cannot proceed')
-                if not flagIt:
-                    pairTimes.append(aTime)
-                    pairIds.append([inIndex[0], outIndex[0]])
-            nTimes = len(pairTimes)     
-    else:
-        line = logFile[ids[0]-1,:]
-        miniLog = np.array(line).reshape([1,-1])
-        uniqTs = np.unique(miniLog[:, 2])
-        uniqShapes = np.unique(miniLog[:, 3])
-        nTimes = 1
-            
-
-    #|-------------------------------|
-    #|--- Check the dimension tag ---|     
-    #|-------------------------------|
-    dim = args[2].lower()
-    if dim in ['0', '0d']:
-        mode = 0
-    elif dim in ['1', '1d']:
-        mode = 1
-        if len(args) < 4:
-            sys.exit('Missing arguments (probably target) for 1d mode')
-    elif dim in ['2', '2d']:
-        mode = 2
-        if nTimes > 8:
-            sys.exit('Quitting... 2D mode only supports 8 time steps or fewer.')
-    elif dim in ['3', '3d']:
-        mode = 3
-        if nTimes > 1:
-            sys.exit('Quitting... 3D mode only supports single time and given more than one.')
-    else:
-        print ('Error in reading dimension tag. Full command line syntax is')
-        for astr in errorStrings:
-            print (astr)
-        sys.exit()
-    
-    
-    #|----------------------------------|
+    #|-------------------------------------|
+    #|--- Check the critical parameters ---|     
+    #|-------------------------------------|
+    logFile, miniLog, uniqTs, uniqShapes, nTimes, singleWF, saveName, mode, pairTimes, pairIds = processArgs(args)          
+                
     #|----------------------------------|
     #|--- Check the bonus parameters ---|     
     #|----------------------------------|
-    #|----------------------------------|  
     # Set the defaults
     expf1 = 1
     expf2 = 0.1
-    densratio = 1.8
+    densratio = 1.
     vcme = 400
     ds = 1
     if mode == 3:
         ds = 8
+    # Binary options, set at defaults
     dI = False # doInner - take out mid gap of WFs
+    logPlot = False
+    deproj  = True
       
     if len(args) >= 4:
         allBonus = args[3:]
-        
-        #|------------------------|
-        #|--- Check for target ---|     
-        #|------------------------|
-        # Only in 1D mode
-        satNames = ['ace', 'bepi', 'bepicolombo', 'dscovr', 'maven', 'parker', 'parkersolarprobe', 'parker_solar_probe', 'psp', 'solarorbiter', 'solo', 'so', 'stereoa', 'stereo-a', 'sta', 'stereob', 'stereo-b', 'stb', 'venusexpress', 'venus_express', 'vex', 've', 'wind']
-        if mode == 1:
-            target = None
-            temp = []
-            for aTag in allBonus:
-                if aTag.lower() in satNames:
-                    if type(target) == type(None):
-                        targetIn = aTag.lower()
-                        # Convert target to a code we know works with get_horizons_coord
-                        if targetIn in ['ace', 'dscovr', 'maven', 'wind']:
-                            target = targetIn
-                        elif targetIn in ['ace']:
-                            target = -92
-                        elif targetIn in ['bepi', 'bepicolombo']:
-                            target = 'bepi'
-                        elif targetIn in ['parker', 'parkersolarprobe', 'parker_solar_probe', 'psp']:
-                            target = 'psp'
-                        elif targetIn in ['solarorbiter', 'solo', 'so']:
-                            target = 'solo'
-                        elif targetIn in ['stereoa', 'stereo-a', 'sta']:
-                            target = 'stereo-a'
-                        elif targetIn in ['stereob', 'stereo-b', 'stb']:
-                            target = 'stereo-b'
-                        elif targetIn in ['venusexpress', 'venus_express', 'vex']:
-                            target = 'vex'
-                    else:
-                        print('Multiple target tags provided, cannot proceed')
-                        print('   args include', target, aTag.lower())
-                        print('')
-                        sys.exit('(Check that save name is not an exact match to satellite tag)')
-                else:
-                    temp.append(aTag)
-                allBonus = np.array(temp)
-            if type(target) == type(None):
-                sys.exit('No target given for 1d mode, cannot proceed')
-                
-        #|--------------------------|
-        #|--- Check for pic type ---|     
-        #|--------------------------|
-        temp = []
-        for aTag in allBonus:
-            if aTag.lower() in ['png', '.png', 'pdf', '.pdf']:
-                picType = aTag.lower()
-                if picType[0] != '.':
-                    picType = '.' + picType
-            else:
-                temp.append(aTag)
-        allBonus = np.array(temp)      
-                
-        #|----------------------------------------|
-        #|--- Check for string specific params ---|     
-        #|----------------------------------------|
-        
-        temp = []
-        for aTag in allBonus:
-            if 'expf1_' in aTag.lower():
-                try: 
-                    expf1 = float(aTag.lower().replace('expf1_',''))
-                except:
-                    sys.exit('Error in converting '+aTag+' to expf1 float')
-            elif 'expf2_' in aTag.lower():
-                try: 
-                    expf2 = float(aTag.lower().replace('expf2_',''))
-                except:
-                    sys.exit('Error in converting '+aTag+' to expf2 float')
-            elif 'densratio_' in aTag.lower():
-                try: 
-                    densratio = float(aTag.lower().replace('densratio_',''))
-                except:
-                    sys.exit('Error in converting '+aTag+' to densratio float')
-            elif 'vcme_' in aTag.lower():
-                try: 
-                    vcme = float(aTag.lower().replace('vcme_',''))
-                except:
-                    sys.exit('Error in converting '+aTag+' to vcme float')
-            elif 'ds_' in aTag.lower():
-                try: 
-                    ds = int(aTag.lower().replace('ds_',''))
-                except:
-                    sys.exit('Error in converting '+aTag+' to ds int')
-            elif aTag.lower() == 'doinner':
-                dI = True
-            else:
-                temp.append(aTag)
-        allBonus = np.array(temp)
-        
-        #|-------------------------------------|
-        #|--- Check for remaining save name ---|     
-        #|-------------------------------------|
-        saveName = None
-        if len(allBonus) == 1:
-            saveName = allBonus[0]
-            # Pull out main name, no .txt .png .pdf
-            if '.png' in saveName:
-                saveName = saveName.replace('.png', '')
-                picType  = '.png'
-            elif '.pdf' in saveName:
-                saveName = saveName.replace('.png', '')
-                picType  = '.pdf'
-            elif '.txt' in saveName:
-                saveName = saveName.replace('.txt', '')
-                
-        elif len(allBonus) > 1:
-            print ('Too many unprocessed inputs to assign the last one to save name')
-            print ('Have', allBonus, 'remaining')
-            
-            print ('Full command line syntax is')
-            for astr in errorStrings:
-                print (astr)
-            sys.exit()
-            
+        target, expf1, expf2, densratio, vcme, ds, dI, logPlot, deproj = processBonusArgs(allBonus, mode)
+                        
                
     #|--------------------------|
     #|--- Set up run details ---|     
     #|--------------------------|        
     #|--- Open the pickle ---|
-    if nplus == 0:
-        line = logFile[ids[0]-1,:]
-        miniLog = np.array(line).reshape([1,-1])
-    else:
-        line = miniLog[0,:]
-    
+    line = miniLog[0,:]    
     with open(line[13], 'rb') as file:
         bkgData = pickle.load(file)
     
@@ -2365,7 +2554,9 @@ def dingoWrapper(args):
 
 
     #|--------------|
+    #|--------------|
     #|--- Run it ---|     
+    #|--------------|
     #|--------------|
         
     #|--- Process mass maps into density ---|
@@ -2373,9 +2564,9 @@ def dingoWrapper(args):
     for i in range(nTimes):
         print ('Processing', uniqTs[i])
         if singleWF:
-            widMap, xcMap, maskMap, densMap, subMass, outFoV, pix2FOV  = mass2dens(imMaps[i], satDicts[i], wfsI[i], massMaps[i], doInner=dI,  downSelect=ds)
+            widMap, xcMap, maskMap, densMap, subMass, outFoV, pix2FOV  = mass2dens(imMaps[i], satDicts[i], wfsI[i], massMaps[i], doInner=dI,  downSelect=ds, deproj=deproj)
         else:
-            widMap, xcMap, maskMap, densMap, subMass, outFoV, pix2FOV  = mass2dens(imMaps[i], satDicts[i], [wfsI[i], wfsO[i]], massMaps[i], doInner=dI,  densRatio=densratio, downSelect=ds)
+            widMap, xcMap, maskMap, densMap, subMass, outFoV, pix2FOV  = mass2dens(imMaps[i], satDicts[i], [wfsI[i], wfsO[i]], massMaps[i], doInner=dI,  densRatio=densratio, downSelect=ds, deproj=deproj)
         # Package it
         widMaps.append(widMap)
         xcMaps.append(xcMap)
@@ -2385,6 +2576,7 @@ def dingoWrapper(args):
         outFoVs.append(outFoV) 
         pix2FOVs.append(pix2FOV)    
     
+
     #|-------------------------------|
     #|-------------------------------|
     #|--- Send to plotting script ---|
@@ -2420,7 +2612,7 @@ def dingoWrapper(args):
     #|--- 2d - contour plots ---|
     #|--------------------------|
     elif mode == 2:
-        dingo2d(widMaps, densMaps, outFoVs, pix2FOVs, figName=saveName, times=uniqTs)
+        dingo2d(widMaps, densMaps, maskMaps, outFoVs, pix2FOVs, figName=saveName, times=uniqTs, showLog=logPlot)
             
     
     #|--------------------------------|
