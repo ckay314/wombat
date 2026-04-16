@@ -149,9 +149,48 @@ alogger.setLevel(logging.ERROR)
 np.seterr(divide='ignore', invalid='ignore')
 
 global picType
-picType = '.png' # either '.png' or '.pdf'
+picType = '.png' # png or pdf, gets overwritten if set in input 
 
+# |--------------------------------------------------|
+# |--------------------------------------------------|
+# |--- Functions to convert mass image to density ---|
+# |--------------------------------------------------|
+# |--------------------------------------------------|
+
+# |---------------------------|
+# |--- Get background grid ---|
+# |---------------------------|
 def createGrid(FoV, nGridY):
+    '''
+    Basic helper to convert FOV and y resolution to a grid. The
+    coordinates are in yz (horizontal/vertical) as we treat x 
+    as the direction perpendicular to the FoV. The same resolution
+    is used in the y and z directions
+    
+    Inputs:
+        FoV: an array of the FoV distances as [miny, maxy, minz, maxz]
+             this code doesn't care about the units and will return 
+             values in the same form as given but in practice is used
+             in solar radii
+    
+        nGridY: the number of grid points to use in the y direction
+    
+    Outputs:
+        dy: the resolution in pixels per grid cell. this is the same 
+            in the y and z directions
+        
+        ygs: the distances of the edge of the grid cells (length nGridY+1)
+    
+        yms: the distances of the middle of the grid cells (length nGridY)
+    
+        nGridZ: the number of grid cells in the z direction, which is calc from 
+                the range in z and dy
+    
+        zgs: the distances of the edge of the grid cells (length nGridZ+1)
+    
+        zms: the distances of the middle of the grid cells (length nGridZ)
+           
+    '''
     miny, maxy = FoV[0][0], FoV[0][1]
     minz, maxz = FoV[1][0], FoV[1][1]
     dy = (maxy - miny) / nGridY
@@ -165,25 +204,65 @@ def createGrid(FoV, nGridY):
     zms = np.array([minz + (0.5+i)*dy for i in range(nGridZ)])
     return dy, ygs, yms, nGridZ, zgs, zms
 
-def getWidth(points, FoV=None, nGridY=100, fillAround=True):
-    # Points are xyz where: 
-    #   x = LoS
-    #   y = Lon (perp to LoS)
-    #   z = Lat
-    # FoV should be [[miny, maxy], [minz, maxz]]
-    #   in same units as points (e.g. Rsun)
-    # nGridY is the number of grid cells in the
-    #   y direction. This determines a physical
-    #   grid cell size that will be the same in 
-    #   the other dimensions
-    # fillAround will smooth out the edges of the center
-    #   position array (midx) which is needed if passing
-    #   to an interpolation function after
+# |------------------------------------|
+# |--- Convert points to widths map ---|
+# |------------------------------------|
+def getWidth(points, FoV=None, nGridY=100):
+    '''
+    Helper function to take a set of points representing some 3d
+    shape and determine the width in the x direction. This code
+    is not sensitive to the units of distances but points and 
+    FoV should be consistent and in practice solar radii are used
     
+    Inputs:
+        points: a [nPoints, 3] array with the xyz values for each
+                point. the coords are such that
+                    - x is the line of sight direction
+                    - y is the horizontal/~longitude direction
+                    - z is the vertical/~latitude direction
+    
+    Optional Inputs:
+        FoV: the field of view to use for the output 2d arrays. If
+             not provided it will be calculated from the points. This
+             allows for a consistent FoV for multiple calls to getWidth
+             for different sets of points
+             The format is [miny, maxy, minz, maxz]
+        
+        nGridY: the number of grid points in the y direction. this is the
+                resolution for the output array which dingo intends to pass
+                to an interpolator so it doesn't need to be as high of res
+                as the mass maps.
+                (defaults to 100)
+    
+    Outputs:
+        wids: a 2d array with the width in the x direction. Grid cells that
+              don't have any corresponding points are set to zero
+        
+        midx: a 2d array with the center x value for all points in that grid
+              cell (e.g a segment symmetric about the yz plane would be 0).
+              Grid cells without corresponding points are set to the median
+              value from the other points so that when dingo passes this to 
+              an interpolator the edges don't have weird artifacts
+        
+        mask: a 2d binary array with 1 for grid cells that have an non zero width  
+              and 0 for grid cells with no corresponding points
+        
+        FoV:  either the calculated FoV or simply returning the array given as 
+              input. The format is [miny, maxy, minz, maxz]
+        
+        nGridY: the number of grid points, either the same as the provided input
+                or the default value
+
+    '''
+
+    # |--- Unpackage points ---|
     x = points[:,0]
     y = points[:,1]
     z = points[:,2]
     
+    # |---------------------|
+    # |--- Determine FoV ---|
+    # |---------------------|
     # Get range of points in yz
     minyP, maxyP = np.min(y), np.max(y)
     minzP, maxzP = np.min(z), np.max(z)
@@ -196,14 +275,19 @@ def getWidth(points, FoV=None, nGridY=100, fillAround=True):
     miny, maxy = FoV[0][0], FoV[0][1]
     minz, maxz = FoV[1][0], FoV[1][1]
     
-    # Set up a grid for the width contours
+    # |-------------------|
+    # |--- Set up grid ---|
+    # |-------------------|
     dy, ygs, yms, nGridZ, zgs, zms = createGrid(FoV, nGridY)
         
     wids = np.zeros([nGridZ, nGridY])
     midx = np.zeros([nGridZ, nGridY]) - 9999
     mask = np.zeros([nGridZ, nGridY]) 
-    pad = 1.4 # distance from midpoint to check (in dy)
-    
+
+    # |----------------------------------|
+    # |--- Match points to grid cells ---|
+    # |----------------------------------|
+    pad = 1.4 # distance from midpoint to check (in dy)    
     for i in range(nGridY):       
         if (yms[i] >= minyP) & (yms[i] <= maxyP):
             mypts = np.where(np.abs(y-yms[i]) <= pad*dy)[0]
@@ -231,18 +315,10 @@ def getWidth(points, FoV=None, nGridY=100, fillAround=True):
                         wids[j,i] = fullwid
                         midx[j,i] = 0.5*(sortx[-1] + sortx[0])
                         mask[j,i] = 1
-
-    # Certain shapes (e.g. half sphere) can see "into" and makes wid/xc wonky
-    # when only have one side along LoS... just remove this part
-    '''idx = np.where(midx != -9999)                    
-    medxc, stdxc = np.median(midx[idx]), np.std(midx[idx])
-    medwid, stdwid = np.median(wids[idx]), np.std(wids[idx])
-    # Check for back only section
-    midx[np.where((midx < (medxc-stdxc)) & (wids < 10*dy ) & (wids != -9999))] = -9999
-    # Check for front only section
-    midx[np.where((midx > (medxc+stdxc)) & (wids < 10*dy ) & (wids != -9999))] = -9999'''
-
                   
+    # |------------------------------------------|
+    # |--- Clean up grid cells with no points ---|
+    # |------------------------------------------|
     # need to fill in the outer -9999 region of xc so interp is happy
     for i in range(midx.shape[1]):
         notOut = np.where(midx[:,i] !=-9999)[0]
@@ -261,14 +337,35 @@ def getWidth(points, FoV=None, nGridY=100, fillAround=True):
 
     return wids, midx, mask, FoV, nGridY
 
-
+# |---------------------------------------------|
+# |--- Stonyhurst Cartesian to FoV Cartesian ---|
+# |---------------------------------------------|
 def StonyCart2CartFoV(pts, satLat, satLon, roll):
-    # assume is pts is [xs, ys, zs]
-    # and first point is spacecraft
-    # and second point is FoV center
-    # satLat, satLon, roll all in degrees
+    ''' 
+    Helper function to convert points from Stonyhurst Cartesian
+    frame into the FoV Cartesian plane where the FoV is in the
+    yz plane and the spacecraft is on the x-axis. The FoV is treated
+    as flat and perpendicular to the line connecting the center of
+    the FoV to the satellite at a distance corresponding to the 
+    Thompson sphere for that direction.
     
+    Inputs:
+        pts: a [npts, 3] array of points in stony cart xyz. the 
+             first two points should be the spacecraft location and 
+             the FoV center. the remaining points are the points of
+             interest to convert into FoV cartesian coordinates
     
+        satLat: the latitude of the satellite in degrees
+    
+        satLon: the stonyhurst longitude of the satellite in degrees
+    
+        roll:   the roll angle of the satellite in degrees
+    
+    Outputs:
+        pts: a [3, npts-2] array of points in FoV Cartesian coordinates.
+             The first two points from the input pts array (sat, FoV center)
+             are removed before returning the results
+    '''    
     # Rotate so sc at x=0
     pts = wf.rotz(pts,-satLon)
     
@@ -303,10 +400,41 @@ def StonyCart2CartFoV(pts, satLat, satLon, roll):
     return [xOut, yOut, zOut]
     
     
+# |-----------------------------------------|
+# |--- Convert full map to FoV Cartesian ---|
+# |-----------------------------------------|
 def map2CartFoV(myMap, points, pixCent=None):
-    # points should be [[pixss], [pixys]]
-    # pix cent should be [pixx, pixy]
+    ''' 
+    Helper function using the header info from a map to convert
+    a set of points (in pixels) into FoV Cartesian coordinates 
+    where the FoV is in the yz plane and the spacecraft is on the 
+    x-axis. The FoV is treated as flat and perpendicular to the line 
+    connecting the center of the FoV to the satellite at a distance 
+    corresponding to the Thompson sphere for that direction.
     
+    Inputs:
+        myMap: an astropy map used to define the field of view of the 
+               observation. Only the header info and size are used, not
+               the data itself
+        
+        points: a list of pixels for which to calculate the FoV Cartesian
+                points. The form should be [[pixel_xs], [pixel_ys]]
+    
+    Optional Inputs:
+        pixCent: the center of the FoV which is used to calculate the 
+                 plane of the sky. The format should be [pixx, pixy].
+                 If not provided the center of the map will be determined
+                 from the size.
+    
+    Outputs:
+        res: the points converted into FoV Cartesian (in Rs) as a 
+             3 x nPoints array ([xs, ys, zs])
+     
+    '''
+    
+    #|------------------------|
+    #|--- Get sat position ---|
+    #|------------------------|
     # Get satellite position from the map
     satLonD = myMap.observer_coordinate.lon.degree
     satLatD = myMap.observer_coordinate.lat.degree
@@ -319,6 +447,9 @@ def map2CartFoV(myMap, points, pixCent=None):
     # (just the cartesian sat loc)
     satxyz = np.array([np.cos(satLatR)*np.cos(satLonR), np.cos(satLatR)*np.sin(satLonR), np.sin(satLatR)]) * satR
     
+    #|------------------------|
+    #|--- Get sat pointing ---|
+    #|------------------------|
     # Get the direction the FoV is pointing in Stony frame
     # Use pix cent if provided, otherwise assume middle
     if type(pixCent) == type(None):
@@ -340,11 +471,17 @@ def map2CartFoV(myMap, points, pixCent=None):
     uTSxyz = TSxyz / np.linalg.norm(TSxyz)
     uLoS = LoS / np.linalg.norm(LoS)
     
+    #|-------------------------|
+    #|--- Make pts packages ---|
+    #|-------------------------|
     # Start coord arrays with sat loc and FoV cent
     xs = [satxyz[0]*215, TSxyz[0]*215]
     ys = [satxyz[1]*215, TSxyz[1]*215]
     zs = [satxyz[2]*215, TSxyz[2]*215]
     
+    #|---------------------------------|
+    #|--- Convert pix to Stony cart ---|
+    #|---------------------------------|
     # Get the OG coords for each pixels in points
     nPoints = len(points[0])
     #cs = []
@@ -367,11 +504,12 @@ def map2CartFoV(myMap, points, pixCent=None):
         xs.append(TSxyz0[0]*215)
         ys.append(TSxyz0[1]*215)
         zs.append(TSxyz0[2]*215)
-        #cs.append(myMap.data[points[1][i], points[0][i]])
-    
-    # Convert everyone at the same time
+
     pts = np.array([xs, ys, zs])      
     
+    #|---------------------------|
+    #|--- Secret testing plot ---|
+    #|---------------------------|
     '''fig = plt.figure(figsize=(8, 5), layout='constrained')
     ax = fig.add_subplot(111, projection='3d')
     # WF1 scatter
@@ -386,6 +524,10 @@ def map2CartFoV(myMap, points, pixCent=None):
     ax.scatter(pts[0], pts[1],pts[2], c='g')
     plt.show()'''
     
+    
+    #|----------------|
+    #|--- Get roll ---|
+    #|----------------|
     if 'crota' in myMap.meta:
         rollIt = myMap.meta['crota']
     elif 'sc_roll' in myMap.meta:
@@ -394,16 +536,49 @@ def map2CartFoV(myMap, points, pixCent=None):
         print ('Neither crota or sc_roll in map metadata. Assuming zero roll')
         rollIt = 0
 
+    #|------------------------------------|
+    #|--- Pass to cart 2 cart function ---|
+    #|------------------------------------|
     res = StonyCart2CartFoV(pts, satLatD, satLonD, rollIt)
 
     return res
 
 
+# |-----------------------------------------|
+# |--- Wireframe points to FoV Cartesian ---|
+# |-----------------------------------------|
 def wf2CartFoV(myMap, aWF, pixCent=None):
-    # points should be [[pixss], [pixys]]
-    # pix cent should be [pixx, pixy]
+    ''' 
+    Helper function using the header info from a map to convert
+    points from a wireframe object into FoV Cartesian coordinates 
+    where the FoV is in the yz plane and the spacecraft is on the 
+    x-axis. The FoV is treated as flat and perpendicular to the line 
+    connecting the center of the FoV to the satellite at a distance 
+    corresponding to the Thompson sphere for that direction.
     
-    # Get satellite position from the map
+    Inputs:
+        myMap: an astropy map used to define the field of view of the 
+               observation. Only the header info and size are used, not
+               the data itself
+        
+        aWF: a wombat wireframe object. the list of points will be pulled
+             and their positions converted into FoV cartesian
+    
+    Optional Inputs:
+        pixCent: the center of the FoV which is used to calculate the 
+                 plane of the sky. The format should be [pixx, pixy].
+                 If not provided the center of the map will be determined
+                 from the size.
+    
+    Outputs:
+        res: the wf points converted into FoV Cartesian (in Rs) as a 
+             3 x nPoints array ([xs, ys, zs])
+     
+    '''
+    
+    #|------------------------|
+    #|--- Get sat position ---|
+    #|------------------------|
     satLonD = myMap.observer_coordinate.lon.degree
     satLatD = myMap.observer_coordinate.lat.degree
     satR = myMap.observer_coordinate.radius.au 
@@ -411,6 +586,9 @@ def wf2CartFoV(myMap, aWF, pixCent=None):
     satLatR = satLatD * np.pi / 180.
     
     
+    #|------------------------|
+    #|--- Get sat pointing ---|
+    #|------------------------|
     # Get vector from sun to sat
     # (just the cartesian sat loc)
     satxyz = np.array([np.cos(satLatR)*np.cos(satLonR), np.cos(satLatR)*np.sin(satLonR), np.sin(satLatR)]) * satR
@@ -436,6 +614,9 @@ def wf2CartFoV(myMap, aWF, pixCent=None):
     uTSxyz = TSxyz / np.linalg.norm(TSxyz)
     uLoS = LoS / np.linalg.norm(LoS)
     
+    #|-------------------------|
+    #|--- Make pts packages ---|
+    #|-------------------------|
     # Start coord arrays with sat loc and FoV cent
     xs = [satxyz[0]*215, TSxyz[0]*215]
     ys = [satxyz[1]*215, TSxyz[1]*215]
@@ -452,6 +633,9 @@ def wf2CartFoV(myMap, aWF, pixCent=None):
     
     pts = np.array([x, y, z])      
     
+    #|----------------|
+    #|--- Get roll ---|
+    #|----------------|
     if 'crota' in myMap.meta:
         rollIt = myMap.meta['crota']
     elif 'sc_roll' in myMap.meta:
@@ -460,38 +644,51 @@ def wf2CartFoV(myMap, aWF, pixCent=None):
         print ('Neither crota or sc_roll in map metadata. Assuming zero roll')
         rollIt = 0
         
+    #|------------------------------------|
+    #|--- Pass to cart 2 cart function ---|
+    #|------------------------------------|
     res = StonyCart2CartFoV(pts, satLatD, satLonD, rollIt)
     
     return res
     
 
+# |------------------------------------|
+# |--- Main mass to density routine ---|
+# |------------------------------------|
 def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSelect=8, deproj=True):
     '''
     Fuction to take a mass image map, satellite dictionay, and wireframe object and
     determine the width perp to the plane of sky and convert integrated mass to density.
     A single wireframe or two can be passed (to represent a shock and ejecta). A constant
-    density is assumed along the line of sight within each WF. For GCS/torus shapes the
-    doInner flag indicates to remove the inner gap between the legs
+    density is assumed along the line of sight within each WF. The routine returns a set
+    of useful arrays and other variables that the plotting scripts use to generate figures.
     
     Inputs:
-        myMap:      a astropy/sunpy map where the data has units of g per pix
+        myMap:      a astropy/sunpy map defining the pointing. the data is not used
     
         satDict:    a wombat style satellite dictionary
     
         awf:        a wombat wireframe or two in an array [wf1, wf2] where wf1 is the 
                     primary wf (i.e. ejecta) and wf2 is an outer/surrounding shape (sheath)
     
+        massMap:    an 2d array with the mass data in g/pixel. This should be the same FoV as
+                    defined by myMap. the wombat save file just keeps the mass as an array
+                    an not a proper map so we pass things separately
+    
     Optional Inputs:
-        doInner:    remove the gap region at the back for a GCS or torus wf
-                    (defaults to false)
+        doInner:    remove the gap region at the back for a GCS or torus wf. this is only for
+                    an obscured gap in a fairly edge on case. Any visible gaps are automatically
+                    removed by the normal routine
+                    (defaults to false, not thoroughly tested and recommend not using yet)
     
         densRatio:  the ratio of the density between wf1 and wf2, which is treated as a 
                     constant value over all lines of sight. calculated as wf1/wf2 and 
                     ignored if only a single wf is passed
                     (defaults to 1)
     
-        downSelect: an integer to downsample the output resolution
-                    (defaults to 8)
+        downSelect: an integer to downsample the output resolution. This defaults to 8, which is
+                    an appropriate value if making a 3d scatter plot with the results but setting
+                    it to 1 is fine for other modes
     
         deproj:     flag to deproject the masses accounting for the wf width perp to the
                     PoS via Billings instead of treating all pts as at Thompson sphere
@@ -1016,10 +1213,51 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
 
 
 
+# |--------------------------|
+# |--------------------------|
+# |--- Plotting functions ---|
+# |--------------------------|
+# |--------------------------|
+
 # |-----------------------------|
 # |--- 3D Density Cloud plot ---|
 # |-----------------------------|
 def dingo3d(widMap, xcMap, densMap, outFoV, pix2FOV, shell=True, plotIt=True):
+    ''' 
+    3D scatter plot of the wireframe points colored by density. This launches 
+    an interactive plot window that one can rotate to see the cloud from 
+    different perspectives. Python is not always happy about an interactive plot
+    with a large number of points so results from mass2dens with downselect greater
+    than 1 should be used. This does not automatically save a figure because we 
+    do not want to force a specific viewing anglue in 3d
+    
+    Inputs:
+        widMap:     an array of the widths (in Rs) perp to the plane of sky 
+                    the array contains [wf1, wf1_inner, wf2] 
+                    (direct output from mass2dens)
+    
+        xcMap:      the distance of the center of mass from the plane of sky in the same
+                    format as widMap. also in Rs
+                    (direct output from mass2dens)
+    
+        densMap:    same format as widMap/xcMap but for the calculated density. In g/cm^3
+                    (direct output from mass2dens)
+    
+        outFoV:     an array with [x0, xf, y0, yf, downselect] where the first four 
+                    elements represent the extent of the sub-field of view (in pix) and
+                    downselect is an integer representing the 1D reduction in resolution.
+                    (direct output from mass2dens)
+    
+        pix2FOV:    an array with three interpolation functions ([FOV2x, FOV2y, FOV2z] ) 
+                    that convert from from a pixel in the original image ((pixx, pixy)) 
+                    (direct output from mass2dens)
+    
+    Optional Inputs:
+        shell:      flag to plot just the shell of a wireframe versus a solid wf object
+                    with internal points. the density is uniform along a LoS so this really
+                    doesn't do much beyond overloading the plot window
+    
+    '''
     #|------------------|
     #|--- Prep stuff ---|
     #|------------------|
@@ -1247,54 +1485,53 @@ def dingo3d(widMap, xcMap, densMap, outFoV, pix2FOV, shell=True, plotIt=True):
     #|------------------------|
     #|--- Make the 3D Plot ---|
     #|------------------------|
-    if plotIt:
-        # Option to downselect the number of pts shown
-        # (gets laggy with filled structures)
-        if shell:
-            showLess1 = 1
-            idx1 = range(len(allpts[0]))
-            if multiMode:
-                showLess2 = 1
-                idx2 = np.arange(0,len(allpts2[0])-1)
-                np.random.shuffle(idx2)
-                idx2 = idx2[::showLess2]
-            alpha2 = 0.1
-        else:
-            showLess1 = 2
-            idx1 = np.arange(0,len(allpts[0])-1)
-            np.random.shuffle(idx1)
-            idx1 = idx1[::showLess1]
-            if multiMode:
-                showLess2 = 4
-                idx2 = np.arange(0,len(allpts2[0])-1)
-                np.random.shuffle(idx2)
-                idx2 = idx2[::showLess2]
-            alpha2   = 0.15
-        # Guess at nice density range    
-        vval = 1e9 /dx**3
+    # Option to downselect the number of pts shown
+    # (gets laggy with filled structures)
+    if shell:
+        showLess1 = 1
+        idx1 = range(len(allpts[0]))
+        if multiMode:
+            showLess2 = 1
+            idx2 = np.arange(0,len(allpts2[0])-1)
+            np.random.shuffle(idx2)
+            idx2 = idx2[::showLess2]
+        alpha2 = 0.1
+    else:
+        showLess1 = 2
+        idx1 = np.arange(0,len(allpts[0])-1)
+        np.random.shuffle(idx1)
+        idx1 = idx1[::showLess1]
+        if multiMode:
+            showLess2 = 4
+            idx2 = np.arange(0,len(allpts2[0])-1)
+            np.random.shuffle(idx2)
+            idx2 = idx2[::showLess2]
+        alpha2   = 0.15
+    # Guess at nice density range    
+    vval = 1e9 /dx**3
     
-        # |--- Initiate figure ---|
-        fig = plt.figure(figsize=(8, 5), layout='constrained')
-        ax = fig.add_subplot(111, projection='3d')
-        # WF1 scatter
-        im = ax.scatter(allpts[0][idx1], allpts[1][idx1], allpts[2][idx1], c=logd[idx1], cmap='Reds')
-        if multiMode:
-            # WF2 scatter
-            im2 = ax.scatter(allpts2[0][idx2], allpts2[1][idx2], allpts2[2][idx2], c=logd2[idx2], cmap='Blues', alpha=alpha2)
+    # |--- Initiate figure ---|
+    fig = plt.figure(figsize=(8, 5), layout='constrained')
+    ax = fig.add_subplot(111, projection='3d')
+    # WF1 scatter
+    im = ax.scatter(allpts[0][idx1], allpts[1][idx1], allpts[2][idx1], c=logd[idx1], cmap='Reds')
+    if multiMode:
+        # WF2 scatter
+        im2 = ax.scatter(allpts2[0][idx2], allpts2[1][idx2], allpts2[2][idx2], c=logd2[idx2], cmap='Blues', alpha=alpha2)
 
-        # Add contour bar
-        cbar = fig.colorbar(im, ax=ax, orientation='vertical', fraction=.05, pad=0.02, shrink=0.5) 
-        cbar.set_label('Log$_{10}$ Density\n(g cm$^{-3}$)')
-        if multiMode:
-            cbar2 = fig.colorbar(im2, ax=ax, orientation='vertical', fraction=.05, pad=0.02, shrink=0.5, location='left') 
-            cbar2.set_label('Log$_{10}$ Density\n(g cm$^{-3}$)')
-        
-        # Prettify
-        ax.set_aspect('equal') 
-        ax.set_xlabel('x')
-        ax.set_ylabel('y')
-        ax.set_zlabel('z')
-        plt.show()
+    # Add contour bar
+    cbar = fig.colorbar(im, ax=ax, orientation='vertical', fraction=.05, pad=0.02, shrink=0.5) 
+    cbar.set_label('Log$_{10}$ Density\n(g cm$^{-3}$)')
+    if multiMode:
+        cbar2 = fig.colorbar(im2, ax=ax, orientation='vertical', fraction=.05, pad=0.02, shrink=0.5, location='left') 
+        cbar2.set_label('Log$_{10}$ Density\n(g cm$^{-3}$)')
+    
+    # Prettify
+    ax.set_aspect('equal') 
+    ax.set_xlabel('x')
+    ax.set_ylabel('y')
+    ax.set_zlabel('z')
+    plt.show()
     
     return [allpts, allpts2]
     
@@ -1303,6 +1540,44 @@ def dingo3d(widMap, xcMap, densMap, outFoV, pix2FOV, shell=True, plotIt=True):
 # |--- Density Contour plot ---|
 # |----------------------------|
 def dingo2d(widMaps, densMaps, maskMaps, outFoVs, pix2FOVs, showLog=False, figName=None, times=None):
+    ''' 
+    2D contour plot(s) of the width of the wireframe(s) perpendicular to the plane
+    of the sky. If there are two wireframes the outer will be shown on the left and
+    the innner on the right. If a time series is passed then there will be one row
+    for each time. 
+    
+    Inputs:
+        widMaps:    an array of the widths (in Rs) perp to the plane of sky 
+                    the array contains [wf1, wf1_inner, wf2] 
+                    (direct output from mass2dens)
+    
+    
+        densMaps:   same format as widMaps but for the calculated density. In g/cm^3
+                    (direct output from mass2dens)
+
+        masksMaps:  same format as widMaps but for a binary mask showing the extent of the
+                    wireframe shape(s) in the FoV (1 inside wf, 0 outside)
+                    (direct output from mass2dens)
+    
+        outFoVs:    an array with [x0, xf, y0, yf, downselect] where the first four 
+                    elements represent the extent of the sub-field of view (in pix) and
+                    downselect is an integer representing the 1D reduction in resolution.
+                    (direct output from mass2dens)
+    
+        pix2FOVs:   an array with three interpolation functions ([FOV2x, FOV2y, FOV2z] ) 
+                    that convert from from a pixel in the original image ((pixx, pixy)) 
+                    (direct output from mass2dens)
+    
+    Optional Inputs:
+        showLog:    flag to show the contours on a log scale instead of linear 
+                    (defaults to false)
+    
+        figName:    a string name to use when saving the figure. saved as dingo2d_figname.png
+                    (defaults to None and just displays the fig instead of saving)
+    
+        times:      a list of observation times (strings) to use as titles for the panels
+    
+    '''
     # The first four params need to be packaged as lists, even if passing a single time    
     
     #|------------------|
@@ -1563,6 +1838,82 @@ def dingo2d(widMaps, densMaps, maskMaps, outFoVs, pix2FOVs, showLog=False, figNa
 # |--- In Situ plot ---|
 # |--------------------|
 def dingo1d(myMaps, widMapIns, xcMapIns, densMapIns, outFoVs, pix2FoVs, obsSats, vCME=400, scaleFactors=[1, 0.2], figName=None, timeMode='hr', writeIt=True):
+    ''' 
+    1D line plots of the density both in place at the time of observation (left panel)
+    and shifted to an observing satellite using a very simple propagation model (right).
+    The in situ results assume a constant propagation speed and expansion but no drag or
+    any other evolutionary effects. The expansion model assumes a constant ratio between
+    the expansion speed in the radial direction and the radial propagation speed and a 
+    second factor sets the size at impact relative to what it would be assuming self-similar
+    expansion. Please do not treat this as a proper arrival time model, the times are meant
+    to be illustrative and it will not include any sheath material accumulated beyond the 
+    last remote observation.
+    
+    
+    Inputs:
+        myMaps:     the astropy/sunpy maps defining the pointing. the data is not used
+        
+        widMapIns:  an array of the widths (in Rs) perp to the plane of sky 
+                    the array contains [wf1, wf1_inner, wf2] 
+                    (direct output from mass2dens)
+    
+    
+        xcMapIns:   the distance of the center of mass from the plane of sky in the same
+                    format as widMap. also in Rs
+                    (direct output from mass2dens)
+        
+        densMapIns: same format as widMaps but for the calculated density. In g/cm^3
+                    (direct output from mass2dens)
+
+    
+        outFoVs:    an array with [x0, xf, y0, yf, downselect] where the first four 
+                    elements represent the extent of the sub-field of view (in pix) and
+                    downselect is an integer representing the 1D reduction in resolution.
+                    (direct output from mass2dens)
+    
+        pix2FOVs:   an array with three interpolation functions ([FOV2x, FOV2y, FOV2z] ) 
+                    that convert from from a pixel in the original image ((pixx, pixy)) 
+                    (direct output from mass2dens)
+    
+        obsSats:    an array of results from get_horizons_coord corresponding to the in situ
+                    satellite at the time each observation. technically this would be more 
+                    accurate using the time of impact but we haven't calculated that so we're
+                    gonna assume it doesn't move too much
+    
+    Optional Inputs:
+        vCME:       the average propagation velocity of the CME, used to determine the transit
+                    time and convert physical size to time. in km/s 
+                    (defaults to 400 )
+    
+        scalefactors: an array with [expf1, expf2] where
+                    expf1: the first expansion factor which sets the amount of the expansion
+                         in the nonradial direction. The value is the ratio of the physical
+                         size at the time of impact (width in perp direction) compared to what
+                         it would be with self-similar expansion
+                         (defaults to 1)
+
+                    expf2: the second expansion factor which sets the rate of the radial
+                         expansion speed relative to the radial propagation speed. The 
+                         # should be a decimal value between 0 and 1 (and likely closer to 0)
+                         (defaults to 0.1)
+    
+        figName:    a string name to use when saving the figure. saved as dingo2d_figname.png
+                    (defaults to None and just displays the fig instead of saving)
+    
+        timeMode:   either 'hr' or 'rw' to show the in situ results in hours from the earliest
+                    remote observation time or to convert to real world dates (eg yyyy-mm-dd hh:mm)
+                    (defaults to hr bc not an arrival time model and avoiding implying as much)
+    
+        writeIt:    a flag to save the results in text files. This generates two text files
+                    dingo1d_IP/IS_savename.dat in the dingOutputs folder. The IP file has the
+                    time of the remote observation, the radial distance (Rs), the density (g/cm3)
+                    and whether that point corresponds to the inner or outer wf. The IS file has 
+                    the time of the remote observation, the time since the earliest remote obs (hr),
+                    the number density, and the inner/outer flag. All profiles from different remote
+                    times will be dumped in the same file.
+                    (defaults to True)
+    
+    '''
     # The first four params need to be packaged as lists, even if passing a single time    
     
     # |---------------------|
@@ -1997,6 +2348,38 @@ def dingo1d(myMaps, widMapIns, xcMapIns, densMapIns, outFoVs, pix2FoVs, obsSats,
 # |--- Calculate total masses ---|
 # |------------------------------|
 def getMasses(widMap, densMap, outFoV, pix2FOV, printIt=True):
+    ''' 
+    0D dingo aka just the total mass in the wireframe region. For a single WF
+    case this will differ slightly from the wombat mass calculation because we
+    account for projection better (unless it's turned off). For two WF this 
+    includes the effects of separating the WFs in the overlap regions
+    
+    Inputs:
+        widMap:     an array of the widths (in Rs) perp to the plane of sky 
+                    the array contains [wf1, wf1_inner, wf2] 
+                    (direct output from mass2dens)
+        
+        densMap:    same format as widMap/xcMap but for the calculated density. In g/cm^3
+                    (direct output from mass2dens)
+    
+        outFoV:     an array with [x0, xf, y0, yf, downselect] where the first four 
+                    elements represent the extent of the sub-field of view (in pix) and
+                    downselect is an integer representing the 1D reduction in resolution.
+                    (direct output from mass2dens)
+    
+        pix2FOV:    an array with three interpolation functions ([FOV2x, FOV2y, FOV2z] ) 
+                    that convert from from a pixel in the original image ((pixx, pixy)) 
+                    (direct output from mass2dens)
+    
+    Optional Inputs:
+        printIt:    flag to print the results to screen
+                    (defaults to true)
+    
+    Outputs:
+        res:        either [mass] or [mass1, mass2] depending on whether one or two wf
+                    have been provided. In units of 1e15 g
+    
+    '''
     #|------------------|
     #|--- Prep stuff ---|
     #|------------------|
@@ -2049,10 +2432,31 @@ def getMasses(widMap, densMap, outFoV, pix2FOV, printIt=True):
     
 
 
+# |-----------------------|
+# |-----------------------|
+# |--- Wrapper Helpers ---|
+# |-----------------------|
+# |-----------------------|
+
 # |--------------------------------------|
 # |--- Covert text file to args array ---|
 # |--------------------------------------|
 def input2args(inputData):
+    ''' 
+    Helper function to take a text files and convert it to
+    an argument array, analogous to what would be used if 
+    calling fully from command line. Command line version
+    was written first so this avoids rewriting code.
+    
+    Inputs:
+        inputData:  a string pointing to a dingo_config text file
+    
+    Outputs:
+        args: an array with the contents of the input file sorted
+              as would be expected from the sys.argv command line
+              version of running dingo
+
+    '''
     tags = inputData[:,0]
     inputDict = {}
     args = []
@@ -2111,6 +2515,48 @@ def input2args(inputData):
 # |--- Process Required Args ---|
 # |-----------------------------|
 def processArgs(args):
+    '''
+    Helper script to check that all the required inputs
+    have been included and that they have reasonable values.
+    The required inputs and checks are:
+        log file - an existing wombat log file
+        
+        log ids  - the id or ids of lines to process via dingo. it can
+                   be a single wf shape or two wfs but the same instrument
+                   and wombat save pickle must be used for all cases. This
+                   should be a string of the form id+id+... with up to two
+                   different wf shapes and up to eight times.
+    
+        dimension - 0d, 1d, 2d, or 3d. sets if we want total mass, line plots
+                    contour plot, or 3d scatter plot
+    
+    Inputs:
+        args: the results from sys.argv or from input2args
+    
+    Outputs:
+        logFile - the full contents of the log file input file
+        
+        miniLog - logfile, but only the lines selected by the ids
+    
+        uniqTs - an array of the times selected by ids (without duplicates in 
+                 the case of two wf mode)
+    
+        uniqShapes - an array of wf shapes selected by ids (without duplicates
+                     in the case of multi time mode)
+        
+        nTimes - the number of times selected by ids 
+    
+        singleWF - a flag if single wf or multi wf mode
+        
+        mode - dimension converted to an integer
+    
+        pairTimes - a list of all times with a pair of inner/out wf. We allow for
+                    multiple wfs to have times with only one of the two wfs and these
+                    appear in uniqTs but not pairTimes
+    
+        pairIds   - a list of all the paired ids [[in1, out1], [in2, out2], ...]
+        
+    '''
     #|--------------------------|
     #|--- Check the log file ---|     
     #|--------------------------|
@@ -2131,7 +2577,6 @@ def processArgs(args):
     idstr = args[1]
     nplus = idstr.count('+')
     singleWF = True # will overwrite later
-    saveName = None
     
     # Will work with no + (= single id)
     splitstr = idstr.split('+')
@@ -2240,12 +2685,75 @@ def processArgs(args):
             print (astr)
         sys.exit()
          
-    return logFile, miniLog, uniqTs, uniqShapes, nTimes, singleWF, saveName, mode, pairTimes, pairIds
+    return logFile, miniLog, uniqTs, uniqShapes, nTimes, singleWF, mode, pairTimes, pairIds
 
 # |--------------------------|
 # |--- Process Bonus Args ---|
 # |--------------------------|
 def processBonusArgs(allBonus, mode):
+    '''
+    Helper script to check for any bonus inputs after all the required
+    arguments have been pulled from args. If 1D mode the target is 
+    necessary but everything else is optional. All outputs are returned
+    regardless of finding a matching value in allBonus (defaults used in
+    that case) 
+    
+    Inputs:
+        allBonus: anything remaining in args after the mandatory values have
+                  been removed
+    
+        mode:     the dingo mode (0-3)
+    
+    Outputs:
+        target: the name of the in situ satellite of interest. This is only 
+                needed for the 1D case and otherwise ignored Currently the
+                supported options are ACE, BepiColombo, DSCOVR, MAVEN, 
+                PSP, SolO, STEREO-A, STEREO-B, VEX, Wind. Additional
+                satellites could be added as long as they exist in
+                sunpy get_horizons_coord and the correct form of the tag
+                is used. We allow some common short forms of these names 
+                (e.g Bepi, STA, ...) and nothing is case sensitive. 
+        
+        saveName: a string name tag to add to the figures/output files. if not
+                  provided then figures will be displayed and not saved
+    
+        expf1: the first expansion factor which sets the amount of the expansion
+               in the nonradial direction. The value is the ratio of the physical
+               size at the time of impact (width in perp direction) compared to what
+               it would be with self-similar expansion
+               (defaults to 1)
+    
+        expf2: the second expansion factor which sets the rate of the radial
+               expansion speed relative to the radial propagation speed. It 
+               should be a decimal value between 0 and 1 (and likely closer to 0)
+               defaults to 0.1)
+    
+        densratio: the ratio of the density between wf1 and wf2, which is treated as a 
+                   constant value over all lines of sight. calculated as wf1/wf2 and 
+                   ignored if only a single wf is passed
+                   (defaults to 1)
+    
+        vcme: the average propagation velocity of the CME, used to determine the transit
+              time and convert physical size to time. in km/s 
+              (defaults to 400 )
+        
+        ds: (downSelect) an integer to downsample the output resolution. This defaults to 8, which is
+            an appropriate value if making a 3d scatter plot with the results but setting
+            it to 1 is fine for other modes
+        
+        dI: (doInner) a flag to try and remove the space corresponding to an internal 
+            gap between the legs of a GCS/torus wireframe. This is only meant
+            to be used if the gap is obscured from the satellites PoV, the 
+            gap will automatically be included when it is observed. This is not
+            fully tested and discourage use for now.
+    
+        logPlot: flag to show the contours on a log scale instead of linear 
+                 (defaults to false)
+        
+        deproj: flag to deproject the masses accounting for the wf width perp to the
+                PoS via Billings instead of treating all pts as at Thompson sphere
+    
+    '''
     # Set the defaults
     expf1 = 1
     expf2 = 0.1
@@ -2259,6 +2767,7 @@ def processBonusArgs(allBonus, mode):
     logPlot = False
     deproj  = True
     target = None
+    saveName = None
     
     #|------------------------|
     #|--- Check for target ---|     
@@ -2381,7 +2890,7 @@ def processBonusArgs(allBonus, mode):
         sys.exit()
             
             
-    return target, expf1, expf2, densratio, vcme, ds, dI, logPlot, deproj
+    return target, saveName, expf1, expf2, densratio, vcme, ds, dI, logPlot, deproj
     
 
 
@@ -2393,42 +2902,88 @@ def dingoWrapper(args):
     Function that goes from the command line to the appropriate DINGO
     procedure. It can also be used for external calls by passing the 
     arguments to the function as a single array. The args must be passed
-    in the order shown
+    in the order shown.
     
-    Inputs:
-        args: an array/list with the following parameters
-    
-            MAIN PARAMS: (required, in order)
-            logFile: the name/path for log file from WOMBAT
-    
-            ids: the integer line number(s) of the fit of interest in the 
-                 logFile. Two fits can be passed (for sheath + eject) using
-                 a plus sign with no spaces (e.g. 10+11 for lines 10 and 11)
-    
-            dingoDim: a strong for the dimensions for the density calculation. 
-                      the option are 0D, 1D, 2D, 3D which correspond to:
-                        0D - total mass
-                        1D - line plot (in place and in situ)
-                        2D - plane of sky contour plot
-                        3D - interactive 3D scatter plot                    
+    MAIN PARAMS: (required, in order)
+        logFile: the name/path for log file from WOMBAT
 
-            BONUS PARAMS: (not required, order doesn't matter as long as after main 3)
-                        
-            saveName: the name to use when saving figures. this parameter is 
-                      not required and will default to generic names if not
-                      provided
-    
-    
-            target: the name of the in situ satellite of interest. This is only 
-                    needed for the 1D case and otherwise ignored Currently the
-                    supported options are ACE, BepiColombo, DSCOVR, MAVEN, 
-                    PSP, SolO, STEREO-A, STEREO-B, VEX, Wind. Additional
-                    satellites could be added as long as they exist in
-                    sunpy get_horizons_coord and the correct form of the tag
-                    is used. We allow some common short forms of these names 
-                    (e.g Bepi, STA, ...) and nothing is case sensitive. This
-                    is 
-            
+        ids: the integer line number(s) of the fit of interest in the 
+             logFile. Two fits can be passed (for sheath + eject) using
+             a plus sign with no spaces (e.g. 10+11 for lines 10 and 11)
+
+        dingoDim: a strong for the dimensions for the density calculation. 
+                  the option are 0D, 1D, 2D, 3D which correspond to:
+                    0D - total mass
+                    1D - line plot (in place and in situ)
+                    2D - plane of sky contour plot
+                    3D - interactive 3D scatter plot                    
+
+    BONUS PARAMS: (not required, order doesn't matter as long as after main 3)
+                    
+        saveName: the name to use when saving figures. this parameter is 
+                  not required and will default to generic names if not
+                  provided
+
+
+        target: the name of the in situ satellite of interest. This is only 
+                needed for the 1D case and otherwise ignored Currently the
+                supported options are ACE, BepiColombo, DSCOVR, MAVEN, 
+                PSP, SolO, STEREO-A, STEREO-B, VEX, Wind. Additional
+                satellites could be added as long as they exist in
+                sunpy get_horizons_coord and the correct form of the tag
+                is used. We allow some common short forms of these names 
+                (e.g Bepi, STA, ...) and nothing is case sensitive. 
+
+        *** Flags - must be included as shown below, all default to false if they
+            are not included ***
+
+        doinner: a flag to try and remove the space corresponding to an internal 
+                 gap between the legs of a GCS/torus wireframe. This is only meant
+                 to be used if the gap is obscured from the satellites PoV, the 
+                 gap will automatically be included when it is observed. This is not
+                 fully tested and discourage use for now.
+
+        projoff: a flag to not include projection effects when converting masses to
+                 densities. The code calculates the Billings factor for each pixel 
+                 using the corresponding wireframe center at that point and corrects
+                 the observed mass. This correction factor is capped at a max of 10
+                 and warns about large plane-of-sky separations
+                 (defaults to including projection)
+        
+        logplot: a flag to plot 2d contours in a log scale instead of linear
+
+
+
+        *** Prefix tags - the following options all require using the listed prefix 
+            with the # replaced by the desired value (e.g. expf1_0.4 would set  
+            expf1 at 0.4) ***
+           
+        expf1_#: the first expansion factor which sets the amount of the expansion
+                 in the nonradial direction. The value is the ratio of the physical
+                 size at the time of impact (width in perp direction) compared to what
+                 it would be with self-similar expansion
+                 (Only used in 1D, defaults to 1)
+
+        expf2_#: the second expansion factor which sets the rate of the radial
+                 expansion speed relative to the radial propagation speed. The 
+                 # should be a decimal value between 0 and 1 (and likely closer to 0)
+                 (Only used in 1D, defaults to 0.1)
+
+        densratio_#: the ratio between the inner and outer wireframe densities (n1/n2).
+                     the densities vary from pixel to pixel but the ratio between the 
+                     two remains the same in any overlapping regions
+                     (defaults to 1.)
+
+        vcme_#: the average interplanetary velocity of the CME. this allows conversion
+                of the initial distances into in situ times which only should be taken
+                as representative as DINGO does not include any IP evolution beyond expansion
+                (Only used in 1D, defaults to 400)
+
+        ds_#: an integer indicating how much to downselect the resolution from the input 
+              mass maps. Running full resolution is fine for modes 0-2 but it will break
+              3d scatter plots.
+              (defaults to 8 for 3D mode, 1 for everything else)
+                
     
     """
     
@@ -2470,7 +3025,7 @@ def dingoWrapper(args):
     #|-------------------------------------|
     #|--- Check the critical parameters ---|     
     #|-------------------------------------|
-    logFile, miniLog, uniqTs, uniqShapes, nTimes, singleWF, saveName, mode, pairTimes, pairIds = processArgs(args)          
+    logFile, miniLog, uniqTs, uniqShapes, nTimes, singleWF, mode, pairTimes, pairIds = processArgs(args)          
                 
     #|----------------------------------|
     #|--- Check the bonus parameters ---|     
@@ -2487,10 +3042,11 @@ def dingoWrapper(args):
     dI = False # doInner - take out mid gap of WFs
     logPlot = False
     deproj  = True
+    saveName = None
       
     if len(args) >= 4:
         allBonus = args[3:]
-        target, expf1, expf2, densratio, vcme, ds, dI, logPlot, deproj = processBonusArgs(allBonus, mode)
+        target, saveName, expf1, expf2, densratio, vcme, ds, dI, logPlot, deproj = processBonusArgs(allBonus, mode)
                         
                
     #|--------------------------|
