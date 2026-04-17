@@ -174,11 +174,83 @@ def processReload(fileIn, reloadFold='wbfits/reloads/'):
             overviewPlot = False
             
         reloadDict['myName'] = fileIn.replace('_reload', '').replace('.txt', '').replace('wbOutputs/', '')
-        
         return bkgData, reloadDict, nWFs, overviewPlot
         
     else:
         sys.exit('Reload file not found by processReload, cannot launch')
+
+# |------------------------------------------------------------|
+# |------------------- Process log reload ---------------------|
+# |------------------------------------------------------------|
+def reloadLogLine(theFile, lineIds):
+    #|--------------------------|
+    #|--- Check the log file ---|     
+    #|--------------------------|
+    if not os.path.exists(theFile):
+        print ('Cannot find log file. Check location and/or call syntax')
+    else:
+        try:
+            logFile = np.genfromtxt(theFile, dtype=str)
+        except:
+            sys.exit('Error opening logFile, check that it is a WOMBAT log file')
+            
+    #|-------------------------|
+    #|--- Check the log ids ---|     
+    #|-------------------------|
+    idstr = lineIds
+    nplus = idstr.count('+')
+    singleWF = True # will overwrite later
+    
+    # Will work with no + (= single id)
+    splitstr = idstr.split('+')
+    ids = []
+    for aStr in splitstr:
+        try:
+            ids.append(int(aStr))
+        except:
+            sys.exit('Error in converting id string to individual ids')
+    ids = np.array(ids)        
+    
+    miniLog = logFile[ids-1,:] # indexing starts at 0 not 1
+    
+    
+    # Need to check that single time
+    uniqTs = np.unique(miniLog[:, 2])
+    if len(uniqTs) > 1:
+        sys.exit('Multiple times selected by line ids. Need to pick single time to show but full time series will be loaded.')
+    
+    reloadDict = {}
+    # Loop through wireframes and add to reload dict
+    # quit if more than 5 wfs
+    nWFs = len(miniLog[:,0])
+    reloadDict['nWFs'] = nWFs
+    
+    if nWFs > 5:
+        sys.exit('Max limit of 5 wireframes')
+    for i in range(nWFs):
+        mytype = miniLog[i, 3]
+        mytype = mytype.replace('Half', 'Half ')
+        myparams = miniLog[i,4:-2]
+        myparams = myparams[np.where(myparams != 'None')].astype(float)
+        reloadDict['WFtype'+str(i+1)] = mytype
+        reloadDict['AllParams'+str(i+1)] = myparams
+    
+    # time index, should be same for everyone
+    reloadDict['TimeIdx'] = miniLog[0,-1]
+    reloadDict['Time'] = miniLog[0,2]
+    
+    # background pickle, should be same for everyone
+    uniqPickles = np.unique(miniLog[:, -2])
+    if len(uniqPickles) != 1:
+        sys.exit('Different background pickles passed, cannot reload')
+    
+    thePickle =  miniLog[0,-2]   
+    reloadDict['BkgPickle'] = thePickle
+    with open(thePickle, 'rb') as file:
+        bkgData = pickle.load(file)
+    bkgData['pickleSource'] = thePickle
+            
+    return bkgData, reloadDict, nWFs
 
 # |------------------------------------------------------------|
 # |--------------- Convert fits files to maps -----------------|
@@ -580,6 +652,11 @@ def runWombat(args):
         doReload = True
         bkgData, reloadDict, nWFs, overviewPlot = processReload(theFile)
         #sys.exit("Need to redo loading reload")
+    # Check if its a log file and an int
+    elif len(args) == 3:
+        bkgData, reloadDict, nWFs = reloadLogLine(theFile, args[2])
+    # add in ovw option    
+        
     # Assume its a pickle. Might want to add check 
     else:
         reloadDict = None
@@ -589,9 +666,9 @@ def runWombat(args):
         bkgData['pickleSource'] = theFile
 
     nWFs = 1
-    if len(args) > 4:
+    if (len(args) > 4):
         sys.exit('Too many arguments given, syntax is python3 wombatWrapper.py file nWFs ovw -  where file is a background pickle or reload file and nWFs is the number of wireframes')    
-    elif len(args) >= 3:
+    elif (len(args) >= 3) and (type(reloadDict) == type(None)):
         arg = args[2]
         if arg in ['ovw', 'OVW', 'overviewplot']:
             overviewPlot = True
@@ -601,7 +678,9 @@ def runWombat(args):
                 nWFs = int(arg)
             except:
                 sys.exit('Last argument not understood, should be integer for number of WFs or ovw to turn on overview plot')
-    if len(args) == 4:
+                
+    if (len(args) == 4) and (type(reloadDict) == type(None)):
+        print (type(reloadDict))
         arg = args[3]
         if arg not in ['ovw', 'OVW', 'overviewplot']:
             sys.exit('Last argument not understood, currently available option is only ovw to turn on overview window')

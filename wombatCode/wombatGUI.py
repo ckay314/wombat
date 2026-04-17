@@ -101,6 +101,7 @@ class ParamWindow(QMainWindow):
         if type(tlabs) != type(None):    
             self.nTsli = len(tlabs) - 1 # slider goes 0 to val so subtract 1
             self.tlabs = tlabs
+            self.Tlabels = []
             self.Tsliders = []
         # Hide the time slider if we only have one time
         else:
@@ -169,7 +170,7 @@ class ParamWindow(QMainWindow):
             Tlabel = QLabel(myTlab)
         else:
             Tlabel = QLabel('Single Time Given')
-        self.Tlabel = Tlabel
+        self.Tlabels.append(Tlabel)
         layout.addWidget(Tlabel,0,0,1,12,alignment=QtCore.Qt.AlignLeft)
         
         # |------ Time Slider ------|
@@ -212,7 +213,7 @@ class ParamWindow(QMainWindow):
         
         # |----- Output Name Text Box ----|
         oBox = QLineEdit()
-        oBox.setText('WomBlog')
+        oBox.setText('')
         self.oBox = oBox
         layout.addWidget(oBox, 4,5,1,6)
         
@@ -744,11 +745,11 @@ class ParamWindow(QMainWindow):
             # tabIndex = mainwindow.tab_widget.currentIndex()
             if self.Tsliders[ff].value() != tval:
                 self.Tsliders[ff].setValue(tval) 
-           
         for aPW in pws:
             aPW.tidx = aPW.st2obs[tval-2]
-            aPW.plotBackground()    
-        self.Tlabel.setText('Time selection: '+self.tlabs[tval-2])
+            aPW.plotBackground()   
+        for aTlab in self.Tlabels: 
+            aTlab.setText('Time selection: '+self.tlabs[tval-2])
         if ovw:
             ovw.updateFoV()
         
@@ -816,7 +817,10 @@ class ParamWindow(QMainWindow):
                 Time index for that sat
         
         """
-        logFile = open('wbOutputs/'+self.oBox.text()+'.txt', 'a')
+        nameIt = self.oBox.text()
+        if nameIt == '':
+            nameIt = 'WomBlog'
+        logFile = open('wbOutputs/'+nameIt+'.txt', 'a')
         
         # Check if doing one or all fits
         if type(singleSat) != type(None):
@@ -875,7 +879,7 @@ class ParamWindow(QMainWindow):
         #|-------- Save Reload File ----------|
         #|------------------------------------|
         fileName = 'wombatSummaryFile.txt'
-        if self.oBox.text().lower() in ['womblog', 'wblog']:
+        if self.oBox.text().lower() in ['womblog', 'wblog', '']:
             fileName = 'wombatReload.txt'
         else:
             fileName = self.oBox.text() + '_reload.txt'
@@ -903,6 +907,8 @@ class ParamWindow(QMainWindow):
         outStr = 'BkgPickle: ' + bkgpkl + '\n'
         outFile.write(outStr)
         outStr = 'TimeIdx: ' +str(self.Tsliders[0].value())
+        outFile.write(outStr+'\n')
+        outStr = 'Time: ' + self.tlabs[self.Tsliders[0].value()-2]+':00'
         outFile.write(outStr+'\n')
         if ovw:
             outStr = 'OVWindow:  True'
@@ -2591,6 +2597,7 @@ def reloadIt(rD):
     
     Inputs:
        rD:  a reload dictionary read in from a save file in processReload
+            or from reloadLogLine
             (in wombatWrapper.py)
     
     Effects:
@@ -2598,6 +2605,13 @@ def reloadIt(rD):
             had when the save file was generated
         
     """
+    # |---------------------------|
+    # |---- Check reload type ----|    
+    # |---------------------------|
+    isLogLine = False
+    if 'AllParams1' in rD:
+        isLogLine = True    
+    
     # |----------------------------------|
     # |---- Set Wireframe Parameters ----|    
     # |----------------------------------|
@@ -2609,41 +2623,82 @@ def reloadIt(rD):
         if 'WFtype'+ii in rD:
             WFid = WFname2id[rD['WFtype'+ii]]
             wfs[i]  = wf.wireframe(rD['WFtype'+ii])
-            mainwindow.cbs[i].setCurrentIndex(WFid)
-            
-            #|---- Check for params by label ----|
-            for j in range(len(wfs[i].labels)):
-                thisLab = wfs[i].labels[j]
-                spIdx = thisLab.find(' ')
-                shortStr = thisLab[:spIdx]+ii
-                # If found reset the wf param value and the widges
-                if shortStr in rD:
-                    wfs[i].params[j] = float(rD[shortStr])
+            mainwindow.cbs[i].setCurrentIndex(WFid)           
+            if isLogLine:
+                myParams = rD['AllParams'+ii]
+                wfs[i].params = myParams
+                # Do all text boxes first
+                for j in range(len(myParams)):
                     mainwindow.widges[i][0][j].setText(str(wfs[i].params[j]))
-                # Update the slider too
-                myRng = wfs[i].ranges[j]
-                dx = (myRng[1] - myRng[0]) / (mainwindow.nSliders - 1)
-                x0 = myRng[0]
-                slidx = int((float(wfs[i].params[j]) - x0)/dx)
-                mainwindow.widges[i][1][j].setValue(slidx)
+                # Then update the sliders
+                for j in range(len(myParams)):                    
+                    myRng = wfs[i].ranges[j]
+                    dx = (myRng[1] - myRng[0]) / (mainwindow.nSliders - 1)
+                    x0 = myRng[0]
+                    slidx = int((float(wfs[i].params[j]) - x0)/dx)
+                    mainwindow.widges[i][1][j].setValue(slidx)
+            else:
+                #|---- Check for params by label ----|
+                for j in range(len(wfs[i].labels)):
+                    thisLab = wfs[i].labels[j]
+                    if ' ' in thisLab:
+                        spIdx = thisLab.find(' ')
+                        shortStr = thisLab[:spIdx]+ii
+                    else:
+                        shortStr = thisLab+ii
+                    # If found reset the wf param value and the widges
+                    if shortStr in rD:
+                        wfs[i].params[j] = float(rD[shortStr])
+                        mainwindow.widges[i][0][j].setText(str(wfs[i].params[j]))
+                for j in range(len(wfs[i].labels)):        
+                    # Update the slider too
+                    myRng = wfs[i].ranges[j]
+                    dx = (myRng[1] - myRng[0]) / (mainwindow.nSliders - 1)
+                    x0 = myRng[0]
+                    slidx = int((float(wfs[i].params[j]) - x0)/dx)
+                    mainwindow.widges[i][1][j].setValue(slidx)
             #|---- Show this wireframe ----|
             mainwindow.updateWFpoints(wfs[i], mainwindow.widges[i])
-
-    # |-----------------------------------|
-    # |---- Set Background Parameters ----|    
-    # |-----------------------------------|
-    for i in range(nSats):
-        ii = str(i+1)
-        myscl = int(rD['ScaleIdx'+ii])
-        myMin = int(rD['MinVal'+ii])
-        myMax = int(rD['MaxVal'+ii])
-        pws[i].cbox.setCurrentIndex(myscl)
-        pws[i].MinSlider.setValue(myMin)
-        pws[i].MaxSlider.setValue(myMax)
-    mainwindow.Tslider.setValue(int(rD['TimeIdx']))
+    
+    if not isLogLine:
+        # |-----------------------------------|
+        # |---- Set Background Parameters ----|    
+        # |-----------------------------------|
+        for i in range(nSats):
+            ii = str(i+1)
+            if ('ScaleIdx'+ii in rD):
+                myscl = int(rD['ScaleIdx'+ii])
+                pws[i].cbox.setCurrentIndex(myscl)
+            if ('MinVal'+ii in rD):    
+                myMin = int(rD['MinVal'+ii])
+                pws[i].MinSlider.setValue(myMin)
+            if ('MaxVal'+ii in rD):        
+                myMax = int(rD['MaxVal'+ii])
+                pws[i].MaxSlider.setValue(myMax)
     
     # |--- Give it its name ---|
-    mainwindow.oBox.setText(rD['myName'])
+    if 'myName' in rD:
+        mainwindow.oBox.setText(rD['myName'])
+    
+    timedifs = []
+    inDT = datetime.datetime.strptime(rD['Time'], "%Y-%m-%dT%H:%M:%S" )
+    for atime in mainwindow.tlabs:
+        timedifs.append(np.abs((inDT - datetime.datetime.strptime(atime, "%Y-%m-%dT%H:%M" )).total_seconds()))
+    timedifs = np.array(timedifs)
+    
+    slidx = np.where(timedifs == np.min(timedifs))[0] 
+    for i in range(mainwindow.nTabs):
+        mainwindow.Tsliders[i].setValue(slidx[0]+2)
+        mainwindow.Tlabels[i].setText('Time selection: '+mainwindow.tlabs[slidx[0]])
+
+    #for aPW in pws:
+    #    aPW.tidx = int(rD['TimeIdx'])
+    #    aPW.plotBackground()    
+    
+    
+    #for i in range(nwfs):    
+    #    mainwindow.Tsliders[i].setValue(int(rD['TimeIdx']))
+    #    mainwindow.update_tidx(int(rD['TimeIdx']))
     
 # |------------------------------------------------------------|
 # |-------------------- Setup Time Indices --------------------|
