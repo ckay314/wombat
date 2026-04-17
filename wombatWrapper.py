@@ -109,7 +109,7 @@ allowedInsts = ['AIA94', 'AIA131', 'AIA171','AIA193','AIA211','AIA304','AIA335',
 # |------------------------------------------------------------|
 # |------------------- Process Reload File --------------------|
 # |------------------------------------------------------------|
-def processReload(fileIn, reloadFold='wbfits/reloads/'):
+def processReload(fileIn):
     """
     Function to process a reload file
     
@@ -119,11 +119,7 @@ def processReload(fileIn, reloadFold='wbfits/reloads/'):
 
     Inputs:
         fileIn: a text file with two columns (keyword value)
-    
-    Optional Inputs:
-        reloadFold: the path to the folder where the reload fits files are saved
-                    defaults to wbfits/reloads/
-           
+               
     Outputs:
         bkgData: the background data pickle. The path is taken from fileIn and it
                  is opened and passed back to the wrapper
