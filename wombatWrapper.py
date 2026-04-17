@@ -125,15 +125,15 @@ def processReload(fileIn, reloadFold='wbfits/reloads/'):
                     defaults to wbfits/reloads/
            
     Outputs:
-        allFH: an array in the form [inst1, inst2, ...] where each insts is an array
-              of [[maps], [hdrs]] where maps and hdrs are time series of the obs 
-              maps and their corresponding headers 
-             (e.g. [[[COR2Amap1, COR2Amap2, ...], [COR2Ahdr1, COR2Ahdr2, ...]],
-                    [[C2map1, C2map2, ...], [C2Ahdr1, C2hdr2, ...]],
-                    [[AIA171map1, AIA171map2, ...], [AIA171hdr1, AIA171hdr2, ...]]])
+        bkgData: the background data pickle. The path is taken from fileIn and it
+                 is opened and passed back to the wrapper
     
-        reloadDict: a dictionary of keywords and values that wombatGUI will use to set slider
-                    values for both the wireframes and the background scaling
+        reloadDict: a dictionary with the saved parameters from the reload file. It
+                    will be used to set up the gui to the previous configuration
+    
+        nWFs: the number of wireframes
+        
+        overviewPlot: a flag whether or not to include the overview plot
     
     """
     # |-----------------------------------------------|
@@ -183,6 +183,28 @@ def processReload(fileIn, reloadFold='wbfits/reloads/'):
 # |------------------- Process log reload ---------------------|
 # |------------------------------------------------------------|
 def reloadLogLine(theFile, lineIds):
+    """
+    Function to process a log line reload 
+    
+    This will take a wombat log (womblog) and line number(s) and set up
+    a reload file analogous to the processReload version
+
+    Inputs:
+        fileIn: a text file with two columns (keyword value)
+    
+    Outputs:
+        Outputs:
+            bkgData: the background data pickle. The path is taken from fileIn and it
+                     is opened and passed back to the wrapper
+    
+            reloadDict: a dictionary with the saved parameters from the reload file. It
+                        will be used to set up the gui to the previous configuration
+    
+            nWFs: the number of wireframes
+        
+            overviewPlot: a flag whether or not to include the overview plot
+            
+    """
     #|--------------------------|
     #|--- Check the log file ---|     
     #|--------------------------|
@@ -656,7 +678,12 @@ def runWombat(args):
     elif len(args) == 3:
         bkgData, reloadDict, nWFs = reloadLogLine(theFile, args[2])
     # add in ovw option    
-        
+    elif len(args) == 4:
+        if args[3] in ['ovw', 'OVW', 'overviewplot']:
+            overviewPlot = True
+            bkgData, reloadDict, nWFs = reloadLogLine(theFile, args[2])    
+        else:
+            sys.exit('Arguments not understood. Three arguments suggests logFile ids ovw ')
     # Assume its a pickle. Might want to add check 
     else:
         reloadDict = None
