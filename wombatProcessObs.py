@@ -1468,8 +1468,11 @@ def thePickler(proIms, fnames, pickleJar='wbPickles/', name='temp', otherDiff=No
         # Make if if it doesn't exist
         print ('Creating directory ', pickleJar)
         os.mkdir(pickleJar)
-    print('Saving pickle at ', pickleJar+'WBGUI_'+name+'.pkl')
-    with open(pickleJar+'WBGUI_'+name+'.pkl', 'wb') as file:
+    
+    if name == 'temp':
+        name = 'WBGUI_'+name+'.pkl'    
+    print('Saving pickle at ', pickleJar+name)
+    with open(pickleJar+name, 'wb') as file:
         pickle.dump(bigDill, file, -1)
     
     
@@ -2156,17 +2159,20 @@ def commandLineWrapper():
     #|------------------------------------|
     insts = []
     inFolder = 'pullFolder/'
+    pklName = 'temp'
     # Processing options
     doRdifHI = False
     for val in vals:
         if val.upper() not in tags:
-            if os.path.isdir(val):
+            if '.pkl' in val:
+                pklName = val
+            elif os.path.isdir(val):
                 inFolder = val
             elif val.lower() in ['rdiffhi', 'rdifhi']:
                 doRdifHI = True
             # Add any bonus processing tags to check here
             else:
-                sys.exit(val + ' is not inst tag or exisiting input folder. Exiting... ')
+                sys.exit(val + ' is not inst tag, pkl, or exisiting input folder. Exiting... ')
         else:
             insts.append(val.upper().replace('SOLO', 'Solo'))
      
@@ -2231,7 +2237,7 @@ def commandLineWrapper():
     #|---------------------------|
     #|---- Package in pickle ----|
     #|---------------------------|
-    thePickler(proIms, fnames, otherDiff=rdifHIs)
+    thePickler(proIms, fnames, otherDiff=rdifHIs, name=pklName)
            
 
 if __name__ == '__main__':

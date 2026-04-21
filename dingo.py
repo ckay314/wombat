@@ -1599,7 +1599,7 @@ def dingo2d(widMaps, densMaps, maskMaps, outFoVs, pix2FOVs, showLog=False, figNa
     #|---------------------|
     myStyle = str(nTimes) + mmtag # eg 1s, 3m for single or multi
     # Figure size dictionary
-    fSizes  = {'1s':(6.8,5.),'2s':(4,5), '3s':(4,8.), '4s':(4,10.), '5s':(8,8.), '6s':(8,8.), '7s':(6.5,11.), '8s':(6.5,11.), '1m':(7,3.8),'2m':(7,6.6), '3m':(7,8.), '4m':(7,10.), '5m':(10,7.), '6m':(10,7.), '7m':(10,9.), '8m':(10,9.)}
+    fSizes  = {'1s':(6.8,5.),'2s':(4,5), '3s':(4,8.), '4s':(4,10.), '5s':(8,8.), '6s':(8,8.), '7s':(6.5,11.), '8s':(6.5,11.), '1m':(7,3.8),'2m':(7,6.6), '3m':(7,8.), '4m':(7,10.), '5m':(10,7.), '6m':(10,7.), '7m':(10,9.), '8m':(10,9.)} #tagIt:2dsize
     # Number of plot panels and width_ratios
     rval = 0.85
     lval = 0.1
@@ -1715,10 +1715,12 @@ def dingo2d(widMaps, densMaps, maskMaps, outFoVs, pix2FOVs, showLog=False, figNa
     #|-------------------------|
     # Holders for the results
     allDens1 = np.zeros([nTimes, picy, picx])
+    allMask1 = np.zeros([nTimes, picy, picx])
     allpxx   = np.zeros([nTimes, picy, picx])
     allpyy   = np.zeros([nTimes, picy, picx])
     if multiMode:
         allDens2 = np.zeros([nTimes, picy, picx])
+        allMask2 = np.zeros([nTimes, picy, picx])
     
     # |--- Time loop ---|    
     for i in range(nTimes):   
@@ -1730,8 +1732,10 @@ def dingo2d(widMaps, densMaps, maskMaps, outFoVs, pix2FOVs, showLog=False, figNa
         sy = maxpy - minpy + 1
     
         dens1 = densMaps[i][0]
+        mask1 = maskMaps[i][0]
         if multiMode:
             dens2 = densMaps[i][1]
+            mask2 = maskMaps[i][2]
 
         #|--- Make the mini FoV grid in pix ---|
         pxs = np.arange(minpx, maxpx+1, downSize)
@@ -1753,10 +1757,12 @@ def dingo2d(widMaps, densMaps, maskMaps, outFoVs, pix2FOVs, showLog=False, figNa
         cellArea = dys * dzs
     
         allDens1[i,dy:dy+sy,dx:dx+sx] = dens1 * maskMaps[i][0]
+        allMask1[i,dy:dy+sy,dx:dx+sx] = maskMaps[i][0]
         allpxx[i,dy:dy+sy,dx:dx+sx] = pxx
         allpyy[i,dy:dy+sy,dx:dx+sx] = pyy
         if multiMode:
             allDens2[i,dy:dy+sy,dx:dx+sx] = dens2 * maskMaps[i][2]
+            allMask2[i,dy:dy+sy,dx:dx+sx] = maskMaps[i][2]
             
         # |--- Logify densities ---|
         if showLog:
@@ -1788,7 +1794,7 @@ def dingo2d(widMaps, densMaps, maskMaps, outFoVs, pix2FOVs, showLog=False, figNa
     power = int(np.log10(vval)) - 1
     scaleIt = 10 ** power
     vvals = [-vval / scaleIt, vval / scaleIt]
-    
+
     if showLog:
         nz = allDens1[allDens1 !=0]
         scaleIt = 1
@@ -1798,7 +1804,7 @@ def dingo2d(widMaps, densMaps, maskMaps, outFoVs, pix2FOVs, showLog=False, figNa
     
     for i in range(nTimes):
         thisdens1 = allDens1[i,:,:]
-        mask1 = np.array(maskMaps[i][0])
+        mask1 = allMask1[i]
         thisdens1[np.where(thisdens1 == 0)] = -9999
         # Grab the first for the cbar
         if i == 0:
@@ -1810,13 +1816,12 @@ def dingo2d(widMaps, densMaps, maskMaps, outFoVs, pix2FOVs, showLog=False, figNa
         
         if multiMode:
             thisdens2 = allDens2[i,:,:]
-            mask2 = np.array(maskMaps[i][2])
+            mask2 = allMask2[i]
             thisdens2[np.where(thisdens2 == 0)] = -9999
             axes[1][i].imshow(thisdens2/scaleIt, origin='lower', vmin=vvals[0], vmax=vvals[1], cmap=cmap, extent=[limxs[0], limxs[1], limys[0], limys[1]])
             xs = np.arange(limxs[0], limxs[1]+1, 1)
             ys = np.arange(limys[0], limys[1]+1, 1)
             xxxs, yyys = np.meshgrid(xs, ys)
-            
             axes[0][i].contour(xxxs, yyys, mask2, levels=[0], linestyles='--', colors='w')
             axes[1][i].contour(xxxs, yyys, mask1, levels=[0], linestyles='--', colors='k')
             
@@ -1828,7 +1833,10 @@ def dingo2d(widMaps, densMaps, maskMaps, outFoVs, pix2FOVs, showLog=False, figNa
         cbar.set_label('Density (1e'+str(power)+' g cm$^{-3}$)', rotation=270, labelpad=15)
     fig.subplots_adjust(right=rval, left=lval, top=0.95,bottom=0.1)
     if figName:
-        plt.savefig('dingo2d_'+figName+picType)
+        if not os.path.exists('dingoOutputs/'):
+            # Make if if it doesn't exist
+            os.mkdir('dingoOutputs/')
+        plt.savefig('dingoOutputs/dingo2d_'+figName+picType)
     else:
         plt.show()
     
@@ -2339,7 +2347,7 @@ def dingo1d(myMaps, widMapIns, xcMapIns, densMapIns, outFoVs, pix2FoVs, obsSats,
     # |--- Save figure ---|    
     # |-------------------|
     if figName:
-        plt.savefig('dingo1d_'+figName+picType)
+        plt.savefig('dingoOutputs/dingo1d_'+figName+picType)
     else:
         plt.show()
     
@@ -2750,7 +2758,7 @@ def processBonusArgs(allBonus, mode):
         logPlot: flag to show the contours on a log scale instead of linear 
                  (defaults to false)
         
-        deproj: flag to deproject the masses accounting for the wf width perp to the
+        projoff: flag to deproject the masses accounting for the wf width perp to the
                 PoS via Billings instead of treating all pts as at Thompson sphere
     
     '''

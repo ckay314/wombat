@@ -664,17 +664,16 @@ def runWombat(args):
     theFile = args[1]
     doReload     = False
     overviewPlot = False
-    
     # Assume reload file not pickle if name includes SummaryFile
     if 'reload' in theFile.lower():
         doReload = True
         bkgData, reloadDict, nWFs, overviewPlot = processReload(theFile)
         #sys.exit("Need to redo loading reload")
     # Check if its a log file and an int
-    elif len(args) == 3:
-        bkgData, reloadDict, nWFs = reloadLogLine(theFile, args[2])
+    elif (len(args) == 3) and ('.pkl' not in theFile):
+            bkgData, reloadDict, nWFs = reloadLogLine(theFile, args[2])
     # add in ovw option    
-    elif len(args) == 4:
+    elif (len(args) == 4) and ('.pkl' not in theFile):
         if args[3] in ['ovw', 'OVW', 'overviewplot']:
             overviewPlot = True
             bkgData, reloadDict, nWFs = reloadLogLine(theFile, args[2])    
@@ -703,7 +702,6 @@ def runWombat(args):
                 sys.exit('Last argument not understood, should be integer for number of WFs or ovw to turn on overview plot')
                 
     if (len(args) == 4) and (type(reloadDict) == type(None)):
-        print (type(reloadDict))
         arg = args[3]
         if arg not in ['ovw', 'OVW', 'overviewplot']:
             sys.exit('Last argument not understood, currently available option is only ovw to turn on overview window')

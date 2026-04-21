@@ -2941,7 +2941,7 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, labelPW=True, reloadD
         stuff = satStuff[i][0]
         if stuff[0]['FOV'] > maxFoV: maxFoV = stuff[0]['FOV']
     # pad it a bit then round to a nice number
-    maxFoV = int((1.1 * maxFoV) / 5) * 5
+    maxFoV = int((1.25 * maxFoV) / 5) * 5
     # EUV only will pull 0 for this^, just set higher if < 1
     if maxFoV < 1:
         maxFoV = 1.5
