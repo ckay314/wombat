@@ -347,7 +347,7 @@ def StonyCart2CartFoV(pts, satLat, satLon, roll):
     yz plane and the spacecraft is on the x-axis. The FoV is treated
     as flat and perpendicular to the line connecting the center of
     the FoV to the satellite at a distance corresponding to the 
-    Thompson sphere for that direction.
+    Thomson sphere for that direction.
     
     Inputs:
         pts: a [npts, 3] array of points in stony cart xyz. the 
@@ -410,7 +410,7 @@ def map2CartFoV(myMap, points, pixCent=None):
     where the FoV is in the yz plane and the spacecraft is on the 
     x-axis. The FoV is treated as flat and perpendicular to the line 
     connecting the center of the FoV to the satellite at a distance 
-    corresponding to the Thompson sphere for that direction.
+    corresponding to the Thomson sphere for that direction.
     
     Inputs:
         myMap: an astropy map used to define the field of view of the 
@@ -457,7 +457,7 @@ def map2CartFoV(myMap, points, pixCent=None):
 
     # Get the heliprojective coord of the pixel
     coordM = myMap.pixel_to_world(pixCent[0] * u.pix, pixCent[1] * u.pix)
-    # Get elongation angle -> distance to Thompson Sphere
+    # Get elongation angle -> distance to Thomson Sphere
     ell = np.sqrt(coordM.Tx.rad**2 + coordM.Ty.rad**2)
     dM = np.abs(satR * np.abs(np.cos(ell)))
     # Make skycoord with HPC and distance (transform needs dist if off limb)
@@ -554,7 +554,7 @@ def wf2CartFoV(myMap, aWF, pixCent=None):
     where the FoV is in the yz plane and the spacecraft is on the 
     x-axis. The FoV is treated as flat and perpendicular to the line 
     connecting the center of the FoV to the satellite at a distance 
-    corresponding to the Thompson sphere for that direction.
+    corresponding to the Thomson sphere for that direction.
     
     Inputs:
         myMap: an astropy map used to define the field of view of the 
@@ -600,7 +600,7 @@ def wf2CartFoV(myMap, aWF, pixCent=None):
 
     # Get the heliprojective coord of the pixel
     coordM = myMap.pixel_to_world(pixCent[0] * u.pix, pixCent[1] * u.pix)
-    # Get elongation angle -> distance to Thompson Sphere
+    # Get elongation angle -> distance to Thomson Sphere
     ell = np.sqrt(coordM.Tx.rad**2 + coordM.Ty.rad**2)
     dM = np.abs(satR * np.abs(np.cos(ell)))
     # Make skycoord with HPC and distance (transform needs dist if off limb)
@@ -691,7 +691,7 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
                     it to 1 is fine for other modes
     
         deproj:     flag to deproject the masses accounting for the wf width perp to the
-                    PoS via Billings instead of treating all pts as at Thompson sphere
+                    PoS via Billings instead of treating all pts as at Thomson sphere
     
     Outputs:
         widMap:     an array of the widths (in Rs) perp to the plane of sky 
@@ -1018,7 +1018,7 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
 
         # Get the heliprojective coord of the pixel
         coordM = myMap.pixel_to_world(pixCent[0] * u.pix, pixCent[1] * u.pix)
-        # Get elongation angle -> distance to Thompson Sphere
+        # Get elongation angle -> distance to Thomson Sphere
         ell = np.sqrt(coordM.Tx.rad**2 + coordM.Ty.rad**2)
         dM = np.abs(satR * np.abs(np.cos(ell)))
         # Make skycoord with HPC and distance (transform needs dist if off limb)
@@ -2010,7 +2010,7 @@ def dingo1d(myMaps, widMapIns, xcMapIns, densMapIns, outFoVs, pix2FoVs, obsSats,
 
         # Get the heliprojective coord of the pixel
         coordM = myMap.pixel_to_world(pixCent[0] * u.pix, pixCent[1] * u.pix)
-        # Get elongation angle -> distance to Thompson Sphere
+        # Get elongation angle -> distance to Thomson Sphere
         ell = np.sqrt(coordM.Tx.rad**2 + coordM.Ty.rad**2)
         dM = np.abs(satR * np.abs(np.cos(ell)))
         # Make skycoord with HPC and distance (transform needs dist if off limb)
@@ -2759,7 +2759,7 @@ def processBonusArgs(allBonus, mode):
                  (defaults to false)
         
         projoff: flag to deproject the masses accounting for the wf width perp to the
-                PoS via Billings instead of treating all pts as at Thompson sphere
+                PoS via Billings instead of treating all pts as at Thomson sphere
     
     '''
     # Set the defaults
