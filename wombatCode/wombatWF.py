@@ -48,7 +48,7 @@ bonusColors = ['#FF2056', '#9810FA', '#FFD230']
 # Attempting to keep theta to lon angle and phi to lat angle throughout WOMBAT
 # Everything is defined wrt to CK's Theoryland (which is Cartesian with 'nose' along x-axis
 # and largest non-radial width in the z/vertical direction for antisymmetric shapes)
-gridDict = {'GCS':[5,15,25], 'Torus':[30,25], 'Sphere':[30,25], 'Half Sphere':[20,20], 'Ellipse':[30,25], 'Half Ellipse':[20,20], 'Slab':[10,5,10], 'Tube':[30,20], 'GCS*':[5,15,25]}
+gridDict = {'GCS':[5,15,25], 'Torus':[30,25], 'Sphere':[30,25], 'Half Sphere':[20,20], 'Ellipse':[30,25], 'Half Ellipse':[20,20], 'Slab':[10,5,10], 'Tube':[20,15], 'GCS*':[5,15,25]}
 
 
 
@@ -70,7 +70,7 @@ rngDict = {'Height (Rs)':[1,50], 'Lon (deg)':[-180,180], 'Lat (deg)':[-90,90], '
 rngDictHI = {'Height (Rs)':[1,215], 'Lx (Rs)':[0,215], 'Ly (Rs)':[0,215], 'Lz (Rs)':[0,215], 'HeightO (Rs)':[0,25]}
 
 # The default values for each parameter (again COR appropriate)
-defDict = {'Height (Rs)':10, 'Lon (deg)':0, 'Lat (deg)':0, 'Tilt (deg)':0, 'AW (deg)':30, 'AW_FO (deg)':40, 'AW_EO (deg)':15, 'kappa':0.3, 'deltaAx':1, 'deltaCS':1, 'ecc1':0.8, 'ecc2':0.7, 'Roll (deg)':0, 'Yaw (deg)':0, 'Pitch (deg)':0, 'Lx (Rs)':10, 'Ly (Rs)':4, 'Lz (Rs)':10, 'HeightO (Rs)':0, 'LonO (deg)':0, 'LatO (deg)':0}
+defDict = {'Height (Rs)':10, 'Lon (deg)':0, 'Lat (deg)':0, 'Tilt (deg)':0, 'AW (deg)':30, 'AW_FO (deg)':40, 'AW_EO (deg)':15, 'kappa':0.3, 'deltaAx':1, 'deltaCS':1, 'ecc1':0.8, 'ecc2':0.7, 'Roll (deg)':0, 'Yaw (deg)':0, 'Pitch (deg)':0, 'Lx (Rs)':4, 'Ly (Rs)':10, 'Lz (Rs)':4, 'HeightO (Rs)':0, 'LonO (deg)':0, 'LatO (deg)':0}
 
 
 
@@ -239,7 +239,7 @@ class wireframe():
             self.WFidx  = WFidx
             self.doBack   = doBack
             
-        
+            
         #|-------------------------------|
         #|---- Fill if not None Type ----|
         #|-------------------------------|
@@ -248,6 +248,7 @@ class wireframe():
             self.setLabels()
             # |---- Set up default values ----|
             self.setDefs()
+
             # |---- Set up grid points ----|
             self.gPoints = gridDict[WFtype]
         

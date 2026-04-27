@@ -786,7 +786,10 @@ def wispr_prep(filesIn, wcalpath, outSize=None, silent=False, biasOff=False, bia
         #|--- Pointing Information  ---|
         #|-----------------------------|
         if not pointingOff:
-            hdr = get_wispr_pointing(hdr, wcalpath, doCoords=True)
+            try:
+                hdr = get_wispr_pointing(hdr, wcalpath, doCoords=True)
+            except:
+                print ('Cannot update hdr via spice, check kernels')
         
         im[np.where(im < 0)] = 0
         

@@ -120,7 +120,7 @@ def fitshead2wcs(hdr,system=''):
             elif 'pc'+str(i+1)+'_'+str(j+1) in tags: 
                 pc_present = True
                 hdr['PC'+str(i+1)+'_'+str(j+1)] = hdr['pc'+str(i+1)+'_'+str(j+1)]
-            # dunno what cd is so skipping for now
+            # cd skipping for now
     
     if pc_present:
         variation = 'PC'

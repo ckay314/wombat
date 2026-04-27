@@ -257,8 +257,8 @@ def pullSoloHI(times, insts, HItime=30, outFolder='pullFolder/'):
     # |--------- Searching ---------|
     # |-----------------------------|
     # Fido usually ok searching at least
-    result = Fido.search(a.Time(times[0], times[1]), a.Instrument.solohi)
-    
+    result = Fido.search(a.Time(times[0], times[1]), a.Instrument.solohi, a.Provider.sdac)
+    print (result)
     # Pull the L2 data
     goodIdx = []
     if len(result) > 0:

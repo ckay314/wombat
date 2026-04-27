@@ -16,7 +16,7 @@ from astropy.io import fits
 import datetime
 import scipy
 from scipy.interpolate import griddata
-from scc_funs import scc_sebip, scc_hi_diffuse, scc_getbkgimg
+from scc_funs import scc_sebip, scc_hi_diffuse, scc_getbkgimg, scc_get_missing
 from cor_prep import get_calfac, get_calimg
 
 import matplotlib.pyplot as plt
@@ -335,8 +335,29 @@ def hi_cosmics(im, hdr):
             if cosmic_counter == count:
                 cosmics = im[0,:count][::-1]
             else:
-                print ('hit un ported part in hi_cosmics, need to do')
-                print (Quit)
+                seek = np.arange(count)
+                q = np.where(seek == im[0,:count])[0]
+                ctr = len(q)
+                if ctr > 0:
+                    count = q[ctr-1]
+                    if count >0:
+                        # Lines 77-84 in IDL
+                        print ('hit un ported part in hi_cosmics, need to do')
+                        print (Quit)
+                    else:
+                        if 'nmissing' not in hdr:
+                            miss = []
+                        else:
+                            miss = scc_get_missing(hdr)
+                        if len(miss) > 0:
+                            if np.sum(miss == hdr['imgseq']+1) > 0:
+                                print ('Cosmic ray report missing ')
+                            else:
+                                print ('Cosmic ray report implies no images')
+                        else:
+                            print ('Cosmic ray report implies no images')
+                            
+                cosmics = -1
         
         #|----------------------------|
         #|--- Process Non-Inverted ---|
@@ -517,9 +538,13 @@ def hi_correction(im, hdr, prepDir, sebip_off=False, bias_off=False, exptime_off
             print (Quit)
         else:
             im, hdr = hi_desmear(im, hdr)
-            if hdr['nmissing'] > 0:
-                print ('Need to code hi_fill_missing')
-                print (Quit)
+            fields = scc_get_missing(hdr)
+            # Going rogue bc python not happy using 1d indexing on 2d arrays
+            ny = hdr['naxis2']
+            myxs = (fields  % ny).astype(int)
+            myys = ((fields - myxs)/ny).astype(int)
+            im[myys, myxs] = hdr['blank']
+                
             hdr['bunit'] = 'DN/s'
     
     # capture ipsum

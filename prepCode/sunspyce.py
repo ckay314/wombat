@@ -211,6 +211,7 @@ def get_sunspyce_cmat(date, spacecraft, system=None, instrument=None, tolerance=
     # again single time val for now
     cmat = np.zeros([nVec, nVec])
     
+    # Pulls ops sclk (checked on PSP)
     sclkdp = spice.sce2c(int(sc), et)
     
     # Adding frcode that gets hit by roll GEI code 
@@ -221,6 +222,19 @@ def get_sunspyce_cmat(date, spacecraft, system=None, instrument=None, tolerance=
     #|--------------------------|
     #|--- Pass to spice func ---|
     #|--------------------------|
+    '''
+    # Checking who is loaded when not working
+    count = spice.ktotal('CK')
+    for i in range(count):
+        # kdata returns: file, type, source, handle
+        file_info = spice.kdata(i, 'CK')
+        objects = spice.ckobj(file_info[0])
+        obj = objects[0]
+        cover = spice.ckcov(file_info[0], obj, False, 'SEGMENT', 0.0, 'TDB')
+        start_str = spice.et2utc(cover[0], 'C', 0)
+        end_str = spice.et2utc(cover[1], 'C', 0)
+        print(file_info[0], start_str, end_str)'''
+    # Pulls long term predicted kernel (for PSP at least)
     cmat, clkout = spice.ckgp(int(sc)*1000, sclkdp, tol, frame)
     
     #|-----------------------------|

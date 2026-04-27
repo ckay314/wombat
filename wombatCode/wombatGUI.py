@@ -29,7 +29,7 @@ External Calls:
 
 import sys, os
 import numpy as np
-from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QLabel, QGridLayout, QTabWidget, QSlider, QComboBox, QLineEdit, QPushButton, QRadioButton
+from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QLabel, QGridLayout, QTabWidget, QSlider, QComboBox, QLineEdit, QDoubleSpinBox, QPushButton, QRadioButton
 from PyQt5 import QtCore
 import pyqtgraph as pg
 import datetime
@@ -368,7 +368,15 @@ class ParamWindow(QMainWindow):
                 WFLay.addWidget(label, 3*i,1,1,3)   
                 
                 # |------ Label ------|
-                wBox = QLineEdit()
+                wBox = QDoubleSpinBox()
+                wBox.setKeyboardTracking(False)
+                wBox.setRange(myRng[0], myRng[1])
+                if myWF.labels[i] in ['kappa', 'deltaAx', 'deltaCS', 'ecc1', 'ecc2']:
+                    wBox.setDecimals(3)
+                    wBox.setSingleStep(0.01)
+                else:
+                    wBox.setDecimals(2)
+                    wBox.setSingleStep(0.1)
                 WFLay.addWidget(wBox, 3*i,7,1,3)  
                 widges[0].append(wBox)
                 
@@ -405,43 +413,44 @@ class ParamWindow(QMainWindow):
         # |------ Parameters 1 - 4 ------|
         # All wftype have 4+ parameters so these always included
         widges[1][0].valueChanged.connect(lambda x: self.s2b(x, widges[0][0], i2f[0], myWF.ranges[0][0], myWF, widges))  
-        widges[0][0].returnPressed.connect(lambda: self.b2s(widges[1][0], widges[0][0], i2f[0], myWF.ranges[0][0],nSliders, myWF, widges))     
+        widges[0][0].valueChanged.connect(lambda: self.b2s(widges[1][0], widges[0][0], i2f[0], myWF.ranges[0][0],nSliders, myWF, widges))     
         widges[1][1].valueChanged.connect(lambda x: self.s2b(x, widges[0][1], i2f[1], myWF.ranges[1][0], myWF, widges))  
-        widges[0][1].returnPressed.connect(lambda: self.b2s(widges[1][1], widges[0][1], i2f[1], myWF.ranges[1][0],nSliders, myWF, widges))
+        widges[0][1].valueChanged.connect(lambda: self.b2s(widges[1][1], widges[0][1], i2f[1], myWF.ranges[1][0],nSliders, myWF, widges))
         widges[1][2].valueChanged.connect(lambda x: self.s2b(x, widges[0][2], i2f[2], myWF.ranges[2][0], myWF, widges))  
-        widges[0][2].returnPressed.connect(lambda: self.b2s(widges[1][2], widges[0][2], i2f[2], myWF.ranges[2][0],nSliders, myWF, widges))
+        widges[0][2].valueChanged.connect(lambda: self.b2s(widges[1][2], widges[0][2], i2f[2], myWF.ranges[2][0],nSliders, myWF, widges))
         widges[1][3].valueChanged.connect(lambda x: self.s2b(x, widges[0][3], i2f[3], myWF.ranges[3][0], myWF, widges))  
-        widges[0][3].returnPressed.connect(lambda: self.b2s(widges[1][3], widges[0][3], i2f[3], myWF.ranges[3][0],nSliders, myWF, widges))
+        widges[0][3].valueChanged.connect(lambda: self.b2s(widges[1][3], widges[0][3], i2f[3], myWF.ranges[3][0],nSliders, myWF, widges))
         # |-------- Parameters 5+ -------|
         # Need to check each of the remaining bc depends on wftype
         myNP = len(myWF.labels)
         # At least 5 params
         if myNP > 4:
             widges[1][4].valueChanged.connect(lambda x: self.s2b(x, widges[0][4], i2f[4], myWF.ranges[4][0], myWF, widges))  
-            widges[0][4].returnPressed.connect(lambda: self.b2s(widges[1][4], widges[0][4], i2f[4], myWF.ranges[4][0],nSliders, myWF, widges))
+            widges[0][4].valueChanged.connect(lambda: self.b2s(widges[1][4], widges[0][4], i2f[4], myWF.ranges[4][0],nSliders, myWF, widges))
         # At least 6 params    
         if myNP > 5:
             widges[1][5].valueChanged.connect(lambda x: self.s2b(x, widges[0][5], i2f[5], myWF.ranges[5][0], myWF, widges))  
-            widges[0][5].returnPressed.connect(lambda: self.b2s(widges[1][5], widges[0][5], i2f[5], myWF.ranges[5][0],nSliders, myWF, widges))
+            widges[0][5].valueChanged.connect(lambda: self.b2s(widges[1][5], widges[0][5], i2f[5], myWF.ranges[5][0],nSliders, myWF, widges))
         # At least 7 params    
         if myNP > 6:
             widges[1][6].valueChanged.connect(lambda x: self.s2b(x, widges[0][6], i2f[6], myWF.ranges[6][0], myWF, widges))  
-            widges[0][6].returnPressed.connect(lambda: self.b2s(widges[1][6], widges[0][6], i2f[6], myWF.ranges[6][0],nSliders, myWF, widges))
+            widges[0][6].valueChanged.connect(lambda: self.b2s(widges[1][6], widges[0][6], i2f[6], myWF.ranges[6][0],nSliders, myWF, widges))
         # At least 8 params           
         if myNP > 7:
             widges[1][7].valueChanged.connect(lambda x: self.s2b(x, widges[0][7], i2f[7], myWF.ranges[7][0], myWF, widges))  
-            widges[0][7].returnPressed.connect(lambda: self.b2s(widges[1][7], widges[0][7], i2f[7], myWF.ranges[7][0],nSliders, myWF, widges))
+            widges[0][7].valueChanged.connect(lambda: self.b2s(widges[1][7], widges[0][7], i2f[7], myWF.ranges[7][0],nSliders, myWF, widges))
         # At least 9 params    
         if myNP > 8:
             widges[1][8].valueChanged.connect(lambda x: self.s2b(x, widges[0][8], i2f[8], myWF.ranges[8][0], myWF, widges))  
-            widges[0][8].returnPressed.connect(lambda: self.b2s(widges[1][8], widges[0][8], i2f[8], myWF.ranges[8][0],nSliders, myWF, widges))
-            
+            widges[0][8].valueChanged.connect(lambda: self.b2s(widges[1][8], widges[0][8], i2f[8], myWF.ranges[8][0],nSliders, myWF, widges))
+
         # |---------------------------------------|
         # |------- Initiate Widget Values --------| 
         # |---------------------------------------|
         # Set things to the values the WF has
+        inParams = np.copy(myWF.params)
         for i in range(myNP):
-            myVal = myWF.params[i]
+            myVal = inParams[i]
             slidx = int((myVal - myWF.ranges[i][0])/ i2f[i])
             if slidx > nSliders -1:
                 slidx = nSliders -1
@@ -450,7 +459,7 @@ class ParamWindow(QMainWindow):
                 slidx = 0
                 myVal = myWF.ranges[i][0]
             widges[1][i].setValue(slidx)
-            widges[0][i].setText(str(myVal))
+            widges[0][i].setValue(myVal)
         
         # An attempt to make things always stay the same size
         # This isn't exact same across all WF but close
@@ -489,7 +498,8 @@ class ParamWindow(QMainWindow):
                         focused_widget.deselect()
                     except:
                         pass
-                    self.Tslider.setFocus()
+                    tabIndex = self.tab_widget.currentIndex()
+                    self.Tsliders[tabIndex].setFocus()
         #|--- Closing things ---|
         elif event.key() == QtCore.Qt.Key_Q: 
             self.close()    
@@ -551,7 +561,10 @@ class ParamWindow(QMainWindow):
         else:
             myStr = '{:.2f}'.format(myVal) 
         # Set the box value
-        b.setText(myStr)
+        if b.text() == '':
+            b.setValue(myVal)
+        if np.abs(float(b.text()) - myVal) > dx:
+            b.setValue(myVal)
         # Update the wirefram
         self.updateWFpoints(myWF, widges)
 
@@ -593,7 +606,7 @@ class ParamWindow(QMainWindow):
         
         # The above triggers s2b since the slider changes so
         # reset it to what we actual wanted instead of slider rounded val
-        b.setText(temp)
+        #b.setValue(float(temp))
         # Update the wirefram
         self.updateWFpoints(myWF, widges)
         
@@ -611,21 +624,23 @@ class ParamWindow(QMainWindow):
         
         """
         self.WFtypes[idx] = a
-        
+
         # |---------------------------------------|
         # |---------- Case of no prior WF --------| 
         # |---------------------------------------|
+        global paramsBuilt
         if type(wfs[idx].WFtype) == type(None):
+            paramsBuilt = False
             # Make the new WF
             myType = self.WFnum2type[a]
             wfs[idx] = wf.wireframe(myType, WFidx=idx+1)
             
             # Change the tab name to this type
             self.tab_widget.setTabText(idx,self.WFshort[myType])
-            
+           
             # Set up a new param layout
             WFLay, widges = self.WFparamLayout(wfs[idx])
-            
+            paramsBuilt = True
             # Add everything to holders            
             self.layouts[idx].addLayout(WFLay, 7,0,30,11)
             self.WFLays[idx] = WFLay
@@ -657,6 +672,7 @@ class ParamWindow(QMainWindow):
         else:
             # Create a new wf object but pass it any matching
             # parameters from the previous version
+            paramsBuilt = False
             ogLabs = wfs[idx].labels
             ogParams = wfs[idx].params
             myType = self.WFnum2type[a]
@@ -677,10 +693,12 @@ class ParamWindow(QMainWindow):
             self.layouts[idx].addLayout(WFLay, 7,0,30,11)
             self.WFLays[idx] = WFLay
             self.widges[idx] = widges
-           
+            paramsBuilt = True
+            
             # Give the structure the new wf
             wfs[idx] = newWF
-        
+            self.updateWFpoints(newWF, widges)
+            
         # |--------------------------------------------|
         # |------- Check for existing same type -------| 
         # |--------------------------------------------| 
@@ -1036,14 +1054,10 @@ class ParamWindow(QMainWindow):
         """
         # Got to check if all the points are set or this
         # will blow up on the first run through before panel is built
-        flagIt = False
-        for i in range(len(widges[0])):
-            if widges[0][i].text() != '':
-                aWF.params[i] = float(widges[0][i].text())
-            else:
-                flagIt = True
-        # If all set then update points and plots
-        if not flagIt:
+        if paramsBuilt:
+            for i in range(len(widges[0])):
+                if widges[0][i].text() != '':
+                    aWF.params[i] = float(widges[0][i].text())
             aWF.getPoints()
             for ipw in range(nSats):
                 pws[ipw].plotWFs(justN=aWF.WFidx-1)
@@ -1371,7 +1385,7 @@ class FigWindow(QWidget):
                     mainwindow.updateWFpoints(wfs[iii], mainwindow.widges[iii])
                     focused_widget = mainwindow.focusWidget()
                     focused_widget.deselect()
-                    mainwindow.Tslider.setFocus()
+                    mainwindow.Tsliders[0].setFocus()
         #|--- Closing Things ---|
         elif event.key() == QtCore.Qt.Key_Q: 
             self.close()
@@ -1990,7 +2004,8 @@ class OverviewWindow(QWidget):
                     mainwindow.updateWFpoints(wfs[iii], mainwindow.widges[iii])
                     focused_widget = mainwindow.focusWidget()
                     focused_widget.deselect()
-                    mainwindow.Tslider.setFocus()
+                    tabIndex = mainwindow.tab_widget.currentIndex()
+                    mainwindow.Tsliders[tabIndex].setFocus()
         #|--- Closing Things ---|
         elif event.key() == QtCore.Qt.Key_Q: 
             self.close()
@@ -2649,7 +2664,7 @@ def reloadIt(rD):
                     # If found reset the wf param value and the widges
                     if shortStr in rD:
                         wfs[i].params[j] = float(rD[shortStr])
-                        mainwindow.widges[i][0][j].setText(str(wfs[i].params[j]))
+                        mainwindow.widges[i][0][j].setValue(wfs[i].params[j])
                 for j in range(len(wfs[i].labels)):        
                     # Update the slider too
                     myRng = wfs[i].ranges[j]
@@ -2867,6 +2882,8 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, labelPW=True, reloadD
     #|---- Other Global Setup -----|
     #|-----------------------------|
     global mainwindow, pws, nSats, wfs, nwfs, bmodes, ovw, bkgpkl
+    global paramsBuilt
+    paramsBuilt = False # keep from trying to build WF until param widgets done
     
     #|----------------------------------------| 
     #|--- Pull apart background data input ---|
@@ -2947,7 +2964,7 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, labelPW=True, reloadD
         maxFoV = 1.5
     # Edit the dictionaries in wombatWF
     wf.rngDict['Height (Rs)'] = [1,maxFoV]
-    if maxFoV > 20:
+    if maxFoV > 25:
         wf.defDict['Height (Rs)'] = 25
     elif maxFoV < 5:
         wf.defDict['Height (Rs)'] = 1.5

@@ -565,7 +565,7 @@ def processSoloHI(times, insts, inFolder='pullFolder/SolO/SoloHI/', outFolder='w
                         addIt = False
                     if addIt:
                         goodFiles[i].append(aF)
-                                    
+                              
     # Make sure we found something in the date range before moving on
     nFound = 0
     for i in range(nInsts):
@@ -573,8 +573,8 @@ def processSoloHI(times, insts, inFolder='pullFolder/SolO/SoloHI/', outFolder='w
     # Return if nothing found
     if nFound == 0:
         print ('No matching SolO files found')
-        return None
-      
+        return None, None
+        
     # Make an array and sorted 
     for i in range(nInsts):
         goodFiles[i] = np.sort(np.array(goodFiles[i]))     
@@ -592,6 +592,13 @@ def processSoloHI(times, insts, inFolder='pullFolder/SolO/SoloHI/', outFolder='w
         myTimes = [[], [], [], []]
         prefixs = ['solo_L2_solohi-1ft_', 'solo_L2_solohi-2ft_', 'solo_L2_solohi-3fg_', 'solo_L2_solohi-4fg_']
         for i in range(4):
+            # Check if 3/4 are fg, if not assume ft
+            if i == 2:
+                if prefixs[i] not in goodFiles[i][0]:
+                    prefixs[i] = 'solo_L2_solohi-3ft_'
+            if i == 3:
+                if prefixs[i] not in goodFiles[i][0]:
+                    prefixs[i] = 'solo_L2_solohi-4ft_'
             for j in range(len(goodFiles[i])):
                 thisT = parse_time(goodFiles[i][j].replace(prefixs[i], '').replace('_V01.fits', '').replace('_V02.fits','').replace('_V03.fits', ''))
                 myTimes[i].append(thisT)
@@ -639,6 +646,7 @@ def processSoloHI(times, insts, inFolder='pullFolder/SolO/SoloHI/', outFolder='w
         outLines = {}   
         outLines['SoloHI'] = []
         for i in range(nQuads):
+            print ('Processing mosaic',i, 'of', nQuads)
             im, hdr = solohi_fits2grid(fullQuadFiles[i])
             ims.append(im)
             hdrs.append(hdr)
@@ -654,7 +662,6 @@ def processSoloHI(times, insts, inFolder='pullFolder/SolO/SoloHI/', outFolder='w
                     # Make if if it doesn't exist
                     os.mkdir(outFolder+'Mosaic/')
                     for i in range(len(ims)):
-                        print('Processing image',i,'of', len(ims))
                         ymd = hdrs[i]['DATE-OBS'].replace('-','').replace(':','')[:15]  
                         fitsName = 'wbpro_solohiquad_'+ymd+'.fits'      
                         fullName = outFolder+'Mosaic/' + fitsName
@@ -669,6 +676,7 @@ def processSoloHI(times, insts, inFolder='pullFolder/SolO/SoloHI/', outFolder='w
                 proIms['SoloHI'+insts[i]] = [[], []]
                 outLines['SoloHI'+insts[i]] = []
                 for j in range(len(goodFiles[i])):
+                    print ('Processing image',j)
                     aF = inFolder+insts[i]+'/'+goodFiles[i][j]
                     with fits.open(aF) as hdulist:
                         im  = hdulist[0].data
@@ -1241,10 +1249,13 @@ def processObs(times, insts, inFolder='pullFolder/', outFolder='wbFits/', outFil
     
     
     if len(doSoloHI) > 0:
-        proIms, outLines = processSoloHI(times, doSoloHI)
-        for key in proIms:
-            allProIms[key] = proIms[key]
-            allfnames[key] = outLines[key]
+        # Make it do both mosaic and panels if wanted
+        for aThing in doSoloHI:
+            proIms, outLines = processSoloHI(times, [aThing])
+            if type(proIms) != type(None):
+                for key in proIms:
+                    allProIms[key] = proIms[key]
+                    allfnames[key] = outLines[key]
             
         #if type(outLines) != type(None):
         #    for line in outLines:
@@ -1256,8 +1267,10 @@ def processObs(times, insts, inFolder='pullFolder/', outFolder='wbFits/', outFil
     # |---- Close the output file ----|
     # |-------------------------------|
     #f1.close()
-    
-    return allProIms, allfnames
+    if len(allfnames) > 0:
+        return allProIms, allfnames
+    else:
+        sys.exit('No files found, exiting')
 
 
 # |------------------------------------------------------------|
@@ -1516,7 +1529,10 @@ def arr2maps(dataIn, hdrIn, doDiff=True):
         rolls = []
         for j in range(len(dataIn)):
             myHdr  = hdrIn[j]
-            rolls.append(myHdr['SC_ROLL'])
+            if 'SC_ROLL' in myHdr:
+                rolls.append(myHdr['SC_ROLL'])
+            elif 'CROTA1' in myHdr:
+                rolls.append(myHdr['CROTA1'])
         rolls = np.array(rolls)
         idx0 = 0
         if np.std(rolls) > 1: 
@@ -1931,11 +1947,11 @@ def scaleIt(obsIn, satStuffs):
     # Dictionaries that establish the scaling of things
     # Pull the desired values for each instrument
     
-    # mins/maxs on percentiles by instrument [[lower], [upper]] with [lin, log, sqrt]
-    pMMs = {'AIA':[[0.001,10,1], [99,99,99]], 'SECCHI_EUVI':[[0.001,10,1], [99,99,99]], 'LASCO_C2':[[15,1,15], [97,99,97]], 'LASCO_C3':[[40,1,10], [99,99,90]], 'SECCHI_COR1':[[30,1,10], [99,99,90]], 'SECCHI_COR2':[[20,1,10], [92,99,93]], 'SECCHI_HI1':[[1,40,1], [99.9,80,99.9]], 'SECCHI_HI2':[[1,40,1],[99.9,80,99.9]], 'WISPR_HI1':[[1,40,1], [99.9,80,99.9]], 'WISPR_HI2':[[1,40,1], [99.9,80,99.9]], 'SoloHI':[[1,40,1], [99.5,80,99.5]] }
+    # mins/maxs on percentiles by instrument [[lower], [upper]] with [lin, log, sqrt]  #tagIt:dynrng
+    pMMs = {'AIA':[[0.001,10,1], [99,99,99]], 'SECCHI_EUVI':[[0.001,10,1], [99,99,99]], 'LASCO_C2':[[15,1,15], [97,99,97]], 'LASCO_C3':[[40,1,10], [99,99,90]], 'SECCHI_COR1':[[30,1,10], [99,99,90]], 'SECCHI_COR2':[[20,1,10], [92,99,93]], 'SECCHI_HI1':[[1,40,1], [99.9,80,99.9]], 'SECCHI_HI2':[[1,40,1],[99.9,80,99.9]], 'WISPR_HI1':[[10,40,1], [97.,80,99.9]], 'WISPR_HI2':[[1,40,1], [99.9,80,99.9]], 'SoloHI':[[1,40,1], [99.5,80,99.5]] }
     
     # Where the background sliders start (between 0 and 255)
-    sliVals = {'AIA':[[0,0,0], [191,191,191]], 'SECCHI_EUVI':[[0,32,0], [191,191,191]], 'LASCO_C2':[[0,0,21],[191,191,191]], 'LASCO_C3':[[37,0,37],[191,191,191]], 'SECCHI_COR1':[[63,0,21],[191,191,191]], 'SECCHI_COR2':[[63,0,21],[191,191,191]], 'SECCHI_HI1':[[63,0,21],[128,191,191]], 'SECCHI_HI2':[[63,0,21],[128,191,191]],  'WISPR_HI1':[[0,0,21],[128,191,191]], 'WISPR_HI2':[[0,0,21],[128,191,191]], 'SoloHI':[[0,0,21],[128,191,191]]}
+    sliVals = {'AIA':[[0,0,0], [191,191,191]], 'SECCHI_EUVI':[[0,32,0], [191,191,191]], 'LASCO_C2':[[0,0,21],[191,191,191]], 'LASCO_C3':[[37,0,37],[191,191,191]], 'SECCHI_COR1':[[63,0,21],[191,191,191]], 'SECCHI_COR2':[[63,0,21],[191,191,191]], 'SECCHI_HI1':[[63,0,21],[128,191,191]], 'SECCHI_HI2':[[63,0,21],[128,191,191]],  'WISPR_HI1':[[20,0,21],[128,191,191]], 'WISPR_HI2':[[0,0,21],[128,191,191]], 'SoloHI':[[10,0,21],[128,191,191]]}
     
     # Pull the configuration based on instrument
     myInst = satStuffs[0]['INST']

@@ -2339,7 +2339,56 @@ def scc_icerdiv2(hdr,img):
     return hdr, img
         
     
+#|--------------------------|
+#|--- Get missing pixels ---|
+#|--------------------------|
+def scc_get_missing(hdr):
+    """
+    Function that gets the missing pixels from a header
+
+    Input:
+        hdr: an fits file header
     
     
-    
+    Output:
+        missing: a list of missing indices
+
+    """      
+    base = 34
+    misslist = hdr['MISSLIST']
+    misslist = np.array([int(x) for x in misslist.split()])
+    n = len(misslist)
+    if n != hdr['NMISSING']:
+        sys.exit('MISSLIST does not equal NMISSING. Quitting scc_get_missing')
+        
+    #|--- Rice COmpression and H-compress ---|
+    if hdr['COMPRSSN'] < 89:
+        # |--- Define super pixel ---|
+        blksz = 64
+        blklen = blksz**2
+        missing = np.empty(n*blklen, dtype=int)
+        
+        # |--- Calc 2d index of superpix ---|
+        ax1 = hdr['naxis1'] / blksz 
+        ax2 = hdr['naxis2'] / blksz
+        blocks = np.array([[misslist % ax1] ,[misslist/ax2]]) # unchecked for n > 1
+        
+        dot = np.ones(blksz)
+        plus = np.arange(blksz)
+        
+        # |--- Expanded super pixel index ---|
+        x = np.array([[plus] for i in range(blksz)])
+        y = np.array([np.ones(blksz) * i for i in range(blksz)])
+                
+        # |--- Shift expanded ind for each superpix ---|
+        for i in range(n):
+            if i > 0:
+                sys.exit ('Hitting untested part of scc_get_missing, should check')
+            xx = (x + blocks[0,i] * blksz).reshape(blklen)
+            yy = (y + blocks[1,i] * blksz).reshape(blklen)
+            missing[blklen*i:blklen*(i+1)] = yy*hdr['naxis1'] + xx
+            
+    else:
+        sys.exit('Other types of comprssn not ported in scc_get_missing yet')
+    return missing
     
