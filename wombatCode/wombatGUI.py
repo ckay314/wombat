@@ -166,12 +166,19 @@ class ParamWindow(QMainWindow):
         
         # |------ Time Label ------|
         if self.nTsli > 0:
-            myTlab = 'Time selection: '+self.tlabs[0]
-            Tlabel = QLabel(myTlab)
+            myTlab = ('Time selection: '+self.tlabs[0]).ljust(65)
+            Timelabel = QLabel(myTlab)
         else:
-            Tlabel = QLabel('Single Time Given')
-        self.Tlabels.append(Tlabel)
-        layout.addWidget(Tlabel,0,0,1,12,alignment=QtCore.Qt.AlignLeft)
+            Timelabel = QLabel('Single Time Given')
+        # stay the same size ffs. want to avoid resizing
+        # screwing with the parameter sliders
+        Timelabel.setMaximumWidth(250)
+        Timelabel.setMaximumHeight(30)
+        Timelabel.setMinimumWidth(250)
+        Timelabel.setMinimumHeight(30)
+        
+        self.Tlabels.append(Timelabel)
+        layout.addWidget(Timelabel,0,0,1,11,alignment=QtCore.Qt.AlignLeft)
         
         # |------ Time Slider ------|
         Tslider1 = QSlider()
@@ -181,6 +188,10 @@ class ParamWindow(QMainWindow):
         Tslider1.setRange(2,self.nTsli+2)
         Tslider1.valueChanged.connect(self.update_tidx)
         layout.addWidget(Tslider1, 1,0,1,11)
+        Tslider1.setMaximumWidth(250)
+        Tslider1.setMaximumHeight(30)
+        Tslider1.setMinimumWidth(250)
+        Tslider1.setMinimumHeight(30)
         self.Tsliders.append(Tslider1)
 
 
@@ -373,7 +384,7 @@ class ParamWindow(QMainWindow):
                 wBox.setRange(myRng[0], myRng[1])
                 if myWF.labels[i] in ['kappa', 'deltaAx', 'deltaCS', 'ecc1', 'ecc2']:
                     wBox.setDecimals(3)
-                    wBox.setSingleStep(0.05)
+                    wBox.setSingleStep(0.02)
                 else:
                     wBox.setDecimals(2)
                     wBox.setSingleStep(0.5)
@@ -508,11 +519,11 @@ class ParamWindow(QMainWindow):
             sys.exit()
         #|--- Time Slider ---|
         elif event.key()== QtCore.Qt.Key_Right:
-            Tval = self.Tslider.value()
-            self.Tslider.setValue(Tval+1)
+            Tval = self.Tsliders[0].value()
+            self.Tsliders[0].setValue(Tval+1)
         elif event.key()== QtCore.Qt.Key_Left:
-            Tval = self.Tslider.value()
-            self.Tslider.setValue(Tval-1)            
+            Tval = self.Tsliders[0].value()
+            self.Tsliders[0].setValue(Tval-1)            
         #|--- Difference mode ---|
         elif event.key()== QtCore.Qt.Key_B:
             self.radButs[1].setChecked(True)
@@ -772,9 +783,17 @@ class ParamWindow(QMainWindow):
             aPW.tidx = aPW.st2obs[tval-2]
             aPW.plotBackground()   
         for aTlab in self.Tlabels: 
+        #    aStr = 'Time selection:' #+ str(tval)
+        #    print (self.tlabs[tval-2])
+        #    aTlab.setText(aStr)
             aTlab.setText('Time selection: '+self.tlabs[tval-2])
+        #self.widges[ff][0][0].blockSignals(True)
+        #self.Tlabels[0].setText(str(tval).rjust(55))
         if ovw:
             ovw.updateFoV()
+        
+        #print (self.widges[ff][1][0].value(), self.widges[ff][1][0].value())
+        
         
     def EBclicked(self):
         """
@@ -1407,12 +1426,12 @@ class FigWindow(QWidget):
         #|--- Time Slider ---|
         elif event.key()== QtCore.Qt.Key_Right:
             if 'mainwindow' in globals():
-                Tval = mainwindow.Tslider.value()
-                mainwindow.Tslider.setValue(Tval+1)
+                Tval = mainwindow.Tsliders[0].value()
+                mainwindow.Tsliders[0].setValue(Tval+1)
         elif event.key()== QtCore.Qt.Key_Left:
             if 'mainwindow' in globals():
-                Tval = mainwindow.Tslider.value()
-                mainwindow.Tslider.setValue(Tval-1)            
+                Tval = mainwindow.Tsliders[0].value()
+                mainwindow.Tsliders[0].setValue(Tval-1)            
         #|--- Difference mode ---|
         elif event.key()== QtCore.Qt.Key_B:
             if 'mainwindow' in globals():
@@ -1658,7 +1677,9 @@ class FigWindow(QWidget):
                                 
                 #|------------------------|
                 #|---- Project Points ----|
-                #|------------------------|            
+                #|------------------------| 
+                allxs = []
+                allys = []           
                 for jj in toShow:
                     # Convert Cart to Sph
                     pt = wfs[i].points[jj,:]
@@ -1688,11 +1709,24 @@ class FigWindow(QWidget):
                     
                     
                     # If the point is in the FoV add it to draw    
-                    if len(myPt) > 0:          
-                        pos.append({'pos': [myPt[0][0], myPt[0][1]], 'pen':{'color':myColor, 'width':penwid}, 'brush':pg.mkBrush(myColor)})
+                    if len(myPt) > 0:   
+                        allxs.append(myPt[0][0])      
+                        allys.append(myPt[0][1])       
+                        #pos.append({'pos': [myPt[0][0], myPt[0][1]], 'pen':{'color':myColor, 'width':penwid}, 'brush':pg.mkBrush(myColor)})
+                
+                #|---- Build the points ----|
+                allxs = np.array(allxs)   
+                allys = np.array(allys)   
+                skipit = 1
+                if np.sqrt(np.std(allxs)**2 + np.std(allys)**2) < 40:
+                    skipit = 2
+                    penwid = penwid/2
+                for jj in range(len(allxs))[::skipit]:
+                    pos.append({'pos': [allxs[jj], allys[jj]], 'pen':{'color':myColor, 'width':penwid}, 'brush':pg.mkBrush(myColor)})
                 
                 #|---- Reset the scatters to new positions ----|        
                 self.scatters[i].setData(pos)
+                
  
     def plotBackground(self):
         """
@@ -2048,12 +2082,12 @@ class OverviewWindow(QWidget):
         #|--- Time Slider ---|
         elif event.key()== QtCore.Qt.Key_Right:
             if 'mainwindow' in globals():
-                Tval = mainwindow.Tslider.value()
-                mainwindow.Tslider.setValue(Tval+1)
+                Tval = mainwindow.Tsliders[0].value()
+                mainwindow.Tsliders[0].setValue(Tval+1)
         elif event.key()== QtCore.Qt.Key_Left:
             if 'mainwindow' in globals():
-                Tval = mainwindow.Tslider.value()
-                mainwindow.Tslider.setValue(Tval-1)            
+                Tval = mainwindow.Tsliders[0].value()
+                mainwindow.Tsliders[0].setValue(Tval-1)            
         #|--- Difference mode ---|
         elif event.key()== QtCore.Qt.Key_B:
             if 'mainwindow' in globals():
