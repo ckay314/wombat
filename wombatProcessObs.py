@@ -74,7 +74,7 @@ Usage:
     pullObs(times, sats, waves, inFolder=inFolder, outFolder=outFolder, outFile=outFile)
 
 """
-
+import matplotlib.pyplot as plt
 import sys, os
 import numpy as np
 from astropy.io import fits
@@ -921,7 +921,7 @@ def processSTEREO(times, insts, inFolder='pullFolder/STEREO/', outFolder='wbFits
 # |------------------------------------------------------------|
 # |--------------- Process WISPR Observations -----------------|
 # |------------------------------------------------------------|
-def processWISPR(times, insts, wcalpath='prepFiles/psp/wispr/',  inFolder='pullFolder/PSP/WISPR/', outFolder='wbFits/PSP/WISPR/', downSize=1024, saveFits=False):
+def processWISPR(times, insts, wcalpath='prepFiles/psp/wispr/',  inFolder='pullFolder/PSP/WISPR/', outFolder='wbFits/PSP/WISPR/', downSize=1024, saveFits=False, doLW=False):
     """
     Function to process the level 2 WISPR data
     
@@ -950,6 +950,8 @@ def processWISPR(times, insts, wcalpath='prepFiles/psp/wispr/',  inFolder='pullF
         outFolder: top folder for processed results, will be save in outFolder/inst/
                    defaults to wbFits/PSP/WISPR/
     
+        doLW:      flag to pull in the LW processed data
+    
     Outputs:
         proIms:     a dictionary with the instrument as key and the entry corresponding to
                     [[im1, im2, im3,...], [hdr1, hdr2, hdr3,...]] for the processed data
@@ -966,9 +968,12 @@ def processWISPR(times, insts, wcalpath='prepFiles/psp/wispr/',  inFolder='pullF
     # |----------------------------------|
     nInsts = len(insts)
     PSPfiles = [[] for i in range(nInsts)]
+    bonusStr = ''
+    if doLW:
+        bonusStr = 'LW_'
     for i in range(nInsts):
-        PSPfiles[i] = os.listdir(inFolder+insts[i])
-    
+        PSPfiles[i] = os.listdir(inFolder+bonusStr+insts[i])
+        
     # Make sure we found something before moving on
     nFound = 0
     for i in range(nInsts):
@@ -998,7 +1003,7 @@ def processWISPR(times, insts, wcalpath='prepFiles/psp/wispr/',  inFolder='pullF
                     elif (j == nDays-1) & (hm > hms[1]):
                         addIt = False
                     if addIt:
-                        goodFiles[i].append(inFolder+insts[i]+'/'+aF)
+                        goodFiles[i].append(inFolder+bonusStr+insts[i]+'/'+aF)
 
     # Make sure we found something in the date range before moving on
     nFound = 0
@@ -1121,7 +1126,7 @@ def processObs(times, insts, inFolder='pullFolder/', outFolder='wbFits/', outFil
     # |---------------------------------------| 
     # |---- Check all inst keys are valid ----|
     # |---------------------------------------| 
-    goods = np.array(['AIA94', 'AIA131', 'AIA171','AIA193','AIA211','AIA304','AIA335','AIA1600','AIA1700', 'C2', 'C3', 'COR1', 'COR2', 'EUVI171', 'EUVI195', 'EUVI284', 'EUVI304', 'HI1', 'HI2', 'COR1A', 'COR2A', 'EUVI171A', 'EUVI195A', 'EUVI284A', 'EUVI304A', 'HI1A', 'HI2A', 'COR1B', 'COR2B', 'EUVI171B', 'EUVI195B', 'EUVI284B', 'EUVI304B', 'HI1B', 'HI2B' ,'SoloHI', 'SoloHI1', 'SoloHI2', 'SoloHI3', 'SoloHI4', 'WISPR', 'WISPRI', 'WISPRO'])
+    goods = np.array(['AIA94', 'AIA131', 'AIA171','AIA193','AIA211','AIA304','AIA335','AIA1600','AIA1700', 'C2', 'C3', 'COR1', 'COR2', 'EUVI171', 'EUVI195', 'EUVI284', 'EUVI304', 'HI1', 'HI2', 'COR1A', 'COR2A', 'EUVI171A', 'EUVI195A', 'EUVI284A', 'EUVI304A', 'HI1A', 'HI2A', 'COR1B', 'COR2B', 'EUVI171B', 'EUVI195B', 'EUVI284B', 'EUVI304B', 'HI1B', 'HI2B' ,'SoloHI', 'SoloHI1', 'SoloHI2', 'SoloHI3', 'SoloHI4', 'WISPR', 'WISPRI', 'WISPRO', 'WISPR_LW'])
     quitIt = False
     for inst in insts:
         if inst not in goods:
@@ -1215,10 +1220,19 @@ def processObs(times, insts, inFolder='pullFolder/', outFolder='wbFits/', outFil
     # |------------ WISPR ------------|
     # |-------------------------------|
     doWISPR = []
+    doLW = False
     if 'WISPR' in insts: doWISPR = ['Inner', 'Outer']
     elif 'WISPRI' in insts: doWISPR.append('Inner')
     elif 'WISPRO' in insts: doWISPR.append('Outer')
+    if 'WISPR_LW' in insts: doLW = True
+
     if len(doWISPR) > 0:
+        if doLW:
+            proImsLW, outLinesLW = processWISPR(times, doWISPR, doLW=True)
+            for key in proImsLW:
+                allProIms[key+'_LW'] = proImsLW[key]
+                allfnames[key+'_LW'] = outLinesLW[key]
+        
         proIms, outLines = processWISPR(times, doWISPR)
         for key in proIms:
             allProIms[key] = proIms[key]
@@ -1399,6 +1413,8 @@ def thePickler(proIms, fnames, pickleJar='wbPickles/', name='temp', otherDiff=No
         # |--------------------------------------|
         if bigDill['WBinfo']['isEUV'][key]:
             tempMaps[key] = arr2maps(bigDill['proIms'][key][0], bigDill['proIms'][key][1], doDiff=False)  
+        elif key in ['WISPRI_LW', 'WISPRO_LW']:
+            tempMaps[key] = arr2maps(bigDill['proIms'][key][0], bigDill['proIms'][key][1], doDiff=False)  
         else:
             tempMaps[key] = arr2maps(bigDill['proIms'][key][0], bigDill['proIms'][key][1])           
         
@@ -1413,6 +1429,9 @@ def thePickler(proIms, fnames, pickleJar='wbPickles/', name='temp', otherDiff=No
             aSStuff =  getSatStuff(aMap) # A Sat Stuff, don't be immature...
             if bigDill['WBinfo']['isEUV'][key]:
                 aSStuff['myFits'] = fnames[key][j]
+            elif key in ['WISPRI_LW', 'WISPRO_LW']:
+                aSStuff['INST'] = aSStuff['INST'] +'_LW'
+                aSStuff['myFits'] = fnames[key][j]
             else:    
                 aSStuff['myFits'] = fnames[key][j+1]
                 aSStuff['myRDfits'] = fnames[key][j]
@@ -1424,6 +1443,8 @@ def thePickler(proIms, fnames, pickleJar='wbPickles/', name='temp', otherDiff=No
         # |---- Calculate masses and store ----|
         # |------------------------------------|
         if bigDill['WBinfo']['isEUV'][key]:
+            bigDill['massIms'][key] = [None, None]
+        elif key in ['WISPRI_LW', 'WISPRO_LW']:
             bigDill['massIms'][key] = [None, None]
         else:
             bigDill['massIms'][key] = []
@@ -1948,16 +1969,16 @@ def scaleIt(obsIn, satStuffs):
     # Pull the desired values for each instrument
     
     # mins/maxs on percentiles by instrument [[lower], [upper]] with [lin, log, sqrt]  #tagIt:dynrng
-    pMMs = {'AIA':[[0.001,10,1], [99,99,99]], 'SECCHI_EUVI':[[0.001,10,1], [99,99,99]], 'LASCO_C2':[[15,1,15], [97,99,97]], 'LASCO_C3':[[40,1,10], [99,99,90]], 'SECCHI_COR1':[[30,1,10], [99,99,90]], 'SECCHI_COR2':[[20,1,10], [92,99,93]], 'SECCHI_HI1':[[1,40,1], [99.9,80,99.9]], 'SECCHI_HI2':[[1,40,1],[99.9,80,99.9]], 'WISPR_HI1':[[10,40,1], [97.,80,99.9]], 'WISPR_HI2':[[1,40,1], [99.9,80,99.9]], 'SoloHI':[[1,40,1], [99.5,80,99.5]] }
+    pMMs = {'AIA':[[0.001,10,1], [99,99,99]], 'SECCHI_EUVI':[[0.001,10,1], [99,99,99]], 'LASCO_C2':[[15,1,15], [97,99,97]], 'LASCO_C3':[[40,1,10], [99,99,90]], 'SECCHI_COR1':[[30,1,10], [99,99,90]], 'SECCHI_COR2':[[20,1,10], [92,99,93]], 'SECCHI_HI1':[[1,40,1], [99.9,80,99.9]], 'SECCHI_HI2':[[1,40,1],[99.9,80,99.9]], 'WISPR_HI1':[[10,40,1], [97.,80,99.9]], 'WISPR_HI2':[[1,40,1], [99.9,80,99.9]],'WISPR_HI1_LW':[[1,20,1], [80.,80,99.9]],  'SoloHI':[[1,40,1], [99.5,80,99.5]] }
     
     # Where the background sliders start (between 0 and 255)
-    sliVals = {'AIA':[[0,0,0], [191,191,191]], 'SECCHI_EUVI':[[0,32,0], [191,191,191]], 'LASCO_C2':[[0,0,21],[191,191,191]], 'LASCO_C3':[[37,0,37],[191,191,191]], 'SECCHI_COR1':[[63,0,21],[191,191,191]], 'SECCHI_COR2':[[63,0,21],[191,191,191]], 'SECCHI_HI1':[[63,0,21],[128,191,191]], 'SECCHI_HI2':[[63,0,21],[128,191,191]],  'WISPR_HI1':[[20,0,21],[128,191,191]], 'WISPR_HI2':[[0,0,21],[128,191,191]], 'SoloHI':[[10,0,21],[128,191,191]]}
+    sliVals = {'AIA':[[0,0,0], [191,191,191]], 'SECCHI_EUVI':[[0,32,0], [191,191,191]], 'LASCO_C2':[[0,0,21],[191,191,191]], 'LASCO_C3':[[37,0,37],[191,191,191]], 'SECCHI_COR1':[[63,0,21],[191,191,191]], 'SECCHI_COR2':[[63,0,21],[191,191,191]], 'SECCHI_HI1':[[63,0,21],[128,191,191]], 'SECCHI_HI2':[[63,0,21],[128,191,191]],  'WISPR_HI1':[[20,0,21],[128,191,191]], 'WISPR_HI2':[[0,0,21],[128,191,191]], 'WISPR_HI1_LW':[[10,0,21],[128,191,191]], 'SoloHI':[[10,0,21],[128,191,191]]}
     
     # Pull the configuration based on instrument
     myInst = satStuffs[0]['INST']
     myMM = pMMs[myInst]
     mySliVals = sliVals[myInst]
-    
+
     #|--- Loop through both RD and BD ---|
     bothScls = []
     bothSatStuffs = []   
@@ -2178,6 +2199,7 @@ def commandLineWrapper():
     pklName = 'temp'
     # Processing options
     doRdifHI = False
+    doLW = False
     for val in vals:
         if val.upper() not in tags:
             if '.pkl' in val:
@@ -2186,12 +2208,19 @@ def commandLineWrapper():
                 inFolder = val
             elif val.lower() in ['rdiffhi', 'rdifhi']:
                 doRdifHI = True
+            elif val.lower() in ['lw']:
+                doLW = True
             # Add any bonus processing tags to check here
             else:
                 sys.exit(val + ' is not inst tag, pkl, or exisiting input folder. Exiting... ')
         else:
             insts.append(val.upper().replace('SOLO', 'Solo'))
-     
+            
+    # |--- Add the modified insts (if needed) ---|
+    if doLW:
+        insts.append('WISPR_LW')
+    # More friends to come?
+
     if len(insts) < 1:
         sys.exit('No instrument tag provided')
     
@@ -2249,7 +2278,15 @@ def commandLineWrapper():
                 rdifHIs[key] = [rdMaps, rdHdrs]
     else:
         rdifHIs = None
-    
+        
+    '''if doLW:
+        print ('hi')
+        gf = 'pullFolder/PSP/WISPR/LW_Inner/psp_LW_wispr_20230313T093017_V1_1221.fits'
+        ims, hdrs = wispr_prep(gf,'prepFiles/psp/wispr/', straylightOff=True)
+        fig = plt.figure()
+        plt.imshow(ims[0], vmin=1e-5, vmax=1e-4)
+        plt.show()
+        print (sd)'''
     #|---------------------------|
     #|---- Package in pickle ----|
     #|---------------------------|
