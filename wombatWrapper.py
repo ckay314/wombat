@@ -710,7 +710,7 @@ def runWombat(args):
     
     if nWFs > 5:
         sys.exit('Max limit of 5 wireframes')
-        
+  
     releaseTheWombat(bkgData, reloadDict=reloadDict, overviewPlot=overviewPlot, nWFs=nWFs)   
         
         

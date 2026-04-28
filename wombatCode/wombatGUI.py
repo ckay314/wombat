@@ -373,10 +373,10 @@ class ParamWindow(QMainWindow):
                 wBox.setRange(myRng[0], myRng[1])
                 if myWF.labels[i] in ['kappa', 'deltaAx', 'deltaCS', 'ecc1', 'ecc2']:
                     wBox.setDecimals(3)
-                    wBox.setSingleStep(0.01)
+                    wBox.setSingleStep(0.05)
                 else:
                     wBox.setDecimals(2)
-                    wBox.setSingleStep(0.1)
+                    wBox.setSingleStep(0.5)
                 WFLay.addWidget(wBox, 3*i,7,1,3)  
                 widges[0].append(wBox)
                 
@@ -486,6 +486,7 @@ class ParamWindow(QMainWindow):
             s      = save 
             l      = log wf params
             m      = calculate mass
+            h      = show/hide wfs
      
         """
         #|--- Pull Params/Plot ---|
@@ -533,6 +534,10 @@ class ParamWindow(QMainWindow):
         #|--- Logging ---|
         elif event.key() == QtCore.Qt.Key_L:
             self.LBclicked()
+        #|--- Show/Hide ---|
+        elif event.key() == QtCore.Qt.Key_H:
+            for i in range(self.nTabs):
+                self.HBclicked(i)
 
         
     def s2b(self, x=None, b=None, dx=None, x0=None, myWF=None, widges=None):
@@ -565,8 +570,8 @@ class ParamWindow(QMainWindow):
             b.setValue(myVal)
         if np.abs(float(b.text()) - myVal) > dx:
             b.setValue(myVal)
-        # Update the wirefram
-        self.updateWFpoints(myWF, widges)
+            # Update the wirefram
+            #self.updateWFpoints(myWF, widges) # not needed now with value change on spin box
 
     def b2s(self,s,b, dx=None, x0=None, nSli=None, myWF=None, widges=None):
         """
@@ -1108,7 +1113,7 @@ class FigWindow(QWidget):
     
      
     """
-    def __init__(self, myObs, myScls, satStuff, massIms, myNum=0, labelPW=True, tmap=[0], screenXY=None, mouseEnabled=False):
+    def __init__(self, myObs, myScls, satStuff, massIms, myNum=0, labelPW='Bottom', tmap=[0], screenXY=None, mouseEnabled=False):
         """
         Intial setup for the figure window class.
     
@@ -1130,8 +1135,8 @@ class FigWindow(QWidget):
                       defaults to 0
     
             labelPW:  flag to show labels of the spacecraft/instrument name and 
-                      time stamp at the bottom of the figure windows
-                      defaults to True
+                      time stamp. Can set at None, 'Top', or 'Bottom'
+                      defaults to Bottom
     
             tmap:     an array that maps the slider time index to the observation index.
                       The obs aren't necessarily uniformly spaced but the t slider is
@@ -1428,6 +1433,11 @@ class FigWindow(QWidget):
         #|--- Mass ---|
         elif event.key() == QtCore.Qt.Key_M:
             self.MBclicked()
+        #|--- Show/Hide ---|
+        elif event.key() == QtCore.Qt.Key_H:
+            if 'mainwindow' in globals():
+                for i in range(mainwindow.nTabs):
+                    mainwindow.HBclicked(i)
                 
     def back_changed(self,text):
         """
@@ -1742,14 +1752,25 @@ class FigWindow(QWidget):
                 self.pWindow_north = self.pWindow.plot(self.satStuff[self.didx][self.tidx]['SUNNORTH'][0], self.satStuff[self.didx][self.tidx]['SUNNORTH'][1], symbolSize=3, symbolBrush='w', pen=pg.mkPen(color='w', width=1))
                 
         #|---- Add text labels ----|             
-        if self.labelIt:
+        if type(self.labelIt) != type(None):
             geom = self.pWindow.visibleRange()
             wid = geom.width()
+            hite = geom.height()
+            if self.labelIt.lower() == 'bottom':
+                ypos = 0.001 * hite
+            elif self.labelIt.lower() == 'top': 
+                ypos = 0.95 * hite
+                
             text_item1 = pg.TextItem(self.satStuff[self.didx][self.tidx]['OBS'] + ' ' + self.satStuff[self.didx][self.tidx]['INST'], anchor=(0, 1), fill='k')
-            text_item1.setPos(0.001*wid, 0.001*wid)
+            mykey = self.satStuff[0][0]['KEY']
+            # Replace general solohi with a single panel if needed
+            if mykey in ['SoloHI1', 'SoloHI2', 'SoloHI3', 'SoloHI4']:
+                text_item1 = pg.TextItem(self.satStuff[self.didx][self.tidx]['OBS'] + ' ' + mykey, anchor=(0, 1), fill='k')
+            
+            text_item1.setPos(0.001*wid, ypos)
             self.pWindow.addItem(text_item1)
             text_item2 = pg.TextItem(self.satStuff[self.didx][self.tidx]['DATEOBS'], anchor=(1, 1), fill='k')
-            text_item2.setPos(0.999*wid, 0.001*wid)
+            text_item2.setPos(0.999*wid, ypos)
             self.pWindow.addItem(text_item2)
         
         # Make slider highlighted so key shortcuts work
@@ -1937,14 +1958,19 @@ class OverviewWindow(QWidget):
             ang = -np.arctan2(yh, xh) * 180 / np.pi
         
             #|---- Update the arrow ----|
-            self.arrows[i].setStyle(angle=lon-270, headWidth=0.05, headLen=hL, tailLen=tL, tailWidth=0.03, pxMode=False,  pen={'color': color, 'width': 2}, brush=color)
+            self.arrows[i].setStyle(angle=lon-270, headWidth=0.04, headLen=hL, tailLen=tL, tailWidth=0.02, pxMode=False,  pen={'color': color, 'width': 2}, brush=color)
             tail_len = self.arrows[i].opts['tailLen']
             self.arrows[i].setPos(xh, yh)
+            self.wfScats[i].setData([], [])
         else:            
             xs = -wfs[i].points[::2,0] / 215.
             ys = wfs[i].points[::2,1] / 215.
             self.wfScats[i].setData(ys, xs)
             self.wfScats[i].setBrush(color)
+            # Turn off arrow (potentially)
+            self.arrows[i].setStyle(angle=0, headWidth=0, headLen=0, tailLen=0, tailWidth=0., pxMode=False)
+            #tail_len = self.arrows[i].opts['tailLen']
+            self.arrows[i].setPos(0, 0)
     
     def updateFoV(self):
         """
@@ -2049,6 +2075,11 @@ class OverviewWindow(QWidget):
         elif event.key() == QtCore.Qt.Key_M:
             if 'mainwindow' in globals():
                 mainwindow.MBclicked()
+        #|--- Show/Hide ---|
+        elif event.key() == QtCore.Qt.Key_H:
+            if 'mainwindow' in globals():
+                for i in range(mainwindow.nTabs):
+                    mainwindow.HBclicked(i)
            
 
 
@@ -2642,16 +2673,18 @@ def reloadIt(rD):
             if isLogLine:
                 myParams = rD['AllParams'+ii]
                 wfs[i].params = myParams
+                inParams = np.copy(myParams)
                 # Do all text boxes first
                 for j in range(len(myParams)):
-                    mainwindow.widges[i][0][j].setText(str(wfs[i].params[j]))
+                    mainwindow.widges[i][0][j].setValue(inParams[j])
                 # Then update the sliders
-                for j in range(len(myParams)):                    
+                # Not needed with SpinBox
+                '''for j in range(len(myParams)):                    
                     myRng = wfs[i].ranges[j]
                     dx = (myRng[1] - myRng[0]) / (mainwindow.nSliders - 1)
                     x0 = myRng[0]
                     slidx = int((float(wfs[i].params[j]) - x0)/dx)
-                    mainwindow.widges[i][1][j].setValue(slidx)
+                    mainwindow.widges[i][1][j].setValue(slidx)'''
             else:
                 #|---- Check for params by label ----|
                 for j in range(len(wfs[i].labels)):
@@ -2987,7 +3020,13 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, labelPW=True, reloadD
             myTmap = tmaps[i]
         else:
             myTmap = [0] 
-        pw = FigWindow(obsFiles[i], sclIms[i], satStuff[i], massIms[i], myNum=i, labelPW=labelPW, tmap=myTmap, screenXY=screenXY)
+        lPW = None
+        if labelPW:
+            if i2inst[i] in ['SoloHI2', 'SoloHI4']:
+                lPW = 'top'
+            else:
+                lPW = 'bottom'
+        pw = FigWindow(obsFiles[i], sclIms[i], satStuff[i], massIms[i], myNum=i, labelPW=lPW, tmap=myTmap, screenXY=screenXY)
         pw.show()
         pws.append(pw) 
     
