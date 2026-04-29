@@ -1222,9 +1222,11 @@ class FigWindow(QWidget):
                 else:
                     self.setGeometry(550*(myNum+1), 350, 450, 450) 
                     
-                
-                
-        self.setWindowTitle(self.satName.replace('_',' '))        
+        myTitle = self.satName.replace('_',' ')    
+        # Clean up some title things
+        myTitle = myTitle.replace('WISPR HI1', 'WISPR Inner')    
+        myTitle = myTitle.replace('WISPR HI1', 'WISPR Outer')    
+        self.setWindowTitle(myTitle)        
         
         #|---- Make a layout ----|
         layoutP =  QGridLayout()
@@ -1800,7 +1802,7 @@ class FigWindow(QWidget):
             # Replace general solohi with a single panel if needed
             if mykey in ['SoloHI1', 'SoloHI2', 'SoloHI3', 'SoloHI4']:
                 instTag = self.satStuff[0][0]['KEY']
-            elif mykey in ['WISPRI', 'WISPRI_LW']:
+            elif mykey in ['WISPRI', 'WISPRI_LW', 'WISPRI_L3']:
                 instTag = mykey.replace('RI','R_I').replace('RO','R_O')
             text_item1 = pg.TextItem(self.satStuff[self.didx][self.tidx]['OBS'] + ' ' + instTag, anchor=(0, 1), fill='k')            
             text_item1.setPos(0.001*wid, ypos)

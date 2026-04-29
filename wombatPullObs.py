@@ -180,8 +180,9 @@ def pullLASCO(times, insts, CORtime=20, outFolder='pullFolder/'):
     # |--------- Searching ---------|
     # |-----------------------------|
     # Search Fido, sample works here
-    result = Fido.search(a.Time(times[0], times[1]), a.Instrument.lasco, a.Sample(CORtime*u.minute))
-
+    result = Fido.search(a.Time(times[0], times[1]), a.Instrument.lasco, a.Sample(CORtime*u.minute), a.Provider.sdac)
+    if (len(result) == 0):
+        sys.exit('Cannot find and files for LASCO')
     
     # |-----------------------------|
     # |---------- Sorting ----------|
