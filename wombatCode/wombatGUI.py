@@ -1558,7 +1558,7 @@ class FigWindow(QWidget):
         PA = (np.arctan2(-Tx,Ty) * 180 / np.pi) % 360.
         print ('Proj R (Rs), PA (deg):'.rjust(25), '{:8.2f}'.format(RRSun), '{:8.1f}'.format(PA))
         # |---- Get mass per pixel  ----| 
-        if type(self.mIms) != type(None):           
+        if type(self.mIms[self.tidx]) != type(None):    
             px = int(pix[0])
             py = int(pix[1])
             if self.satStuff[self.didx][0]['OBSTYPE'] == 'COR':
@@ -1794,13 +1794,15 @@ class FigWindow(QWidget):
                 ypos = 0.001 * hite
             elif self.labelIt.lower() == 'top': 
                 ypos = 0.95 * hite
-                
-            text_item1 = pg.TextItem(self.satStuff[self.didx][self.tidx]['OBS'] + ' ' + self.satStuff[self.didx][self.tidx]['INST'], anchor=(0, 1), fill='k')
+            
+            instTag = self.satStuff[self.didx][self.tidx]['INST']
             mykey = self.satStuff[0][0]['KEY']
             # Replace general solohi with a single panel if needed
             if mykey in ['SoloHI1', 'SoloHI2', 'SoloHI3', 'SoloHI4']:
-                text_item1 = pg.TextItem(self.satStuff[self.didx][self.tidx]['OBS'] + ' ' + mykey, anchor=(0, 1), fill='k')
-            
+                instTag = self.satStuff[0][0]['KEY']
+            elif mykey in ['WISPRI', 'WISPRI_LW']:
+                instTag = mykey.replace('RI','R_I').replace('RO','R_O')
+            text_item1 = pg.TextItem(self.satStuff[self.didx][self.tidx]['OBS'] + ' ' + instTag, anchor=(0, 1), fill='k')            
             text_item1.setPos(0.001*wid, ypos)
             self.pWindow.addItem(text_item1)
             text_item2 = pg.TextItem(self.satStuff[self.didx][self.tidx]['DATEOBS'], anchor=(1, 1), fill='k')

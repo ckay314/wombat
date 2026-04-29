@@ -74,7 +74,6 @@ Usage:
     pullObs(times, sats, waves, inFolder=inFolder, outFolder=outFolder, outFile=outFile)
 
 """
-import matplotlib.pyplot as plt
 import sys, os
 import numpy as np
 from astropy.io import fits
@@ -864,7 +863,7 @@ def processSTEREO(times, insts, inFolder='pullFolder/STEREO/', outFolder='wbFits
                             #outLines.append(fullName+'\n')
                         proIms[inst+AB[j]][0].append(ims[k])
                         proIms[inst+AB[j]][1].append(hdrs[k])
-                        outLines[inst+AB[j]].append(goodFiles[i][j])
+                        outLines[inst+AB[j]].append(goodFiles[i][j][k])
                         
 
         # Process the triplets
@@ -1126,7 +1125,7 @@ def processObs(times, insts, inFolder='pullFolder/', outFolder='wbFits/', outFil
     # |---------------------------------------| 
     # |---- Check all inst keys are valid ----|
     # |---------------------------------------| 
-    goods = np.array(['AIA94', 'AIA131', 'AIA171','AIA193','AIA211','AIA304','AIA335','AIA1600','AIA1700', 'C2', 'C3', 'COR1', 'COR2', 'EUVI171', 'EUVI195', 'EUVI284', 'EUVI304', 'HI1', 'HI2', 'COR1A', 'COR2A', 'EUVI171A', 'EUVI195A', 'EUVI284A', 'EUVI304A', 'HI1A', 'HI2A', 'COR1B', 'COR2B', 'EUVI171B', 'EUVI195B', 'EUVI284B', 'EUVI304B', 'HI1B', 'HI2B' ,'SoloHI', 'SoloHI1', 'SoloHI2', 'SoloHI3', 'SoloHI4', 'WISPR', 'WISPRI', 'WISPRO', 'WISPR_LW'])
+    goods = np.array(['AIA94', 'AIA131', 'AIA171','AIA193','AIA211','AIA304','AIA335','AIA1600','AIA1700', 'C2', 'C3', 'COR1', 'COR2', 'EUVI171', 'EUVI195', 'EUVI284', 'EUVI304', 'HI1', 'HI2', 'HI1A_SR', 'HI1B_SR', 'HI2A_SR', 'HI2B_SR', 'COR1A', 'COR2A', 'EUVI171A', 'EUVI195A', 'EUVI284A', 'EUVI304A', 'HI1A', 'HI2A', 'COR1B', 'COR2B', 'EUVI171B', 'EUVI195B', 'EUVI284B', 'EUVI304B', 'HI1B', 'HI2B' ,'SoloHI', 'SoloHI1', 'SoloHI2', 'SoloHI3', 'SoloHI4', 'WISPR', 'WISPRI', 'WISPRO', 'WISPR_LW', 'WISPRI_LW', 'WISPRO_LW'])
     quitIt = False
     for inst in insts:
         if inst not in goods:
@@ -1196,10 +1195,21 @@ def processObs(times, insts, inFolder='pullFolder/', outFolder='wbFits/', outFil
     # |------------ STEREO -----------|
     # |-------------------------------|
     doSTEREO = []
-    STkeys = ['COR1', 'COR2', 'EUVI171', 'EUVI195', 'EUVI284', 'EUVI304', 'HI1', 'HI2', 'COR1A', 'COR2A', 'EUVI171A', 'EUVI195A', 'EUVI284A', 'EUVI304A', 'HI1A', 'HI2A', 'COR1B', 'COR2B', 'EUVI171B', 'EUVI195B', 'EUVI284B', 'EUVI304B', 'HI1B', 'HI2B']
+    doSTEREO_SR = []
+    STkeys = ['COR1', 'COR2', 'EUVI171', 'EUVI195', 'EUVI284', 'EUVI304', 'HI1', 'HI2', 'COR1A', 'COR2A', 'EUVI171A', 'EUVI195A', 'EUVI284A', 'EUVI304A', 'HI1A', 'HI2A', 'COR1B', 'COR2B', 'EUVI171B', 'EUVI195B', 'EUVI284B', 'EUVI304B', 'HI1B', 'HI2B', 'HI1A_SR', 'HI1B_SR', 'HI2A_SR', 'HI2B_SR']
     for inst in insts:
         if inst in STkeys:
-            doSTEREO.append(inst)
+            if '_SR' in inst:
+                doSTEREO_SR.append(inst)
+            else:
+                doSTEREO.append(inst)
+            
+    # |---- Check for SR tags ---|
+    for inst in doSTEREO_SR:
+        shortK = inst.replace('_SR','')
+        if shortK not in doSTEREO:
+            doSTEREO.append(shortK)
+
     if len(doSTEREO) > 0:
         proIms, outLines = processSTEREO(times, doSTEREO)
         for key in proIms:
@@ -1207,13 +1217,30 @@ def processObs(times, insts, inFolder='pullFolder/', outFolder='wbFits/', outFil
             if len(proIms[key][0]) > 0:
                 allProIms[key] = proIms[key]
                 allfnames[key] = outLines[key]
+
+    if len(doSTEREO_SR) > 0:
+        for inst in doSTEREO_SR:
+            myFs = allfnames[inst.replace('_SR','')]
+            firstF = myFs[0]
+            # Get side (a/b)
+            side = 'a'
+            if 'b.fts' in firstF.lower(): side = 'b'
+            # Get telescope (1/2)
+            tel = 'hi_1'
+            if 'h2' in firstF.lower(): tel = 'hi_2'
+            myRDHIs, rdHdrs = rdifhi_wrapper(myFs, side=side, tel=tel)
+            allProIms[inst] = [myRDHIs, rdHdrs]
+            allfnames[inst] = myFs
+            
+    #for key in allProIms:
+        #print (key, allProIms[key][0][0])
+        #proIms, outLines = processSTEREO(times, doSTEREO, doSR=True)
             
         #if type(outLines) != type(None):
         #    for line in outLines:
         #        f1.write(line)
         #else:
-        #    print('Unable to process any STEREO images')
-        
+        #    print('Unable to process any STEREO images')        
     
 
     # |-------------------------------|
@@ -1224,15 +1251,25 @@ def processObs(times, insts, inFolder='pullFolder/', outFolder='wbFits/', outFil
     if 'WISPR' in insts: doWISPR = ['Inner', 'Outer']
     elif 'WISPRI' in insts: doWISPR.append('Inner')
     elif 'WISPRO' in insts: doWISPR.append('Outer')
-    if 'WISPR_LW' in insts: doLW = True
-
+    if 'WISPR_LW' in insts: 
+        doLW = True
+        doWISPR = ['Inner', 'Outer']
+    elif 'WISPRI_LW' in insts:
+        doLW = True
+        if 'Inner' not in doWISPR:
+            doWISPR.append('Inner')
+    elif 'WISPRO_LW' in insts:
+        doLW = True
+        if 'Outer' not in doWISPR:
+            doWISPR.append('Outer')
+        
     if len(doWISPR) > 0:
         if doLW:
             proImsLW, outLinesLW = processWISPR(times, doWISPR, doLW=True)
             for key in proImsLW:
                 allProIms[key+'_LW'] = proImsLW[key]
                 allfnames[key+'_LW'] = outLinesLW[key]
-        
+                
         proIms, outLines = processWISPR(times, doWISPR)
         for key in proIms:
             allProIms[key] = proIms[key]
@@ -1290,7 +1327,7 @@ def processObs(times, insts, inFolder='pullFolder/', outFolder='wbFits/', outFil
 # |------------------------------------------------------------|
 # |-------------------- Command Line Wrapper ------------------|
 # |------------------------------------------------------------|
-def thePickler(proIms, fnames, pickleJar='wbPickles/', name='temp', otherDiff=None):
+def thePickler(proIms, fnames, insts0, pickleJar='wbPickles/', name='temp', otherDiff=None):
     """
     Wrapper to make a pickle with all the info that the GUI will need
     for the background images. Everything will be fully processed pre
@@ -1308,6 +1345,9 @@ def thePickler(proIms, fnames, pickleJar='wbPickles/', name='temp', otherDiff=No
                       by processObs to generate proIms. Each time step will have 
                       either a single file, an array of three for STEREO polarized 
                       images or an array of four for SoloHI mosaics
+    
+            insts:    the original lists of instruments requested. this may not 
+                      include all the keys in the dictionaries
     
         Optional:
             name:       A unique name tag for the pickle, which will be save as WBGUI_name.pkl
@@ -1413,7 +1453,7 @@ def thePickler(proIms, fnames, pickleJar='wbPickles/', name='temp', otherDiff=No
         # |--------------------------------------|
         if bigDill['WBinfo']['isEUV'][key]:
             tempMaps[key] = arr2maps(bigDill['proIms'][key][0], bigDill['proIms'][key][1], doDiff=False)  
-        elif key in ['WISPRI_LW', 'WISPRO_LW']:
+        elif key in ['WISPRI_LW', 'WISPRO_LW', 'HI1A_SR', 'HI1B_SR', 'HI2A_SR', 'HI2B_SR']:
             tempMaps[key] = arr2maps(bigDill['proIms'][key][0], bigDill['proIms'][key][1], doDiff=False)  
         else:
             tempMaps[key] = arr2maps(bigDill['proIms'][key][0], bigDill['proIms'][key][1])           
@@ -1432,6 +1472,9 @@ def thePickler(proIms, fnames, pickleJar='wbPickles/', name='temp', otherDiff=No
             elif key in ['WISPRI_LW', 'WISPRO_LW']:
                 aSStuff['INST'] = aSStuff['INST'] +'_LW'
                 aSStuff['myFits'] = fnames[key][j]
+            elif key in ['HI1A_SR', 'HI1B_SR', 'HI2A_SR', 'HI2B_SR']:
+                aSStuff['INST'] = aSStuff['INST'] +'_SR'
+                aSStuff['myFits'] = fnames[key][j]
             else:    
                 aSStuff['myFits'] = fnames[key][j+1]
                 aSStuff['myRDfits'] = fnames[key][j]
@@ -1444,7 +1487,7 @@ def thePickler(proIms, fnames, pickleJar='wbPickles/', name='temp', otherDiff=No
         # |------------------------------------|
         if bigDill['WBinfo']['isEUV'][key]:
             bigDill['massIms'][key] = [None, None]
-        elif key in ['WISPRI_LW', 'WISPRO_LW']:
+        elif key in ['WISPRI_LW', 'WISPRO_LW', 'HI1A_SR', 'HI1B_SR', 'HI2A_SR', 'HI2B_SR']:
             bigDill['massIms'][key] = [None, None]
         else:
             bigDill['massIms'][key] = []
@@ -1465,15 +1508,15 @@ def thePickler(proIms, fnames, pickleJar='wbPickles/', name='temp', otherDiff=No
                 if 'MASK' in mySatStuff[j]:
                     massIm = (1-mySatStuff[j]['MASK']) * massIm
                 #bigDill['massIms'][key].append(np.transpose(massIm))
-                bigDill['massIms'][key].append(massIm)
+                bigDill['massIms'][key].append(massIm)    
                 
         # |---------------------------------|
         # |---- Replace with fancy diff ----|
         # |---------------------------------|
-        if type(otherDiff) != type(None):
-            if key in otherDiff:
-                tempMaps[key][0] = otherDiff[key][0]
-                tempMaps[key][2] = otherDiff[key][1]
+        #if type(otherDiff) != type(None):
+        #    if key in otherDiff:
+        #        tempMaps[key][0] = otherDiff[key][0]
+        #        tempMaps[key][2] = otherDiff[key][1]
         
 
         # |-------------------------------------------|
@@ -1494,6 +1537,44 @@ def thePickler(proIms, fnames, pickleJar='wbPickles/', name='temp', otherDiff=No
             bigDill['proImMaps'][key][0].append(myMap)
             bigDill['proImMaps'][key][1].append(bigDill['proIms'][key][1][j])
 
+    # |----------------------------------|
+    # |---- Replace masses as needed ----|
+    # |----------------------------------|
+    if 'WISPRI_LW' in bigDill['WBinfo']['Insts']:
+        if 'WISPRI' in bigDill['massIms']:
+            bigDill['massIms']['WISPRI_LW'] = bigDill['massIms']['WISPRI']
+    if 'WISPRO_LW' in bigDill['WBinfo']['Insts']:
+        if 'WISPRO' in bigDill['massIms']:
+            bigDill['massIms']['WISPRO_LW'] = bigDill['massIms']['WISPRO']
+    if 'HI1A_SR' in bigDill['WBinfo']['Insts']:
+        if 'HI1A' in bigDill['massIms']:
+            bigDill['massIms']['HI1A_SR'] = bigDill['massIms']['HI1A']
+            bigDill['proImMaps']['HI1A_SR'] = bigDill['proImMaps']['HI1A']
+    
+    # |-------------------------------|
+    # |---- Clean out bonus insts ----|
+    # |-------------------------------|
+    # Might have insts used to calc mass that don't actually want pickled
+    for aInst in insts:
+        if aInst not in insts0:
+            # |--- (sub) Dictionary with standard processed data ---|
+            temp = bigDill['proIms0'].pop(aInst) # base images
+            temp = bigDill['proIms'].pop(aInst) # all images 
+            temp = bigDill['proImMaps'].pop(aInst)# images 1 - end, converted to maps. matches mass/diff indexing
+            # |--- (sub) Dictionary with mass image data ---|
+            temp = bigDill['massIms'].pop(aInst)
+            # |--- (sub) Dictionary with difference images scaled for display ---|
+            temp = bigDill['scaledIms'].pop(aInst)
+            # |--- (sub) Dictionary with satStuff -> hdr-like with extra stuff ---|
+            temp = bigDill['satStuff'].pop(aInst)
+    
+            # |----------------------------|
+            # |---- Fill the info dict ----|
+            # |----------------------------|
+            # List of instruments
+            bigDill['WBinfo']['OrigFiles'].pop(aInst)
+            bigDill['WBinfo']['isEUV'].pop(aInst)
+    bigDill['WBinfo']['Insts'] = insts0
             
     # |-------------------------|
     # |---- Save the pickle ----|
@@ -1969,10 +2050,10 @@ def scaleIt(obsIn, satStuffs):
     # Pull the desired values for each instrument
     
     # mins/maxs on percentiles by instrument [[lower], [upper]] with [lin, log, sqrt]  #tagIt:dynrng
-    pMMs = {'AIA':[[0.001,10,1], [99,99,99]], 'SECCHI_EUVI':[[0.001,10,1], [99,99,99]], 'LASCO_C2':[[15,1,15], [97,99,97]], 'LASCO_C3':[[40,1,10], [99,99,90]], 'SECCHI_COR1':[[30,1,10], [99,99,90]], 'SECCHI_COR2':[[20,1,10], [92,99,93]], 'SECCHI_HI1':[[1,40,1], [99.9,80,99.9]], 'SECCHI_HI2':[[1,40,1],[99.9,80,99.9]], 'WISPR_HI1':[[10,40,1], [97.,80,99.9]], 'WISPR_HI2':[[1,40,1], [99.9,80,99.9]],'WISPR_HI1_LW':[[1,20,1], [80.,80,99.9]],  'SoloHI':[[1,40,1], [99.5,80,99.5]] }
+    pMMs = {'AIA':[[0.001,10,1], [99,99,99]], 'SECCHI_EUVI':[[0.001,10,1], [99,99,99]], 'LASCO_C2':[[15,1,15], [97,99,97]], 'LASCO_C3':[[40,1,10], [99,99,90]], 'SECCHI_COR1':[[30,1,10], [99,99,90]], 'SECCHI_COR2':[[20,1,10], [92,99,93]], 'SECCHI_HI1':[[1,40,1], [99.5,80,99.9]], 'SECCHI_HI2':[[1,40,1],[99.9,80,99.9]], 'SECCHI_HI1_SR':[[1,40,1], [99.5,80,99.9]], 'SECCHI_HI2_SR':[[1,40,1],[99.9,80,99.9]], 'WISPR_HI1':[[10,40,1], [97.,80,99.9]], 'WISPR_HI2':[[1,40,1], [99.9,80,99.9]],'WISPR_HI1_LW':[[1,20,1], [80.,80,99.9]],  'SoloHI':[[1,40,1], [99.5,80,99.5]] }
     
     # Where the background sliders start (between 0 and 255)
-    sliVals = {'AIA':[[0,0,0], [191,191,191]], 'SECCHI_EUVI':[[0,32,0], [191,191,191]], 'LASCO_C2':[[0,0,21],[191,191,191]], 'LASCO_C3':[[37,0,37],[191,191,191]], 'SECCHI_COR1':[[63,0,21],[191,191,191]], 'SECCHI_COR2':[[63,0,21],[191,191,191]], 'SECCHI_HI1':[[63,0,21],[128,191,191]], 'SECCHI_HI2':[[63,0,21],[128,191,191]],  'WISPR_HI1':[[20,0,21],[128,191,191]], 'WISPR_HI2':[[0,0,21],[128,191,191]], 'WISPR_HI1_LW':[[10,0,21],[128,191,191]], 'SoloHI':[[10,0,21],[128,191,191]]}
+    sliVals = {'AIA':[[0,0,0], [191,191,191]], 'SECCHI_EUVI':[[0,32,0], [191,191,191]], 'LASCO_C2':[[0,0,21],[191,191,191]], 'LASCO_C3':[[37,0,37],[191,191,191]], 'SECCHI_COR1':[[63,0,21],[191,191,191]], 'SECCHI_COR2':[[63,0,21],[191,191,191]], 'SECCHI_HI1':[[63,0,21],[128,191,191]], 'SECCHI_HI2':[[63,0,21],[128,191,191]], 'SECCHI_HI1_SR':[[63,0,21],[128,191,191]], 'SECCHI_HI2_SR':[[63,0,21],[128,191,191]],  'WISPR_HI1':[[20,0,21],[128,191,191]], 'WISPR_HI2':[[0,0,21],[128,191,191]], 'WISPR_HI1_LW':[[10,0,21],[128,191,191]], 'SoloHI':[[10,0,21],[128,191,191]]}
     
     # Pull the configuration based on instrument
     myInst = satStuffs[0]['INST']
@@ -1998,15 +2079,16 @@ def scaleIt(obsIn, satStuffs):
         #|---- Get overall median ----|
         imNonNaN = allObs[~np.isnan(allObs)]   
         medval  = np.median(np.abs(imNonNaN))
-    
+
         #|---- Check if diff image ----|
         # Get the median negative value to comp to the median abs
         # value. If neg med big enough assume that is diff image
-        negmed  = np.abs(np.median(imNonNaN[np.where(imNonNaN < 0)]))
         diffImg = False
-        if (negmed / medval) > 0.25: # guessing at cutoff of 25%, might tune
-            diffImg = True
-    
+        if True in imNonNaN:
+            negmed  = np.abs(np.median(imNonNaN[np.where(imNonNaN < 0)]))        
+            if (negmed / medval) > 0.25: # guessing at cutoff of 25%, might tune
+                diffImg = True
+
         #|---- Clean out NaNs ----|
         if not diffImg:
             allObs[np.isnan(allObs)] = 0
@@ -2168,7 +2250,7 @@ def commandLineWrapper():
     """
     
     #|---- All the instrument tags ----|
-    tags = ['AIA94', 'AIA131', 'AIA171','AIA193','AIA211','AIA304','AIA335','AIA1600','AIA1700', 'C2', 'C3', 'COR1', 'COR2', 'COR1A', 'COR2A', 'COR1B', 'COR2B', 'EUVI171', 'EUVI195', 'EUVI284', 'EUVI304', 'EUVI171A', 'EUVI195A', 'EUVI284A', 'EUVI304A', 'EUVI171B', 'EUVI195B', 'EUVI284B', 'EUVI304B', 'HI1', 'HI2', 'HI1A', 'HI2A', 'HI1B', 'HI2B','SOLOHI', 'SOLOHI1', 'SOLOHI2', 'SOLOHI3', 'SOLOHI4', 'WISPR', 'WISPRI', 'WISPRO']
+    tags = ['AIA94', 'AIA131', 'AIA171','AIA193','AIA211','AIA304','AIA335','AIA1600','AIA1700', 'C2', 'C3', 'COR1', 'COR2', 'COR1A', 'COR2A', 'COR1B', 'COR2B', 'EUVI171', 'EUVI195', 'EUVI284', 'EUVI304', 'EUVI171A', 'EUVI195A', 'EUVI284A', 'EUVI304A', 'EUVI171B', 'EUVI195B', 'EUVI284B', 'EUVI304B', 'HI1', 'HI2', 'HI1A', 'HI2A', 'HI1B', 'HI2B','HI1A_SR', 'HI1B_SR', 'HI2A_SR', 'HI2B_SR', 'SOLOHI', 'SOLOHI1', 'SOLOHI2', 'SOLOHI3', 'SOLOHI4', 'WISPR', 'WISPRI', 'WISPRO', 'WISPR_LW', 'WISPRI_LW', 'WISPRO_LW']
     
     #|---- Pull the command line args ----|
     vals = sys.argv[1:]
@@ -2198,28 +2280,21 @@ def commandLineWrapper():
     inFolder = 'pullFolder/'
     pklName = 'temp'
     # Processing options
-    doRdifHI = False
-    doLW = False
+    #doRdifHI = False
     for val in vals:
         if val.upper() not in tags:
             if '.pkl' in val:
                 pklName = val
             elif os.path.isdir(val):
                 inFolder = val
-            elif val.lower() in ['rdiffhi', 'rdifhi']:
-                doRdifHI = True
-            elif val.lower() in ['lw']:
-                doLW = True
+            #elif val.lower() in ['rdiffhi', 'rdifhi']:
+            #    doRdifHI = True
             # Add any bonus processing tags to check here
             else:
                 sys.exit(val + ' is not inst tag, pkl, or exisiting input folder. Exiting... ')
         else:
             insts.append(val.upper().replace('SOLO', 'Solo'))
             
-    # |--- Add the modified insts (if needed) ---|
-    if doLW:
-        insts.append('WISPR_LW')
-    # More friends to come?
 
     if len(insts) < 1:
         sys.exit('No instrument tag provided')
@@ -2233,11 +2308,11 @@ def commandLineWrapper():
     # Check for psp or solo or stereo
     loadPSP, loadSOLO, loadSTEREO = False, False, False
     for inst in insts:
-        if inst.upper() in ['WISPR', 'WISPRI', 'WISPRO']:
+        if inst.upper() in ['WISPR', 'WISPRI', 'WISPRO', 'WISPRI_LW', 'WISPRO_LW']:
             loadPSP = True
         elif inst.upper() in ['SOLOHI', 'SOLOHI1', 'SOLOHI2', 'SOLOHI3', 'SOLOHI4',]:
             loadSOLO = True
-        elif inst.upper() in ['COR1A', 'COR1B', 'COR2A', 'COR2B', 'HI1A', 'HI1B', 'HI2A', 'HI2B']:
+        elif inst.upper() in ['COR1A', 'COR1B', 'COR2A', 'COR2B', 'HI1A', 'HI1B', 'HI2A', 'HI2B', 'HI1A_SR', 'HI1B_SR', 'HI2A_SR', 'HI2B_SR']:
             loadSTEREO = True
     if loadPSP:
         load_psp_kernels(kernelSpot+'psp/')
@@ -2251,11 +2326,11 @@ def commandLineWrapper():
     #|---- Basic processing ----|
     #|--------------------------|
     proIms, fnames = processObs(times, insts, inFolder=inFolder)    
-    
+
     #|------------------------------|
     #|---- Alternate processing ----|
     #|------------------------------|
-    HIkeys = ['HI1A', 'HI1B', 'HI2A', 'HI2B']
+    '''HIkeys = ['HI1A', 'HI1B', 'HI2A', 'HI2B']
     rdifHIs = {}
     if doRdifHI:
         for key in fnames:
@@ -2277,20 +2352,12 @@ def commandLineWrapper():
                     rdMaps.append(sunpy.map.Map(myRDHIs[i], rdHdrs[i]))
                 rdifHIs[key] = [rdMaps, rdHdrs]
     else:
-        rdifHIs = None
-        
-    '''if doLW:
-        print ('hi')
-        gf = 'pullFolder/PSP/WISPR/LW_Inner/psp_LW_wispr_20230313T093017_V1_1221.fits'
-        ims, hdrs = wispr_prep(gf,'prepFiles/psp/wispr/', straylightOff=True)
-        fig = plt.figure()
-        plt.imshow(ims[0], vmin=1e-5, vmax=1e-4)
-        plt.show()
-        print (sd)'''
+        rdifHIs = None'''
+
     #|---------------------------|
     #|---- Package in pickle ----|
     #|---------------------------|
-    thePickler(proIms, fnames, otherDiff=rdifHIs, name=pklName)
+    thePickler(proIms, fnames, insts, name=pklName)
            
 
 if __name__ == '__main__':
