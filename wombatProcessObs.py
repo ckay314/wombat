@@ -88,7 +88,7 @@ import pickle
 sys.path.append('prepCode/') 
 sys.path.append('wombatCode/') 
 from secchi_prep import secchi_prep
-from wispr_prep import wispr_prep
+from wispr_prep import wispr_prep, wispr_readfits
 from lasco_prep import c2_prep, c3_prep, reduce_level_1
 from solohi_prep import solohi_fits2grid
 from aia_prep import aia_prep
@@ -1035,7 +1035,14 @@ def processWISPR(times, insts, wcalpath='prepFiles/psp/wispr/',  inFolder='pullF
             outLines[keySwitch[insts[i]]] = []
             # Make an array and sort alphabetically = time sorted      
             goodFiles[i] = np.sort(np.array(goodFiles[i]))
-            ims, hdrs = wispr_prep(goodFiles[i], wcalpath, straylightOff=True)
+            if doLW:
+                ims, hdrs = [], []
+                for j in range(len(goodFiles[i])):
+                    im, hdr = wispr_readfits(goodFiles[i][j])
+                    ims.append(im)
+                    hdrs.append(hdr)
+            else:
+                ims, hdrs = wispr_prep(goodFiles[i], wcalpath, straylightOff=True)
             #if saveFits:
             #    outLines.append('WISPR_'+ insts[i] + '\n')
             for j in range(len(ims)):
@@ -2068,10 +2075,10 @@ def scaleIt(obsIn, satStuffs):
     # Pull the desired values for each instrument
     
     # mins/maxs on percentiles by instrument [[lower], [upper]] with [lin, log, sqrt]  #tagIt:dynrng
-    pMMs = {'AIA':[[0.001,10,1], [99,99,99]], 'SECCHI_EUVI':[[0.001,10,1], [99,99,99]], 'LASCO_C2':[[15,1,15], [97,99,97]], 'LASCO_C3':[[40,1,10], [99,99,90]], 'SECCHI_COR1':[[30,1,10], [99,99,90]], 'SECCHI_COR2':[[20,1,10], [92,99,93]], 'SECCHI_HI1':[[1,40,1], [99.5,80,99.9]], 'SECCHI_HI2':[[1,40,1],[99.9,80,99.9]], 'SECCHI_HI1_SR':[[1,40,1], [99.5,80,99.9]], 'SECCHI_HI2_SR':[[1,40,1],[99.9,80,99.9]], 'WISPR_HI1':[[10,40,1], [95.,80,99.9]], 'WISPR_HI2':[[1,40,1], [99.9,80,99.9]],'WISPR_HI1_LW':[[1,20,1], [80.,80,99.9]], 'WISPR_HI1_L3':[[10,40,1], [95.,80,99.9]], 'WISPR_HI2_L3':[[1,40,1], [99.9,80,99.9]], 'SoloHI':[[1,40,1], [99.5,80,99.5]] }
+    pMMs = {'AIA':[[0.001,10,1], [99,99,99]], 'SECCHI_EUVI':[[0.001,10,1], [99,99,99]], 'LASCO_C2':[[15,1,15], [97,99,97]], 'LASCO_C3':[[40,1,10], [99,99,90]], 'SECCHI_COR1':[[30,1,10], [99,99,90]], 'SECCHI_COR2':[[20,1,10], [92,99,93]], 'SECCHI_HI1':[[1,40,1], [99.5,80,99.9]], 'SECCHI_HI2':[[1,40,1],[99.9,80,99.9]], 'SECCHI_HI1_SR':[[1,40,1], [99.5,80,99.9]], 'SECCHI_HI2_SR':[[1,40,1],[99.9,80,99.9]], 'WISPR_HI1':[[5,40,1], [98.,80,99.9]], 'WISPR_HI2':[[1,40,1], [99.9,80,99.9]],'WISPR_HI1_LW':[[1,1,1.], [99.,99,99.]], 'WISPR_HI1_L3':[[10,40,1], [95.,80,99.9]], 'WISPR_HI2_L3':[[1,40,1], [99.9,80,99.9]], 'SoloHI':[[1,40,1], [99.5,80,99.5]] }
     
     # Where the background sliders start (between 0 and 255)
-    sliVals = {'AIA':[[0,0,0], [191,191,191]], 'SECCHI_EUVI':[[0,32,0], [191,191,191]], 'LASCO_C2':[[0,0,21],[191,191,191]], 'LASCO_C3':[[37,0,37],[191,191,191]], 'SECCHI_COR1':[[63,0,21],[191,191,191]], 'SECCHI_COR2':[[63,0,21],[191,191,191]], 'SECCHI_HI1':[[63,0,21],[128,191,191]], 'SECCHI_HI2':[[63,0,21],[128,191,191]], 'SECCHI_HI1_SR':[[63,0,21],[128,191,191]], 'SECCHI_HI2_SR':[[63,0,21],[128,191,191]],  'WISPR_HI1':[[20,0,21],[128,191,191]], 'WISPR_HI2':[[0,0,21],[128,191,191]], 'WISPR_HI1_LW':[[10,0,21],[128,191,191]], 'WISPR_HI1_L3':[[20,0,21],[128,191,191]], 'WISPR_HI2_L3':[[0,0,21],[128,191,191]], 'SoloHI':[[10,0,21],[128,191,191]]}
+    sliVals = {'AIA':[[0,0,0], [191,191,191]], 'SECCHI_EUVI':[[0,32,0], [191,191,191]], 'LASCO_C2':[[0,0,21],[191,191,191]], 'LASCO_C3':[[37,0,37],[191,191,191]], 'SECCHI_COR1':[[63,0,21],[191,191,191]], 'SECCHI_COR2':[[63,0,21],[191,191,191]], 'SECCHI_HI1':[[63,0,21],[128,191,191]], 'SECCHI_HI2':[[63,0,21],[128,191,191]], 'SECCHI_HI1_SR':[[63,0,21],[128,191,191]], 'SECCHI_HI2_SR':[[63,0,21],[128,191,191]],  'WISPR_HI1':[[20,0,21],[128,191,191]], 'WISPR_HI2':[[0,0,21],[128,191,191]], 'WISPR_HI1_LW':[[10,0,21],[191,191,191]], 'WISPR_HI1_L3':[[20,0,21],[128,191,191]], 'WISPR_HI2_L3':[[0,0,21],[128,191,191]], 'SoloHI':[[10,0,21],[128,191,191]]}
     
     # Pull the configuration based on instrument
     myInst = satStuffs[0]['INST']
@@ -2093,16 +2100,16 @@ def scaleIt(obsIn, satStuffs):
         for i in range(len(satStuffs)):
             #allObs[i,:,:] = np.transpose(obsIn[k][i].data)
             allObs[i,:,:] = obsIn[k][i].data
-        
+
         #|---- Get overall median ----|
         imNonNaN = allObs[~np.isnan(allObs)]   
         medval  = np.median(np.abs(imNonNaN))
-
+ 
         #|---- Check if diff image ----|
         # Get the median negative value to comp to the median abs
         # value. If neg med big enough assume that is diff image
-        diffImg = False
-        if True in imNonNaN:
+        diffImg = False    
+        if np.isfinite(medval) and ('LW' not in myInst):
             negmed  = np.abs(np.median(imNonNaN[np.where(imNonNaN < 0)]))        
             if (negmed / medval) > 0.25: # guessing at cutoff of 25%, might tune
                 diffImg = True
@@ -2117,10 +2124,13 @@ def scaleIt(obsIn, satStuffs):
         if not diffImg:
             allObs[np.isinf(np.abs(allObs))] = 0
             imNonNaN[np.isinf(np.abs(imNonNaN))] = 0
+            goodIdx = np.where(imNonNaN !=0)
+
         else:
             allObs[np.isinf(np.abs(allObs))] = -9999
             imNonNaN[np.isinf(np.abs(imNonNaN))] = -9999
-    
+            goodIdx = np.where(imNonNaN != -9999)
+
         #|-------------------------------------| 
         #|--------- Process the data ----------|
         #|-------------------------------------|    
@@ -2129,7 +2139,7 @@ def scaleIt(obsIn, satStuffs):
     
         #|---- Process linear imgs ----|   
         # Get vals at min/max percentile from the config dictionary
-        linMin, linMax = np.percentile(imNonNaN, myMM[0][0]), np.percentile(imNonNaN, myMM[1][0])   
+        linMin, linMax = np.percentile(imNonNaN[goodIdx], myMM[0][0]), np.percentile(imNonNaN[goodIdx], myMM[1][0])   
         # If a diff image reset min to neg val based on max   
         if diffImg:
             linMin = - 0.5*linMax
@@ -2142,7 +2152,7 @@ def scaleIt(obsIn, satStuffs):
         tempIm = allObs / medval
         tempNonNan = imNonNaN / medval
         # Get min val based on config dict
-        minVal = np.percentile(np.abs(tempNonNan),myMM[0][1])
+        minVal = np.percentile(np.abs(tempNonNan[goodIdx]),myMM[0][1])
         # Separate into positive and negative values
         pidx = np.where(tempIm > minVal)
         nidx = np.where(tempIm < -minVal)
@@ -2162,7 +2172,7 @@ def scaleIt(obsIn, satStuffs):
         # Normalize to keep things in nice ranges
         tempIm = allObs / medval
         # Get min val based on config dict
-        minVal = np.percentile(tempNonNan,myMM[0][2])
+        minVal = np.percentile(tempNonNan[goodIdx],myMM[0][2])
         # Set min val to zero
         tempIm = tempIm - minVal 
         # Set all neg to zero
@@ -2172,7 +2182,6 @@ def scaleIt(obsIn, satStuffs):
         # Get max val from config dict and rescale
         percX = np.percentile(sqrtIm, myMM[1][2])
         sqrtIm = 191 * sqrtIm / percX
-    
     
         #|-------------------------------------| 
         #|--------- Package Results -----------|
