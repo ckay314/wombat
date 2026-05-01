@@ -474,7 +474,7 @@ def map2CartFoV(myMap, points, pixCent=None):
     #|-------------------------|
     #|--- Make pts packages ---|
     #|-------------------------|
-    # Start coord arrays with sat loc and FoV cent
+    # Start coord arrays with sat loc and FoV cent and Sun
     xs = [satxyz[0]*215, TSxyz[0]*215]
     ys = [satxyz[1]*215, TSxyz[1]*215]
     zs = [satxyz[2]*215, TSxyz[2]*215]
@@ -540,14 +540,19 @@ def map2CartFoV(myMap, points, pixCent=None):
     #|--- Pass to cart 2 cart function ---|
     #|------------------------------------|
     res = StonyCart2CartFoV(pts, satLatD, satLonD, rollIt)
-
-    return res
+    
+    # Pass the normal stony pts
+    xOut = pts[0][2:]
+    yOut = pts[1][2:]
+    zOut = pts[2][2:]
+    res2 = [xOut, yOut, zOut]
+    return res, res2
 
 
 # |-----------------------------------------|
 # |--- Wireframe points to FoV Cartesian ---|
 # |-----------------------------------------|
-def wf2CartFoV(myMap, aWF, pixCent=None):
+def wf2CartFoV(myMap, inPts, pixCent=None):
     ''' 
     Helper function using the header info from a map to convert
     points from a wireframe object into FoV Cartesian coordinates 
@@ -561,8 +566,8 @@ def wf2CartFoV(myMap, aWF, pixCent=None):
                observation. Only the header info and size are used, not
                the data itself
         
-        aWF: a wombat wireframe object. the list of points will be pulled
-             and their positions converted into FoV cartesian
+        inPts: a list of points in the form n x 3. this can be the results
+               of aWF.points
     
     Optional Inputs:
         pixCent: the center of the FoV which is used to calculate the 
@@ -622,10 +627,10 @@ def wf2CartFoV(myMap, aWF, pixCent=None):
     ys = [satxyz[1]*215, TSxyz[1]*215]
     zs = [satxyz[2]*215, TSxyz[2]*215]
     
-    wfPoints = aWF.points
-    xwf = wfPoints[:,0]
-    ywf = wfPoints[:,1]
-    zwf = wfPoints[:,2]
+    #wfPoints = aWF.points
+    xwf = inPts[:,0]
+    ywf = inPts[:,1]
+    zwf = inPts[:,2]
     
     x = [*xs, *xwf]
     y = [*ys, *ywf]
@@ -757,7 +762,7 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
 
 
     #ptsOut = map2CartFoV(myMap, [[0, myMap.data.shape[1]], [myMap.data.shape[0]/2, myMap.data.shape[0]/2]])
-    ptsOut = map2CartFoV(myMap, [pixx, pixy])   # is [x,y,z] where each is same len as pixIn  
+    ptsOut, ptsOutStony = map2CartFoV(myMap, [pixx, pixy])   # is [x,y,z] where each is same len as pixIn  
     
     # Get range            
     uniX = np.unique(np.array(pixx))
@@ -774,7 +779,14 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
     FOV2x = RegularGridInterpolator((uniX, uniY), np.transpose(FOVx), method='linear')
     FOV2y = RegularGridInterpolator((uniX, uniY), np.transpose(FOVy), method='linear')
     FOV2z = RegularGridInterpolator((uniX, uniY), np.transpose(FOVz), method='linear')
-
+    
+    #|--- Repeat process for normal Stony Cart ---|
+    FOVxS = ptsOutStony[0].reshape([len(uniY), len(uniX)])
+    FOVyS = ptsOutStony[1].reshape([len(uniY), len(uniX)])
+    FOVzS = ptsOutStony[2].reshape([len(uniY), len(uniX)])
+    FOV2xS = RegularGridInterpolator((uniX, uniY), np.transpose(FOVxS), method='linear')
+    FOV2yS = RegularGridInterpolator((uniX, uniY), np.transpose(FOVyS), method='linear')
+    FOV2zS = RegularGridInterpolator((uniX, uniY), np.transpose(FOVzS), method='linear')
     
     #|-------------------------------------------------|
     #|--- Get the wireframe width perp to FoV plane ---|
@@ -787,7 +799,7 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
     if multiMode:
         awf2.gPoints = [i * 10 for i in awf2.gPoints]
         awf2.getPoints()
-        wfPts2 = wf2CartFoV(myMap, awf2)
+        wfPts2 = wf2CartFoV(myMap, awf2.points)
         wfPts2T = np.transpose(np.array(wfPts2))
         
         wids2, midx2, mask2, FoV, nGridY = getWidth(wfPts2T)
@@ -802,7 +814,7 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
     # |--- Do the inner/main WF ---|
     awf.gPoints = [i * 10 for i in awf.gPoints]
     awf.getPoints()
-    wfPts = wf2CartFoV(myMap, awf)
+    wfPts = wf2CartFoV(myMap, awf.points)
     wfPtsT = np.transpose(np.array(wfPts))
     
     # Check if we have an existing FoV
@@ -822,7 +834,7 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
     # |--- Repeat process for the inside (if doing) ---|
     if doInner and (awf.WFtype in ['GCS', 'Torus']):
         awf.getPoints(inside=True)
-        wfPtsI = wf2CartFoV(myMap, awf)
+        wfPtsI = wf2CartFoV(myMap, awf.points)
         wfPtsI = np.transpose(np.array(wfPtsI))
         widsI, midxI, maskI, FoV, nGridY = getWidth(wfPtsI, FoV=FoV, nGridY=nGridY)
         wid_smoothI = ndimage.gaussian_filter(widsI, sigma=2.0, order=0)
@@ -831,9 +843,9 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
         widFuncI = RegularGridInterpolator((yms, zms), np.transpose(wid_smoothI), method='linear', bounds_error=False, fill_value=0) 
         xcFuncI  = RegularGridInterpolator((yms, zms), np.transpose(midxI), method='linear', bounds_error=False, fill_value=0)
         maskFuncI = RegularGridInterpolator((yms, zms), np.transpose(maskI), method='linear', bounds_error=False, fill_value=0)
-    '''
+    
     # Plot of widths    
-    fig = plt.figure()
+    '''fig = plt.figure()
     ax = fig.add_subplot(111)
     im = plt.imshow(wids, origin='lower', extent=[FoV[0][0], FoV[0][1], FoV[1][0], FoV[1][1]])
     cbar = fig.colorbar(im, ax=ax, orientation='vertical', fraction=.05, pad=0.02, shrink=0.5) 
@@ -1205,11 +1217,11 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
        vval = 1e12
        plt.imshow(dens, vmin=-vval, vmax=vval, origin='lower')
        plt.show()
-
+    
     #|---------------------|
     #|--- Return things ---|
     #|---------------------|
-    return widMap, xcMap, maskMap, densMap, subMass, outFoV, [FOV2x, FOV2y, FOV2z] 
+    return widMap, xcMap, maskMap, densMap, subMass, outFoV, [FOV2x, FOV2y, FOV2z, sunxyz], [FOV2xS, FOV2yS, FOV2zS]  
 
 
 
@@ -1539,7 +1551,7 @@ def dingo3d(widMap, xcMap, densMap, outFoV, pix2FOV, shell=True, plotIt=True):
 # |----------------------------|
 # |--- Density Contour plot ---|
 # |----------------------------|
-def dingo2d(widMaps, densMaps, maskMaps, outFoVs, pix2FOVs, showLog=False, figName=None, times=None):
+def dingo2d(widMaps, densMaps, maskMaps, outFoVs, pix2FOVs, showLog=False, figName=None, times=None, showRs=False):
     ''' 
     2D contour plot(s) of the width of the wireframe(s) perpendicular to the plane
     of the sky. If there are two wireframes the outer will be shown on the left and
@@ -1564,12 +1576,16 @@ def dingo2d(widMaps, densMaps, maskMaps, outFoVs, pix2FOVs, showLog=False, figNa
                     downselect is an integer representing the 1D reduction in resolution.
                     (direct output from mass2dens)
     
-        pix2FOVs:   an array with three interpolation functions ([FOV2x, FOV2y, FOV2z] ) 
+        pix2FOVs:   an array ([FOV2x, FOV2y, FOV2z, sun_pos] ) with three interpolation functions
                     that convert from from a pixel in the original image ((pixx, pixy)) 
+                    to FoV cartesian and the corresponding location of the sun
                     (direct output from mass2dens)
-    
+
     Optional Inputs:
         showLog:    flag to show the contours on a log scale instead of linear 
+                    (defaults to false)
+    
+        showRs:     flag to show the axes in Rs instead of pixels
                     (defaults to false)
     
         figName:    a string name to use when saving the figure. saved as dingo2d_figname.png
@@ -1583,7 +1599,6 @@ def dingo2d(widMaps, densMaps, maskMaps, outFoVs, pix2FOVs, showLog=False, figNa
     #|------------------|
     #|--- Prep stuff ---|
     #|------------------|
-
     #|--- Get number of time steps
     nTimes = len(widMaps)
     
@@ -1653,7 +1668,8 @@ def dingo2d(widMaps, densMaps, maskMaps, outFoVs, pix2FOVs, showLog=False, figNa
         # downsize should be same for all
     # Get min/max range in each of xy
     limxs = [np.min(minpxs), np.max(maxpxs)]    
-    limys = [np.min(minpys), np.max(maxpys)]    
+    limys = [np.min(minpys), np.max(maxpys)]   
+     
     npx = limxs[1] - limxs[0] + 1
     npy = limys[1] - limys[0] + 1
     
@@ -1683,6 +1699,8 @@ def dingo2d(widMaps, densMaps, maskMaps, outFoVs, pix2FOVs, showLog=False, figNa
     
     axes = [[], []]
     count = [1,1]
+    myLab = 'Pixels'
+    if showRs: myLab = 'R$_S$'
     for i in range(len(gx)):
         for j in gy:
             if count[ios[i]] <= nTimes:
@@ -1693,12 +1711,12 @@ def dingo2d(widMaps, densMaps, maskMaps, outFoVs, pix2FOVs, showLog=False, figNa
                 if gx[i] != 0:
                     anAx.set_yticklabels([])
                 else:
-                    anAx.set_ylabel('Pixels')
+                    anAx.set_ylabel(myLab)
                 
                 if (j != (gny-1)) and (count[ios[i]] != nTimes):
                     anAx.set_xticklabels([])
                 else:
-                    anAx.set_xlabel('Pixels')
+                    anAx.set_xlabel(myLab)
                 count[ios[i]] += 1    
 
     # Make cbar axis
@@ -1746,6 +1764,11 @@ def dingo2d(widMaps, densMaps, maskMaps, outFoVs, pix2FOVs, showLog=False, figNa
         fovx = pix2FOVs[i][0]((pxx, pyy))
         fovy = pix2FOVs[i][1]((pxx, pyy))
         fovz = pix2FOVs[i][2]((pxx, pyy))
+        
+        if showRs:
+            limxs = [np.min(fovy)-pix2FOVs[i][3][1], np.max(fovy)-pix2FOVs[i][3][1]]
+            limys = [np.min(fovz)-pix2FOVs[i][3][2], np.max(fovz)-pix2FOVs[i][3][2]]
+ 
         
         #|--- Get resolution ---|
         dys = np.zeros(fovx.shape)
@@ -3124,13 +3147,13 @@ def dingoWrapper(args):
     #|--------------|
         
     #|--- Process mass maps into density ---|
-    widMaps, xcMaps, maskMaps, densMaps, subMasss, outFoVs, pix2FOVs = [], [], [], [], [], [], []
+    widMaps, xcMaps, maskMaps, densMaps, subMasss, outFoVs, pix2FOVs, pix2Sts = [], [], [], [], [], [], [], []
     for i in range(nTimes):
         print ('Processing', uniqTs[i])
         if singleWF:
-            widMap, xcMap, maskMap, densMap, subMass, outFoV, pix2FOV  = mass2dens(imMaps[i], satDicts[i], wfsI[i], massMaps[i], doInner=dI,  downSelect=ds, deproj=deproj)
+            widMap, xcMap, maskMap, densMap, subMass, outFoV, pix2FOV, pix2St  = mass2dens(imMaps[i], satDicts[i], wfsI[i], massMaps[i], doInner=dI,  downSelect=ds, deproj=deproj)
         else:
-            widMap, xcMap, maskMap, densMap, subMass, outFoV, pix2FOV  = mass2dens(imMaps[i], satDicts[i], [wfsI[i], wfsO[i]], massMaps[i], doInner=dI,  densRatio=densratio, downSelect=ds, deproj=deproj)
+            widMap, xcMap, maskMap, densMap, subMass, outFoV, pix2FOV, pix2St  = mass2dens(imMaps[i], satDicts[i], [wfsI[i], wfsO[i]], massMaps[i], doInner=dI,  densRatio=densratio, downSelect=ds, deproj=deproj)
         # Package it
         widMaps.append(widMap)
         xcMaps.append(xcMap)
@@ -3139,6 +3162,7 @@ def dingoWrapper(args):
         subMasss.append(subMass)
         outFoVs.append(outFoV) 
         pix2FOVs.append(pix2FOV)    
+        pix2Sts.append(pix2St)    
     
 
     #|-------------------------------|
@@ -3176,7 +3200,7 @@ def dingoWrapper(args):
     #|--- 2d - contour plots ---|
     #|--------------------------|
     elif mode == 2:
-        dingo2d(widMaps, densMaps, maskMaps, outFoVs, pix2FOVs, figName=saveName, times=uniqTs, showLog=logPlot)
+        dingo2d(widMaps, densMaps, maskMaps, outFoVs, pix2FOVs, figName=saveName, times=uniqTs, showLog=logPlot, showRs=True)
             
     
     #|--------------------------------|
