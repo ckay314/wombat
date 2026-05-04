@@ -132,6 +132,7 @@ sys.path.append('wombatCode/')
 import wombatWF as wf
 from wombatLoadCTs import *
 from wombatMass import elTheory 
+from wcs_funs import fitshead2wcs, wcs_get_pixel, wcs_get_coord
 
 # |--------------------------------|
 # |------- Suppress Warnings ------|
@@ -199,7 +200,7 @@ def createGrid(FoV, nGridY):
     # Midpoints
     yms = np.array([miny + (0.5+i)*dy for i in range(nGridY)])
     # Same for z, but need to get nGridZ
-    nGridZ = int((maxz - minz) / dy)+1
+    nGridZ = int((maxz - minz) / dy)
     zgs = np.array([minz + i * dy  for i in range(nGridZ+1)])
     zms = np.array([minz + (0.5+i)*dy for i in range(nGridZ)])
     return dy, ygs, yms, nGridZ, zgs, zms
@@ -207,6 +208,186 @@ def createGrid(FoV, nGridY):
 # |------------------------------------|
 # |--- Convert points to widths map ---|
 # |------------------------------------|
+def getWidthNew(points, FoVfs, maxPix, satFOVxyz, flatLim=5, nGridY=100):
+    '''
+    Helper function to take a set of points representing some 3d
+    shape and determine the width perpendicular to the PoS. This will
+    account for curved PoS. The returning array is done for the
+    uniformly spaced pixels, which will not be uniform in physical
+    space for the wide imagers. This code is written with y being
+    the horizontal pixel direction and z being the vertical to be
+    analogous to when they're converted to proper cartesian
+    
+    Inputs:
+        points: a [nPoints, 3] array with the xyz values for each
+                wireframe point. the coords are such that
+                    - x is the line of sight direction (at FOV center)
+                    - y is the horizontal/~longitude direction
+                    - z is the vertical/~latitude direction
+                this is meant to work with the transposed results of
+                wf2CartFoV applied to wf.points
+    
+        FoVfs:  the functions that convert from pixels to FoV Cart in the
+                form [fovfx, fovfy, fovfz] where it expects f((pixy, pixz))
+    
+        maxPix: the maximum pixel value as [maxy, maxz]
+    
+        satFOVxyz: the location of the satellite in FoV cartesian. this 
+                   should be [dThom, ~0, ~0] where dThom is the distance to
+                   the Thomson surface at the center of the FoV (given as an
+                   output by map2CartFoV)
+    
+    Optional Inputs:
+        flatLim: the angle in degrees used as the limit on allowing a flat 
+                 PoS calculation (above treated as curved)
+                 defaults to 5 deg which lets COR2 be flat but HIs curved
+        
+        nGridY: the number of grid points in the y direction. this is the
+                resolution for the output array which dingo intends to pass
+                to an interpolator so it doesn't need to be as high of res
+                as the mass maps.
+                (defaults to 100)
+    
+    Outputs:
+        wids: a 2d array with the width in the x direction. Grid cells that
+              don't have any corresponding points are set to zero
+        
+        midx: a 2d array with the center x value for all points in that grid
+              cell (e.g a segment symmetric about the yz plane would be 0).
+              Grid cells without corresponding points are set to the median
+              value from the other points so that when dingo passes this to 
+              an interpolator the edges don't have weird artifacts
+        
+        mask: a 2d binary array with 1 for grid cells that have an non zero width  
+              and 0 for grid cells with no corresponding points
+        
+        FoV:  the packaged FOV in pixels based on maxPix. The format is 
+              [miny, maxy, minz, maxz]
+        
+        nGridY: the number of grid points, either the same as the provided input
+                or the default value (enables reproducing createGrid)
+
+    '''
+    # Make a grid in pixel coords
+    # This can be lower res (e.g. 100 pix across) bc we 
+    # pass these results to an interpolator
+    dy, ygs, yms, nGridZ, zgs, zms = createGrid([[0, maxPix[0]], [0, maxPix[1]]], nGridX)
+    yys, zzs = np.meshgrid(yms, zms)
+    FoV = [[np.min(yys), np.max(yys)], [np.min(zzs), np.max(zzs)]]
+    
+    # Convert everyone to FoV cart coords with sat at 0!
+    # FoV plane
+    FOVx = FoVfs[0]((yys, zzs)) - satFOVxyz[0]
+    FOVy = FoVfs[1]((yys, zzs))
+    FOVz = FoVfs[2]((yys, zzs))
+    eqR  = np.sqrt(FOVx**2 + FOVy**2) 
+    FoVlon = np.arctan(FOVy /FOVx) * 180/3.14
+    FoVlat = np.arctan2(FOVz, eqR)* 180/3.14
+    # WF points
+    WFpts = np.transpose(points)
+    WFpts[0] -= satFOVxyz[0]
+    # Sat itself
+    satPos = np.copy(satFOVxyz)
+    satPos[0] -= satFOVxyz[0]
+    
+    # |--- Check if small enough angle to calc width using flat PoS ---|
+    canFlat = False
+    if isinstance(flatLim, (int, float)): 
+        if (np.max([np.max(np.abs(FoVlon)), np.max(np.abs(FoVlat))])) < flatLim:
+            canFlat = True
+    
+    pad = 1.4 # distance from midpoint to check (in dy)   
+    # Set up empty arrays
+    wids = np.zeros(FOVx.shape)
+    xcs = np.zeros(FOVx.shape) -9999
+    mask = np.zeros(FOVx.shape)
+    
+    # |--- Loop and match pixels to WF points ---|
+    ncount = FOVx.shape[1]
+    for i in range(FOVx.shape[1]):
+        # A little slow so give progress
+        print ('Calc widths', i+1, '/', ncount)
+        for j in range(FOVx.shape[0]):
+            # For each pixel we want to rotate it so the LoS is
+            # parallel to x-axis so the WF width is just the range
+            # in x for a given yz. For flat assume things are good
+            # enough (LoS only small angle off). For curved, rotate
+            # each pix to x axis using the lon/lat in the s/c centered
+            # coordinate. Resulting wids and center vals are relative
+            # to the PoS for both calcs.
+            if canFlat:
+                # If can do flat reassign things to names at
+                # the end of curved calc
+                temp2 = [FOVx, FOVy, FOVz]
+                temp22 = WFpts
+                temp2s = satPos
+            else:
+                # Rot about z by lon 
+                temp1 = wf.rotz([FOVx, FOVy, FOVz], -FoVlon[j,i])
+                temp11 = wf.rotz(WFpts, -FoVlon[j,i])
+                temp1s = wf.rotz(satPos, -FoVlon[j,i])
+    
+                # Rot about y by lat 
+                temp2 = wf.roty(temp1, -FoVlat[j,i])
+                temp22 = wf.roty(temp11, -FoVlat[j,i])
+                temp2s = wf.roty(temp1s, -FoVlat[j,i])
+            
+            # Find who is close to y=z=0
+            if i < 2:
+                yspace = np.abs(2 * (temp2[1][j,1] - temp2[1][j,0]))
+            elif i > (ncount -3):
+                yspace = np.abs(2 * (temp2[1][j,-1] - temp2[1][j,-2]))
+            else:
+                yspace = np.abs(temp2[1][j,i-1] - temp2[1][j,i+1])
+            
+            # the temp2 values should be near 0 but some rounding errors
+            myidx = np.where((np.abs(temp22[1]-temp2[1][j,i])< pad*yspace) & (np.abs(temp22[2]-temp2[2][j,i])< pad*yspace))
+            if len(myidx[0]) > 0:
+                minx, maxx = np.min(temp22[0][myidx]), np.max(temp22[0][myidx])
+                mywid = maxx - minx
+                myxc  = 0.5 * (maxx + minx)
+                mask[j,i] = 1
+                wids[j,i] = mywid
+                xcs[j,i]  = myxc - temp2[0][j,i]
+            
+    #FoVlon[j,i] = -999       
+            
+    #fig = plt.figure()
+    #plt.imshow(wids, origin='lower')
+    #plt.show()    
+    '''fig = plt.figure(figsize=(8, 5), layout='constrained')
+    ax = fig.add_subplot(111, projection='3d')
+    im = ax.scatter(temp2[0], temp2[1], temp2[2], c=FoVlon)
+    ax.scatter(temp2s[0], temp2s[1], temp2s[2], c='k')
+    im = ax.scatter(temp22[0][::60], temp22[1][::60], temp22[2][::60])
+    ax.set_aspect('equal') 
+    ax.set_xlabel('x')
+    ax.set_ylabel('y')
+    ax.set_zlabel('z')
+    plt.show()
+    print (sd)'''
+    
+    # |------------------------------------------|
+    # |--- Clean up grid cells with no points ---|
+    # |------------------------------------------|
+    # need to fill in the outer -9999 region of xc so interp is happy
+    for i in range(xcs.shape[1]):
+        notOut = np.where(xcs[:,i] !=-9999)[0]
+        if len(notOut) >= 2:
+            xcs[:notOut[0], i]  = xcs[notOut[0],i]
+            xcs[notOut[-1]:, i] = xcs[notOut[-1],i]
+    for i in range(xcs.shape[0]):
+        notOut = np.where(xcs[i,:] !=-9999)[0]
+        if len(notOut) >= 2:
+            xcs[i,:notOut[0]]  = xcs[i, notOut[0]]
+            xcs[i,notOut[-1]:] = xcs[i, notOut[-1]]
+    
+    # fill in the remaining -9999 spots (inner hole) with the med midx
+    medxcs = np.median(xcs[np.where(mask == 1)])
+    xcs[np.where(xcs == -9999)] = medxcs
+
+    return wids, xcs, mask, FoV, nGridY
+
 def getWidth(points, FoV=None, nGridY=100):
     '''
     Helper function to take a set of points representing some 3d
@@ -217,7 +398,7 @@ def getWidth(points, FoV=None, nGridY=100):
     Inputs:
         points: a [nPoints, 3] array with the xyz values for each
                 point. the coords are such that
-                    - x is the line of sight direction
+                    - x is the line of sight direction (at FOV center)
                     - y is the horizontal/~longitude direction
                     - z is the vertical/~latitude direction
     
@@ -366,12 +547,13 @@ def StonyCart2CartFoV(pts, satLat, satLon, roll):
              The first two points from the input pts array (sat, FoV center)
              are removed before returning the results
     '''    
-    # Rotate so sc at x=0
+    # Rotate so sc at in xz plane
     pts = wf.rotz(pts,-satLon)
     
-    # Rotate so sc at z = 0
-    pts = wf.roty(pts, satLat)
     
+    # Rotate so sc at z = 0 -> on x-axis
+    pts = wf.roty(pts, satLat)
+        
     # Move spacecraft to origin
     scx = pts[0][0]
     pts[0] -= scx
@@ -391,13 +573,25 @@ def StonyCart2CartFoV(pts, satLat, satLon, roll):
     # Move FoV to x = 0
     FoVx =  pts[0][1]
     pts[0] -= FoVx 
+    '''if True:
+        fig = plt.figure(figsize=(8, 5), layout='constrained')
+        ax = fig.add_subplot(111, projection='3d')
+        im = ax.scatter(pts[0], pts[1], pts[2])
+        ax.set_aspect('equal') 
+        ax.set_xlabel('x')
+        ax.set_ylabel('y')
+        ax.set_zlabel('z')
+        plt.show()
+        print (sd)'''
     
     # Take off the first two points we added
     xOut = pts[0][2:]
     yOut = pts[1][2:]
     zOut = pts[2][2:]
     
-    return [xOut, yOut, zOut]
+    satLoc = [pts[0][0], pts[1][0], pts[2][0],]
+    
+    return [xOut, yOut, zOut], satLoc
     
     
 # |-----------------------------------------|
@@ -484,15 +678,20 @@ def map2CartFoV(myMap, points, pixCent=None):
     #|---------------------------------|
     # Get the OG coords for each pixels in points
     nPoints = len(points[0])
-    #cs = []
+    cs = []
     for i in range(nPoints):
+        # Convert pixel to helioproj
         coord0 = myMap.pixel_to_world(points[0][i] * u.pix, points[1][i] * u.pix)
-        ell = np.sqrt(coord0.Tx.rad**2 + coord0.Ty.rad**2)
-        d0 = np.abs(satR * np.cos(ell))
-        hpc0 = SkyCoord(Tx=coord0.Tx, Ty=coord0.Ty, distance=d0*u.au, frame= coord0.frame)
+        # Get Thomson distance based on elong angle
+        eps = np.sqrt(coord0.Tx.rad**2 + coord0.Ty.rad**2)
+        dThom = np.abs(satR * np.cos(eps))
+        cs.append(dThom)
+        
+        hpc0 = SkyCoord(Tx=coord0.Tx, Ty=coord0.Ty, distance=dThom*u.au, frame= coord0.frame)
         ston0 = hpc0.transform_to(frames.HeliographicStonyhurst)
         TSxyz0 = np.array([ston0.cartesian.x.to_value(), ston0.cartesian.y.to_value(), ston0.cartesian.z.to_value()])
-        LoS0 = TSxyz0 - satxyz    
+        # Old code from forcing flat PoS
+        '''LoS0 = TSxyz0 - satxyz    
         uTSxyz0 = TSxyz0 / np.linalg.norm(TSxyz)
         uLoS0 = LoS0 / np.linalg.norm(LoS0)
         dotIt = np.dot(uLoS0, uLoS)
@@ -500,11 +699,11 @@ def map2CartFoV(myMap, points, pixCent=None):
         elif dotIt < -1: dotIt = -1.
         ang = np.arccos(dotIt)
         newL = dM / np.cos(np.abs(ang))
-        TSxyz0 = satxyz + newL*uLoS0
+        TSxyz0 = satxyz + newL*uLoS0'''
+        
         xs.append(TSxyz0[0]*215)
         ys.append(TSxyz0[1]*215)
         zs.append(TSxyz0[2]*215)
-
     pts = np.array([xs, ys, zs])      
     
     #|---------------------------|
@@ -512,16 +711,11 @@ def map2CartFoV(myMap, points, pixCent=None):
     #|---------------------------|
     '''fig = plt.figure(figsize=(8, 5), layout='constrained')
     ax = fig.add_subplot(111, projection='3d')
-    # WF1 scatter
-    im = ax.scatter(pts[0][2:], pts[1][2:],pts[2][2:], c=cs, cmap='Greys_r')
-    ax.scatter(0, 0, 0, c='y', s=100)
-    ax.scatter(pts[0][0], pts[1][0],pts[2][0], c='b')
-    
-    awf = wf.wireframe('GCS')
-    awf.params = [45.2, 147.4, 26.1, 20.5, 59.4, 0.3]
-    awf.getPoints()
-    pts = np.transpose(awf.points)
-    ax.scatter(pts[0], pts[1],pts[2], c='g')
+    im = ax.scatter(pts[0][2:], pts[1][2:], pts[2][2:], c=cs)
+    ax.set_aspect('equal') 
+    ax.set_xlabel('x')
+    ax.set_ylabel('y')
+    ax.set_zlabel('z')
     plt.show()'''
     
     
@@ -539,14 +733,25 @@ def map2CartFoV(myMap, points, pixCent=None):
     #|------------------------------------|
     #|--- Pass to cart 2 cart function ---|
     #|------------------------------------|
-    res = StonyCart2CartFoV(pts, satLatD, satLonD, rollIt)
+    res, satLoc = StonyCart2CartFoV(pts, satLatD, satLonD, rollIt)
     
     # Pass the normal stony pts
     xOut = pts[0][2:]
     yOut = pts[1][2:]
     zOut = pts[2][2:]
     res2 = [xOut, yOut, zOut]
-    return res, res2
+    
+    '''fig = plt.figure(figsize=(8, 5), layout='constrained')
+    ax = fig.add_subplot(111, projection='3d')
+    im = ax.scatter(res[0], res[1], res[2], c=cs)
+    ax.scatter(satLoc[0], satLoc[1], satLoc[2])
+    ax.set_aspect('equal') 
+    ax.set_xlabel('x')
+    ax.set_ylabel('y')
+    ax.set_zlabel('z')
+    plt.show()
+    print(sd)'''
+    return res, res2, satLoc
 
 
 # |-----------------------------------------|
@@ -652,7 +857,7 @@ def wf2CartFoV(myMap, inPts, pixCent=None):
     #|------------------------------------|
     #|--- Pass to cart 2 cart function ---|
     #|------------------------------------|
-    res = StonyCart2CartFoV(pts, satLatD, satLonD, rollIt)
+    res, satLoc = StonyCart2CartFoV(pts, satLatD, satLonD, rollIt)
     
     return res
     
@@ -762,7 +967,7 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
 
 
     #ptsOut = map2CartFoV(myMap, [[0, myMap.data.shape[1]], [myMap.data.shape[0]/2, myMap.data.shape[0]/2]])
-    ptsOut, ptsOutStony = map2CartFoV(myMap, [pixx, pixy])   # is [x,y,z] where each is same len as pixIn  
+    ptsOut, ptsOutStony, satFOVxyz = map2CartFoV(myMap, [pixx, pixy])  # is [x,y,z] where each is same len as pixIn  
     
     # Get range            
     uniX = np.unique(np.array(pixx))
@@ -817,11 +1022,51 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
     wfPts = wf2CartFoV(myMap, awf.points)
     wfPtsT = np.transpose(np.array(wfPts))
     
+    '''fig = plt.figure(figsize=(8, 5), layout='constrained')
+    ax = fig.add_subplot(111, projection='3d')
+    rs = np.sqrt(np.array(pixx)**2 + np.array(pixy)**2)
+    im = ax.scatter(ptsOut[0], ptsOut[1], ptsOut[2], c=rs, cmap='inferno')
+    ax.scatter(wfPts[0][::10], wfPts[1][::10], wfPts[2][::10])
+    ax.set_aspect('equal') 
+    ax.set_xlabel('x')
+    ax.set_ylabel('y')
+    ax.set_zlabel('z')
+    plt.show()
+    print (sd)'''
     # Check if we have an existing FoV
     if multiMode:
         wids, midx, mask, FoV, nGridY = getWidth(wfPtsT, FoV=FoV, nGridY=nGridY)
     # Otherwise grab the new one
     else:
+        wids, midx, mask =getWidthNew(wfPtsT,[FOV2x, FOV2y, FOV2z],[maxX, maxY], satFOVxyz)
+        
+        fig = plt.figure()
+        plt.imshow(mask, origin='lower')
+        plt.show()
+        print (sd)
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
         wids, midx, mask, FoV, nGridY = getWidth(wfPtsT)
         dy, ygs, yms, nGridZ, zgs, zms = createGrid(FoV, nGridY)
     wid_smooth = ndimage.gaussian_filter(wids, sigma=2.0, order=0)
