@@ -181,34 +181,27 @@ def createGrid(FoV, nGridY):
             in the y and z directions
         
         ygs: the distances of the edge of the grid cells (length nGridY+1)
-    
-        yms: the distances of the middle of the grid cells (length nGridY)
-    
+        
         nGridZ: the number of grid cells in the z direction, which is calc from 
                 the range in z and dy
     
         zgs: the distances of the edge of the grid cells (length nGridZ+1)
     
-        zms: the distances of the middle of the grid cells (length nGridZ)
-           
     '''
     miny, maxy = FoV[0][0], FoV[0][1]
     minz, maxz = FoV[1][0], FoV[1][1]
-    dy = (maxy - miny) / nGridY
+    dy = (maxy - miny) / (nGridY+1)
     # Points on the grid
-    ygs = np.array([miny + i*dy for i in range(nGridY+1)])
-    # Midpoints
-    yms = np.array([miny + (0.5+i)*dy for i in range(nGridY)])
+    ygs = np.array([miny + i*dy for i in range(nGridY)])
     # Same for z, but need to get nGridZ
     nGridZ = int((maxz - minz) / dy)
-    zgs = np.array([minz + i * dy  for i in range(nGridZ+1)])
-    zms = np.array([minz + (0.5+i)*dy for i in range(nGridZ)])
-    return dy, ygs, yms, nGridZ, zgs, zms
+    zgs = np.array([minz + i * dy  for i in range(nGridZ)])
+    return dy, ygs, zgs
 
 # |------------------------------------|
 # |--- Convert points to widths map ---|
 # |------------------------------------|
-def getWidthNew(points, FoVfs, maxPix, satFOVxyz, flatLim=5, nGridY=100):
+def getWidthNew(points, FoVfs, FoV, satFOVxyz, flatLim=5, nGridY=100):
     '''
     Helper function to take a set of points representing some 3d
     shape and determine the width perpendicular to the PoS. This will
@@ -230,7 +223,7 @@ def getWidthNew(points, FoVfs, maxPix, satFOVxyz, flatLim=5, nGridY=100):
         FoVfs:  the functions that convert from pixels to FoV Cart in the
                 form [fovfx, fovfy, fovfz] where it expects f((pixy, pixz))
     
-        maxPix: the maximum pixel value as [maxy, maxz]
+        FoV: the pixel ranges as [miny, maxy, minz, maxz]
     
         satFOVxyz: the location of the satellite in FoV cartesian. this 
                    should be [dThom, ~0, ~0] where dThom is the distance to
@@ -271,9 +264,9 @@ def getWidthNew(points, FoVfs, maxPix, satFOVxyz, flatLim=5, nGridY=100):
     # Make a grid in pixel coords
     # This can be lower res (e.g. 100 pix across) bc we 
     # pass these results to an interpolator
-    dy, ygs, yms, nGridZ, zgs, zms = createGrid([[0, maxPix[0]], [0, maxPix[1]]], nGridX)
-    yys, zzs = np.meshgrid(yms, zms)
-    FoV = [[np.min(yys), np.max(yys)], [np.min(zzs), np.max(zzs)]]
+    dy, ygs, zgs = createGrid(FoV, nGridY)
+    yys, zzs = np.meshgrid(ygs, zgs)
+    #FoV = [[np.min(ygs), np.max(ygs)], [np.min(zgs), np.max(zgs)]]
     
     # Convert everyone to FoV cart coords with sat at 0!
     # FoV plane
@@ -301,7 +294,7 @@ def getWidthNew(points, FoVfs, maxPix, satFOVxyz, flatLim=5, nGridY=100):
     wids = np.zeros(FOVx.shape)
     xcs = np.zeros(FOVx.shape) -9999
     mask = np.zeros(FOVx.shape)
-    
+        
     # |--- Loop and match pixels to WF points ---|
     ncount = FOVx.shape[1]
     for i in range(FOVx.shape[1]):
@@ -386,7 +379,7 @@ def getWidthNew(points, FoVfs, maxPix, satFOVxyz, flatLim=5, nGridY=100):
     medxcs = np.median(xcs[np.where(mask == 1)])
     xcs[np.where(xcs == -9999)] = medxcs
 
-    return wids, xcs, mask, FoV, nGridY
+    return wids, xcs, mask
 
 def getWidth(points, FoV=None, nGridY=100):
     '''
@@ -947,7 +940,7 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
             awf2 = awf[1]
             awf  = awf[0]            
 
-            
+   
     # Save downselect input to use as the final downselect
     # (will use same var name for interp downselects in middle)
     downSelectF = downSelect
@@ -996,94 +989,49 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
     #|-------------------------------------------------|
     #|--- Get the wireframe width perp to FoV plane ---|
     #|-------------------------------------------------|
-    # This sets up generators for the full WF shape using the pointing
-    # of the satellite but not the specific bounds of the FoV
+    # This sets up generators for the full WF shape over the full FoV
+    OGfov = [[0, maxX], [0, maxY]]
+    nGridY = 50 # 50 for testing, 100 better for real results
+    dy, ygs, zgs = createGrid(OGfov, nGridY)
     
-    # |--- Do the outer WF first ---|
-    # Need to set FoV to larger region and outer should be bigger
-    if multiMode:
-        awf2.gPoints = [i * 10 for i in awf2.gPoints]
-        awf2.getPoints()
-        wfPts2 = wf2CartFoV(myMap, awf2.points)
-        wfPts2T = np.transpose(np.array(wfPts2))
-        
-        wids2, midx2, mask2, FoV, nGridY = getWidth(wfPts2T)
-        dy, ygs, yms, nGridZ, zgs, zms = createGrid(FoV, nGridY)
-        wid_smooth2 = ndimage.gaussian_filter(wids2, sigma=2.0, order=0)
-        
-        # indexing of func is y,z    
-        widFunc2  = RegularGridInterpolator((yms, zms), np.transpose(wid_smooth2), method='linear', bounds_error=False, fill_value=0)
-        xcFunc2   = RegularGridInterpolator((yms, zms), np.transpose(midx2), method='linear', bounds_error=False, fill_value=0)
-        maskFunc2 = RegularGridInterpolator((yms, zms), np.transpose(mask2), method='linear', bounds_error=False, fill_value=0)
-        
     # |--- Do the inner/main WF ---|
     awf.gPoints = [i * 10 for i in awf.gPoints]
     awf.getPoints()
     wfPts = wf2CartFoV(myMap, awf.points)
     wfPtsT = np.transpose(np.array(wfPts))
     
-    '''fig = plt.figure(figsize=(8, 5), layout='constrained')
-    ax = fig.add_subplot(111, projection='3d')
-    rs = np.sqrt(np.array(pixx)**2 + np.array(pixy)**2)
-    im = ax.scatter(ptsOut[0], ptsOut[1], ptsOut[2], c=rs, cmap='inferno')
-    ax.scatter(wfPts[0][::10], wfPts[1][::10], wfPts[2][::10])
-    ax.set_aspect('equal') 
-    ax.set_xlabel('x')
-    ax.set_ylabel('y')
-    ax.set_zlabel('z')
-    plt.show()
-    print (sd)'''
-    # Check if we have an existing FoV
-    if multiMode:
-        wids, midx, mask, FoV, nGridY = getWidth(wfPtsT, FoV=FoV, nGridY=nGridY)
-    # Otherwise grab the new one
-    else:
-        wids, midx, mask =getWidthNew(wfPtsT,[FOV2x, FOV2y, FOV2z],[maxX, maxY], satFOVxyz)
-        
-        fig = plt.figure()
-        plt.imshow(mask, origin='lower')
-        plt.show()
-        print (sd)
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        wids, midx, mask, FoV, nGridY = getWidth(wfPtsT)
-        dy, ygs, yms, nGridZ, zgs, zms = createGrid(FoV, nGridY)
+    wids, midx, mask = getWidthNew(wfPtsT,[FOV2x, FOV2y, FOV2z],OGfov, satFOVxyz, nGridY=nGridY)
     wid_smooth = ndimage.gaussian_filter(wids, sigma=2.0, order=0)
-
-    # indexing of func is y,z    
-    widFunc  = RegularGridInterpolator((yms, zms), np.transpose(wid_smooth), method='linear', bounds_error=False, fill_value=0) 
-    xcFunc   = RegularGridInterpolator((yms, zms), np.transpose(midx), method='linear', bounds_error=False, fill_value=0)
-    maskFunc = RegularGridInterpolator((yms, zms), np.transpose(mask), method='linear', bounds_error=False, fill_value=0)
     
+    # indexing of func is y,z    
+    widFunc  = RegularGridInterpolator((ygs, zgs), np.transpose(wid_smooth), method='linear', bounds_error=False, fill_value=0) 
+    xcFunc   = RegularGridInterpolator((ygs, zgs), np.transpose(midx), method='linear', bounds_error=False, fill_value=0)
+    maskFunc = RegularGridInterpolator((ygs, zgs), np.transpose(mask), method='linear', bounds_error=False, fill_value=0)
+        
+    # |--- Do the outer WF ---|
+    if multiMode:
+        awf2.gPoints = [i * 10 for i in awf2.gPoints]
+        awf2.getPoints()
+        wfPts2 = wf2CartFoV(myMap, awf2.points)
+        wfPts2T = np.transpose(np.array(wfPts2))
+        
+        wids2, midx2, mask2 = getWidthNew(wfPts2T,[FOV2x, FOV2y, FOV2z], OGfov, satFOVxyz, nGridY=nGridY)
+        wid_smooth2 = ndimage.gaussian_filter(wids2, sigma=2.0, order=0)
+        
+        # indexing of func is y,z    
+        widFunc2  = RegularGridInterpolator((ygs, zgs), np.transpose(wid_smooth2), method='linear', bounds_error=False, fill_value=0)
+        xcFunc2   = RegularGridInterpolator((ygs, zgs), np.transpose(midx2), method='linear', bounds_error=False, fill_value=0)
+        maskFunc2 = RegularGridInterpolator((ygs, zgs), np.transpose(mask2), method='linear', bounds_error=False, fill_value=0)
+        
+          
     # |--- Repeat process for the inside (if doing) ---|
     if doInner and (awf.WFtype in ['GCS', 'Torus']):
         awf.getPoints(inside=True)
         wfPtsI = wf2CartFoV(myMap, awf.points)
-        wfPtsI = np.transpose(np.array(wfPtsI))
-        widsI, midxI, maskI, FoV, nGridY = getWidth(wfPtsI, FoV=FoV, nGridY=nGridY)
+        wfPtsIT = np.transpose(np.array(wfPtsI))
+        widsI, midxI, maskI  = getWidthNew(wfPts2IT,[FOV2x, FOV2y, FOV2z], OGfov, satFOVxyz, nGridY=nGridY)
         wid_smoothI = ndimage.gaussian_filter(widsI, sigma=2.0, order=0)
-
+        
         # indexing of func is y,z    
         widFuncI = RegularGridInterpolator((yms, zms), np.transpose(wid_smoothI), method='linear', bounds_error=False, fill_value=0) 
         xcFuncI  = RegularGridInterpolator((yms, zms), np.transpose(midxI), method='linear', bounds_error=False, fill_value=0)
@@ -1120,21 +1068,24 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
     f_fovy = FOV2y((fpxx, fpyy))
     f_fovz = FOV2z((fpxx, fpyy))
     
-    # Use width interpolater
-    widsInt = widFunc((f_fovy, f_fovz))
+    # Use width interpolater - input in pix
+    widsInt = widFunc((fpxx, fpyy))
+    maskInt = maskFunc((fpxx, fpyy))
+
     # Same thing for inside, diff func, same grid
     if doInner:
-        widsIntI = widFuncI((f_fovy, f_fovz))
+        widsIntI = widFuncI((fpxx, fpyy))
+        maskIntI = maskFuncI((fpxx, fpyy))
     if multiMode:
-        widsInt2  = widFunc2((f_fovy, f_fovz))
-    
+        widsInt2  = widFunc2((fpxx, fpyy))
+        maskInt2 = maskFunc2((fpxx, fpyy))
     #|----------------------------------------|
     #|--- Find bounding box where wid != 0 ---|
     #|----------------------------------------|
     if multiMode:
-        notZero = np.where((widsInt != 0) | (widsInt2 != 0))
+        notZero = np.where((maskInt != 0) | (maskInt2 != 0))
     else:
-         notZero = np.where(widsInt != 0) 
+         notZero = np.where(maskInt != 0) 
          
     # Get nice bounds (in range, multiple of downselect)
     downSize = downSelectF 
@@ -1201,14 +1152,13 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
 
     #|----------------------------------------|
     #|--- Get x pos and widths on subfield ---|
-    #|----------------------------------------|
-    
+    #|----------------------------------------|   
     #|--- Main wireframe ---|
-    widsIntnz = widFunc((f_fovy, f_fovz))
-    xcIntnz   = xcFunc((f_fovy, f_fovz))
+    widsIntnz = widFunc((nzpxx, nzpyy))
+    xcIntnz   = xcFunc((nzpxx, nzpyy))
     # Clean up the edge bc interp makes fuzzy
     widsIntnz[np.where(widsIntnz < dx*0.5)] = 0
-    maskIntnz = maskFunc((f_fovy, f_fovz))
+    maskIntnz = maskFunc((nzpxx, nzpyy))
     maskIntnz[np.where(maskIntnz < 0.99)] = 0
     widsIntnz = widsIntnz * maskIntnz
     xcIntnz = xcIntnz * maskIntnz
@@ -1216,10 +1166,10 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
 
     #|--- Inner region of main wireframe ---|
     if doInner:
-        widsIntnzI = widFuncI((f_fovy, f_fovz))
-        xcIntnzI   = xcFuncI((f_fovy, f_fovz))
+        widsIntnzI = widFuncI((nzpxx, nzpyy))
+        xcIntnzI   = xcFuncI((nzpxx, nzpyy))
         widsIntnzI[np.where(widsIntnzI < dx*0.5)] = 0
-        maskIntnzI = maskFuncI((f_fovy, f_fovz))
+        maskIntnzI = maskFuncI((nzpxx, nzpyy))
         maskIntnzI[np.where(maskIntnzI < 1)] = 0
         widsIntnzI = widsIntnzI * maskIntnzI
         xcIntnzI = xcIntnzI * maskIntnzI
@@ -1228,10 +1178,10 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
 
     #|--- Outer wireframe ---|
     if multiMode:
-        widsIntnz2 = widFunc2((f_fovy, f_fovz))
-        xcIntnz2   = xcFunc2((f_fovy, f_fovz))
+        widsIntnz2 = widFunc2((nzpxx, nzpyy))
+        xcIntnz2   = xcFunc2((nzpxx, nzpyy))
         widsIntnz2[np.where(widsIntnz2 < dx*0.5)] = 0
-        maskIntnz2 = maskFunc2((f_fovy, f_fovz))
+        maskIntnz2 = maskFunc2((nzpxx, nzpyy))
         maskIntnz2[np.where(maskIntnz2 < 0.99)] = 0
         widsIntnz2 = widsIntnz2 * maskIntnz2
         xcIntnz2 = xcIntnz2 * maskIntnz2
@@ -1249,76 +1199,26 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
     #|--------------------------|
     deprojScale = [np.ones(subMass.shape), np.ones(subMass.shape)]
     if deproj:
-        # |------------------------------|
-        # |--- Get satellite location ---|
-        # |------------------------------|
-        satLonD = myMap.observer_coordinate.lon.degree
-        satLatD = myMap.observer_coordinate.lat.degree
-        satR = myMap.observer_coordinate.radius.au 
-        satLonR = satLonD * np.pi / 180.
-        satLatR = satLatD * np.pi / 180.
-        
-        if 'crota' in myMap.meta:
-            rollIt = myMap.meta['crota']
-        elif 'sc_roll' in myMap.meta:
-            rollIt = myMap.meta['sc_roll']
-        else:
-            print ('Neither crota or sc_roll in map metadata. Assuming zero roll')
-            rollIt = 0
+        #satStony = myMap.observer_coordinate
+        #satStony.representation_type = 'cartesian'
+        #satSxyz = np.array([satStony.x.to_value(), satStony.y.to_value(), satStony.z.to_value()]) /7e8       
 
-        satxyz = np.array([np.cos(satLatR)*np.cos(satLonR), np.cos(satLatR)*np.sin(satLonR), np.sin(satLatR)]) * satR
-    
-        # |-----------------------------------------|
-        # |--- Convert into Cart FoV coordinates ---|
-        # |-----------------------------------------|
-        pixCent = [myMap.data.shape[1]/2, myMap.data.shape[0]/2] # pix is xy but shape is yx
+        # |--- Get FoV Stony location ---|
+        f_fovxS = FOV2xS((nzpxx, nzpyy))
+        f_fovyS = FOV2yS((nzpxx, nzpyy))
+        f_fovzS = FOV2zS((nzpxx, nzpyy))
+        
+        # |--- Convert xc to PoS separation ---|
+        projR = np.sqrt(f_fovxS**2 + f_fovyS**2 + f_fovzS**2) # r dist to pixels
+        PoSang = np.arctan(xcMap[0] / projR) * 180 / 3.14159 * maskMap[0]
 
-        # Get the heliprojective coord of the pixel
-        coordM = myMap.pixel_to_world(pixCent[0] * u.pix, pixCent[1] * u.pix)
-        # Get elongation angle -> distance to Thomson Sphere
-        ell = np.sqrt(coordM.Tx.rad**2 + coordM.Ty.rad**2)
-        dM = np.abs(satR * np.abs(np.cos(ell)))
-        # Make skycoord with HPC and distance (transform needs dist if off limb)
-        hpc = SkyCoord(Tx=coordM.Tx, Ty=coordM.Ty, distance=dM*u.au, frame= coordM.frame)
-        # Convert to Stonyhurst, make a Cartesian array
-        ston = hpc.transform_to(frames.HeliographicStonyhurst)
-        TSxyz = np.array([ston.cartesian.x.to_value(), ston.cartesian.y.to_value(), ston.cartesian.z.to_value()])
-        # Vectors we will need
-        LoS = TSxyz - satxyz 
-        usatxyz = satxyz / np.linalg.norm(satxyz)
-        uTSxyz = TSxyz / np.linalg.norm(TSxyz)
-        uLoS = LoS / np.linalg.norm(LoS)
-    
-        # Start coord arrays with sat loc and FoV cent
-        xs = [satxyz[0]*215, TSxyz[0]*215, satxyz[0]*215, 0]
-        ys = [satxyz[1]*215, TSxyz[1]*215, satxyz[1]*215, 0]
-        zs = [satxyz[2]*215, TSxyz[2]*215, satxyz[2]*215, 0]
-        pts = np.array([xs, ys, zs])   
         
-        res = StonyCart2CartFoV(pts, satLatD, satLonD, rollIt)
-        res = np.array(res)
-        
-        satxyz = res[:,0] # not needed after all but keeping along for the ride now
-        sunxyz = res[:,1]
-        
-        
-        # |------------------------------------------|
-        # |--- Get distance/elong for Billings eq ---|
-        # |------------------------------------------|
-        # Start by correcting using a single x pos for each Los (the xc value)
-        # Possible upgrade to full LoS integation later
-        sun_dx1 = sunxyz[0] - xcMap[0]
-        sun_dy = sunxyz[1] - f_fovy
-        sun_dz = sunxyz[2] - f_fovz
-        sun_vec = np.array([sun_dx1, sun_dy, sun_dz] )
-        sunDists = np.sqrt(sun_dx1**2 + sun_dy**2 + sun_dz**2)* maskMap[0]
-
-        projR = np.sqrt(sun_dy **2 + sun_dz**2)
-        PoSang = np.arctan2(-sun_dx1, projR) * 180 / np.pi
-        
+        # |--- Billings electron party ---|
         rdp, Bfact = elTheory(projR, PoSang)
         rdp0, Bfact0 = elTheory(projR, 0)
         deprojScale[0] = Bfact/Bfact0 * maskMap[0]  
+
+        # |--- Look/warn for large conversion factors ---|
         bigProj = np.where((deprojScale[0] < 0.1) & (deprojScale[0] != 0.))  
         allProj = np.where(deprojScale[0] != 0.)
         if len(bigProj[0]) > 0:
@@ -1328,20 +1228,12 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
             print (str(len(bigProj[0])) + ' pixels ('+'{:3.1f}'.format(100*len(bigProj[0])/len(allProj[0]))+'%) have deprojection factor of 10x or greater' )
             print( 'Capping these points at 10x')
         
+        # |--- Second WF repetition ---|
         if multiMode:
-            sun_dx1 = sunxyz[0] - xcMap[2]
-            sun_dy = sunxyz[1] - f_fovy
-            sun_dz = sunxyz[2] - f_fovz
-            sun_vec = np.array([sun_dx1, sun_dy, sun_dz] )
-            sunDists = np.sqrt(sun_dx1**2 + sun_dy**2 + sun_dz**2)* maskMap[2]
-        
-            sun_uvec = sun_vec / sunDists
-
-            projR = np.sqrt(sun_dy **2 + sun_dz**2)
-            PoSang = np.arctan2(-sun_dx1, projR) * 180 / np.pi
+            PoSang = np.arctan(xcMap[2] / projR) * 180 / 3.14159 * maskMap[2]
         
             rdp, Bfact = elTheory(projR, PoSang)
-            rdp0, Bfact0 = elTheory(projR, 0)
+            #rdp0, Bfact0 = elTheory(projR, 0)
             deprojScale[1] = Bfact/Bfact0 * maskMap[2]
             bigProj = np.where((deprojScale[1] < 0.1) & (deprojScale[1] != 0.))  
             allProj = np.where(deprojScale[1] != 0.)
@@ -1354,7 +1246,7 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
             
         
         #fig = plt.figure()
-        #plt.imshow(deprojScale[1], origin='lower')
+        #plt.imshow(deprojScale[0]*maskMap[0], origin='lower')
         #plt.show()
         #print (sd)
                 
@@ -1466,7 +1358,7 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
     #|---------------------|
     #|--- Return things ---|
     #|---------------------|
-    return widMap, xcMap, maskMap, densMap, subMass, outFoV, [FOV2x, FOV2y, FOV2z, sunxyz], [FOV2xS, FOV2yS, FOV2zS]  
+    return widMap, xcMap, maskMap, densMap, subMass, outFoV, [FOV2x, FOV2y, FOV2z], [FOV2xS, FOV2yS, FOV2zS]  
 
 
 
@@ -1796,7 +1688,7 @@ def dingo3d(widMap, xcMap, densMap, outFoV, pix2FOV, shell=True, plotIt=True):
 # |----------------------------|
 # |--- Density Contour plot ---|
 # |----------------------------|
-def dingo2d(widMaps, densMaps, maskMaps, outFoVs, pix2FOVs, showLog=False, figName=None, times=None, showRs=False):
+def dingo2d(widMaps, densMaps, maskMaps, outFoVs, pix2Sts, showLog=False, figName=None, times=None, showRs=False):
     ''' 
     2D contour plot(s) of the width of the wireframe(s) perpendicular to the plane
     of the sky. If there are two wireframes the outer will be shown on the left and
@@ -1821,9 +1713,9 @@ def dingo2d(widMaps, densMaps, maskMaps, outFoVs, pix2FOVs, showLog=False, figNa
                     downselect is an integer representing the 1D reduction in resolution.
                     (direct output from mass2dens)
     
-        pix2FOVs:   an array ([FOV2x, FOV2y, FOV2z, sun_pos] ) with three interpolation functions
+        pix2Sts:   an array ([FOV2xS, FOV2yS, FOV2zS] ) with three interpolation functions
                     that convert from from a pixel in the original image ((pixx, pixy)) 
-                    to FoV cartesian and the corresponding location of the sun
+                    to Stonyhurst Cartesian coords
                     (direct output from mass2dens)
 
     Optional Inputs:
@@ -1840,12 +1732,13 @@ def dingo2d(widMaps, densMaps, maskMaps, outFoVs, pix2FOVs, showLog=False, figNa
     
     '''
     # The first four params need to be packaged as lists, even if passing a single time    
-    
+
     #|------------------|
     #|--- Prep stuff ---|
     #|------------------|
     #|--- Get number of time steps
     nTimes = len(widMaps)
+    
     
     #|--- Check for second WF ---|
     multiMode = False
@@ -2005,25 +1898,6 @@ def dingo2d(widMaps, densMaps, maskMaps, outFoVs, pix2FOVs, showLog=False, figNa
         pys = np.arange(minpy, maxpy+1, downSize)
         pxx, pyy = np.meshgrid(pxs, pys)
     
-        #|--- Make the mini FoV grid in Rs ---|
-        fovx = pix2FOVs[i][0]((pxx, pyy))
-        fovy = pix2FOVs[i][1]((pxx, pyy))
-        fovz = pix2FOVs[i][2]((pxx, pyy))
-        
-        if showRs:
-            limxs = [np.min(fovy)-pix2FOVs[i][3][1], np.max(fovy)-pix2FOVs[i][3][1]]
-            limys = [np.min(fovz)-pix2FOVs[i][3][2], np.max(fovz)-pix2FOVs[i][3][2]]
- 
-        
-        #|--- Get resolution ---|
-        dys = np.zeros(fovx.shape)
-        dys[:,1:] = fovy[:,1:] - fovy[:,:-1]
-        dys[:,0] = dys[:,1] 
-        dzs = np.zeros(fovx.shape)
-        dzs[1:,:] = fovz[1:,:] - fovz[:-1,:]
-        dzs[0,:] = dzs[1,:]
-        cellArea = dys * dzs
-    
         allDens1[i,dy:dy+sy,dx:dx+sx] = dens1 * maskMaps[i][0]
         allMask1[i,dy:dy+sy,dx:dx+sx] = maskMaps[i][0]
         allpxx[i,dy:dy+sy,dx:dx+sx] = pxx
@@ -2087,8 +1961,8 @@ def dingo2d(widMaps, densMaps, maskMaps, outFoVs, pix2FOVs, showLog=False, figNa
             mask2 = allMask2[i]
             thisdens2[np.where(thisdens2 == 0)] = -9999
             axes[1][i].imshow(thisdens2/scaleIt, origin='lower', vmin=vvals[0], vmax=vvals[1], cmap=cmap, extent=[limxs[0], limxs[1], limys[0], limys[1]])
-            xs = np.arange(limxs[0], limxs[1]+1, 1)
-            ys = np.arange(limys[0], limys[1]+1, 1)
+            xs = np.linspace(limxs[0], limxs[1], mask2.shape[1])
+            ys = np.linspace(limys[0], limys[1], mask2.shape[0])
             xxxs, yyys = np.meshgrid(xs, ys)
             axes[0][i].contour(xxxs, yyys, mask2, levels=[0], linestyles='--', colors='w')
             axes[1][i].contour(xxxs, yyys, mask1, levels=[0], linestyles='--', colors='k')
@@ -2100,6 +1974,46 @@ def dingo2d(widMaps, densMaps, maskMaps, outFoVs, pix2FOVs, showLog=False, figNa
     else:  
         cbar.set_label('Density (1e'+str(power)+' g cm$^{-3}$)', rotation=270, labelpad=15)
     fig.subplots_adjust(right=rval, left=lval, top=0.95,bottom=0.1)
+    
+    # Hack for Rs tick labels - can only imshow on 
+    # fixed grid so plot it in pixel and just relabel after
+    # plot x axis is equatorial R and y is z
+    if showRs:
+        # Assuming every panel has same ticks... it should
+        xticks = axes[0][0].get_xticks()[1:-1]
+        yticks = axes[0][0].get_yticks()[1:-1]
+        midx = 0.5*(limxs[0] + limxs[1]) * np.ones(len(yticks))
+        midy = 0.5*(limys[0] + limys[1]) * np.ones(len(xticks))
+        
+        xt_xs = pix2Sts[0][0]((xticks, midy))
+        xt_ys = pix2Sts[0][1]((xticks, midy))
+        yt_zs = pix2Sts[0][2]((midx, yticks))
+
+        rt_xs = np.sqrt(xt_xs**2 + xt_ys)
+        angs = np.arctan2(xt_xs, xt_ys)
+        rt_xs = rt_xs * np.sign(angs)
+        xlabs = np.array(['{:.1f}'.format(xval) for xval in rt_xs ])
+        if '-0.0' in xlabs:
+            xlabs[xlabs == '-0.0'] = '0.0'
+        axes[0][0].set_xticks(xticks)
+        axes[0][0].set_xticklabels(xlabs)
+        
+        
+        ylabs = np.array(['{:.1f}'.format(yval) for yval in yt_zs ])
+        if '-0.0' in ylabs:
+            ylabs[ylabs == '-0.0'] = '0.0'
+        axes[0][0].set_yticks(yticks)
+        if not multiMode:
+            axes[0][0].set_yticklabels(ylabs)
+
+
+        if multiMode:
+            axes[1][0].set_xticks(xticks)
+            axes[1][0].set_yticks(yticks)
+            axes[1][0].set_xticklabels(xlabs)
+            axes[1][0].set_yticklabels(ylabs)
+            
+    
     if figName:
         if not os.path.exists('dingoOutputs/'):
             # Make if if it doesn't exist
@@ -2323,7 +2237,7 @@ def dingo1d(myMaps, widMapIns, xcMapIns, densMapIns, outFoVs, pix2FoVs, obsSats,
             print ('Neither crota or sc_roll in map metadata. Assuming zero roll')
             rollIt = 0
 
-        res = StonyCart2CartFoV(pts, satLatD, satLonD, rollIt)
+        res, satLoc = StonyCart2CartFoV(pts, satLatD, satLonD, rollIt)
     
         # |--------------------------------------|
         # |--- Get Sun-sat intersect with pts ---|
@@ -3125,6 +3039,8 @@ def processBonusArgs(allBonus, mode):
             except:
                 sys.exit('Error in converting '+aTag+' to vcme float')
         elif 'ds_' in aTag.lower():
+            if mode != 3:
+                sys.exit('Downselect (ds_) only allowed for 3D')
             try: 
                 ds = int(aTag.lower().replace('ds_',''))
             except:
@@ -3390,7 +3306,6 @@ def dingoWrapper(args):
     #|--- Run it ---|     
     #|--------------|
     #|--------------|
-        
     #|--- Process mass maps into density ---|
     widMaps, xcMaps, maskMaps, densMaps, subMasss, outFoVs, pix2FOVs, pix2Sts = [], [], [], [], [], [], [], []
     for i in range(nTimes):
@@ -3445,7 +3360,7 @@ def dingoWrapper(args):
     #|--- 2d - contour plots ---|
     #|--------------------------|
     elif mode == 2:
-        dingo2d(widMaps, densMaps, maskMaps, outFoVs, pix2FOVs, figName=saveName, times=uniqTs, showLog=logPlot, showRs=True)
+        dingo2d(widMaps, densMaps, maskMaps, outFoVs, pix2Sts, figName=saveName, times=uniqTs, showLog=logPlot, showRs=False)
             
     
     #|--------------------------------|
