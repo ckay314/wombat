@@ -955,8 +955,8 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
     downSize = 32
     pixx, pixy = [], []
     mvals = []
-    for j in range(myMap.data.shape[0])[::downSize]:
-        for i in range(myMap.data.shape[1])[::downSize]:
+    for j in range(myMap.data.shape[0]+1)[::downSize]:
+        for i in range(myMap.data.shape[1]+1)[::downSize]:
             pixx.append(i)
             pixy.append(j)
 
@@ -987,7 +987,7 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
     FOV2xS = RegularGridInterpolator((uniX, uniY), np.transpose(FOVxS), method='linear')
     FOV2yS = RegularGridInterpolator((uniX, uniY), np.transpose(FOVyS), method='linear')
     FOV2zS = RegularGridInterpolator((uniX, uniY), np.transpose(FOVzS), method='linear')
-    
+
     #|-------------------------------------------------|
     #|--- Get the wireframe width perp to FoV plane ---|
     #|-------------------------------------------------|
@@ -1016,7 +1016,6 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
         awf2.getPoints()
         wfPts2 = wf2CartFoV(myMap, awf2.points)
         wfPts2T = np.transpose(np.array(wfPts2))
-        
         wids2, midx2, mask2 = getWidthNew(wfPts2T,[FOV2x, FOV2y, FOV2z], OGfov, satFOVxyz, nGridY=nGridY)
         wid_smooth2 = ndimage.gaussian_filter(wids2, sigma=2.0, order=0)
         
@@ -1461,14 +1460,15 @@ def dingo3d(widMap, xcMap, densMap, maskMap, outFoV, pix2St, satCoord, shell=Tru
     #|--- Get vector pointing from PoS to sat ---|
     LoS = [[], [], []]
     for i in range(3):
-        LoS[i] = fovs[i] - satSxyz[i]
+        LoS[i] = satSxyz[i] - fovs[i]
     LoS = np.array(LoS)
     satDist = np.sqrt(LoS[0]**2 + LoS[1]**2 + LoS[2]**2)
     uLoS = LoS / satDist
     
     #|--- Get mask ---|
-    maskIt = np.where(maskMap[0] > 0.9) # allow some float rounding error
-    maskIt2 = np.where(maskMap[2] > 0.9) 
+    maskIt = np.where(maskMap[0] > 0.95) # allow some float rounding error
+    if multiMode:
+        maskIt2 = np.where(maskMap[2] > 0.9) 
     
     #|--- Find edges of mask ---|
     # Sweep through vertically find horiz span
@@ -1627,6 +1627,202 @@ def dingo3d(widMap, xcMap, densMap, maskMap, outFoV, pix2St, satCoord, shell=Tru
     return [WFpts, WFpts2]
     
 
+# |----------------------------------|
+# |--- Density 2D Contour (in 3d) ---|
+# |----------------------------------|
+def dingo23d(densMap, maskMap, outFoV, pix2St, fullImSize, showLog=False, showSun=False, obsSat=None):
+    ''' 
+    2D contour plot(s) of the width of the wireframe(s) perpendicular to the plane
+    of the sky but shown in 3D on the Thomson surface/plane of the sky
+    
+    Inputs:    
+        densMap:    a single density array. In g/cm^3
+                     (selected from output of mass2dens)
+
+        masksMap:   a single mask array
+                    (selected from output of mass2dens)
+    
+        outFoV:     an array with [x0, xf, y0, yf, downselect] where the first four 
+                    elements represent the extent of the sub-field of view (in pix) and
+                    downselect is an integer representing the 1D reduction in resolution.
+                    (direct output from mass2dens)
+    
+        pix2St:     an array ([FOV2xS, FOV2yS, FOV2zS] ) with three interpolation functions
+                    that convert from from a pixel in the original image ((pixx, pixy)) 
+                    to Stonyhurst Cartesian coords
+                    (direct output from mass2dens)
+    
+        fullImSize: the size of the full image (not the cutout in densMap). This
+                    is adjusted for downselect as needed
+
+    Optional Inputs:
+        showLog:    flag to show the contours on a log scale instead of linear 
+                    (defaults to false)
+    
+        showSun:    flag to include the Sun in the figure. Python is particular about
+                    which things it shows/hides as one rotates in 3d so not the most
+                    reliable if FoV overlaps the Sun
+        
+        obsSat:     a coordinate object for the remote observing sat 
+                    (e.g. imMap.observer_coordinate)
+        
+    
+    '''
+    #|--- Unpackage FoV things ---|
+    minpx, maxpx, minpy, maxpy, downSize = outFoV
+     
+    
+    #|--- Make the mini FoV grid in pix ---|
+    pxs = np.arange(minpx, maxpx+1, downSize)
+    pys = np.arange(minpy, maxpy+1, downSize)
+    pxx, pyy = np.meshgrid(pxs, pys)
+    
+    #|--- Make the mini FoV grid in Rs ---|
+    fovx = pix2St[0]((pxx, pyy))
+    fovy = pix2St[1]((pxx, pyy))
+    fovz = pix2St[2]((pxx, pyy))
+    fovs = np.array([fovx, fovy, fovz])
+    
+    #|--- Make the *full* FoV grid in pix ---|
+    # Technically downselect by factor of 32 for fitting
+    # the interp funcs so stop at max multiple of 32
+    fullImSize[0] = int(fullImSize[0] / 32) * 32
+    fullImSize[1] = int(fullImSize[1] / 32) * 32
+    
+    pxFs = np.arange(0, fullImSize[1], 32)
+    pyFs = np.arange(0, fullImSize[0], 32)
+    pxxF, pyyF = np.meshgrid(pxFs, pyFs)
+    
+    #|--- Make the full FoV grid in Rs ---|
+    fovxF = pix2St[0]((pxxF, pyyF))
+    fovyF = pix2St[1]((pxxF, pyyF))
+    fovzF = pix2St[2]((pxxF, pyyF))
+     
+    #|--- Set up cutout density ---|
+    dens = densMap * maskMap
+    vval = np.median(np.abs(dens[dens !=0])) 
+    vvals = [-vval, 10*vval]
+    cmap = plt.get_cmap('Reds')
+    cmap.set_under('darkgray')
+    dens[np.where(maskMap ==0)] = -999
+    
+    #|--- Switch to log (if needed) ---|
+    if showLog:
+        negPts = np.where(dens <= 0)
+        posPts = np.where(dens > 0)
+        if len(negPts[0]) > 0:
+            minval = np.min(dens[posPts])
+            dens[negPts] = minval
+        dens = np.log10(dens)
+        vmax = int(np.percentile(dens[posPts], 90))
+        vvals = [vmax-3, vmax]
+
+    
+    #|--- Set up full FoV density ---|
+    # Dump into arrays (instead of 2d) so can have outside
+    # region at much lower region than the important part
+    densF = []#np.zeros(fovxF.shape) - 999
+    showx = []
+    showy = []
+    showz = []
+    for i in range(len(pyFs)):
+        for j in range(len(pxFs)):
+            myx, myy = pxFs[j], pyFs[i]
+            if ((myx < minpx) or (myx > maxpx)) or ((myy < minpy) or (myy > maxpy)):
+                densF.append(-999)
+                showx.append(fovxF[i,j])
+                showy.append(fovyF[i,j])
+                showz.append(fovzF[i,j])
+                
+    #|--- Add in the cutout ---|
+    dS = 2
+    for i in range(len(pys))[::dS]:
+        for j in range(len(pxs))[::dS]:
+            densF.append(dens[i,j])
+            showx.append(fovx[i,j])
+            showy.append(fovy[i,j])
+            showz.append(fovz[i,j])
+    showx = np.array(showx)
+    showy = np.array(showy)
+    showz = np.array(showz)
+               
+        
+    #|--- Make a little sun ---|
+    # Quickly coded, might not be traditional x/y association 
+    # but don't care for this
+    if showSun:
+        ts = np.linspace(0,2*np.pi, 40)
+        ps = np.linspace(-np.pi/2, np.pi/2, 20)
+        tt, pp = np.meshgrid(ts,ps)
+        xs = np.cos(tt)*np.cos(pp)
+        ys = np.sin(tt)*np.cos(pp)
+        zs = np.sin(pp)
+    
+    #|--- Check if should show in AU ---|    
+    units = ' (R$_s$)'
+    rs = np.sqrt(showx**2 + showy**2 + showz**2)
+    if np.max(rs) > 100:
+        showx = showx / 215
+        showy = showy / 215
+        showz = showz / 215
+        units = ' (au)'
+    
+    #|--- Plot it ---|
+    fig = plt.figure(figsize=(8, 5), layout='constrained')
+    ax = fig.add_subplot(111, projection='3d')
+    #im = ax.scatter(fovxF[::sL,::sL], fovyF[::sL,::sL], fovzF[::sL,::sL], c=densF[::sL,::sL], cmap=cmap, vmin=-vval, vmax=2*vval)
+    im = ax.scatter(showx, showy, showz, c=densF, cmap=cmap, vmin=vvals[0], vmax=vvals[1])
+    
+    if showSun:
+        ax.scatter(xs,ys,zs, c='y', s=50)
+    
+    
+    #|--- Colorbar friend ---|
+    cbar = fig.colorbar(im, ax=ax, orientation='vertical', fraction=.05, pad=0.02, shrink=0.5) 
+    if showLog:
+        cbar.set_label('Log$_{10}$ Density\n(g cm$^{-3}$)')
+    else:
+        cbar.set_label('Density (g cm$^{-3}$)', rotation=270, labelpad=15)
+    
+    # Prettify
+    ax.set_aspect('equal') 
+    ax.set_xlabel('x'+units)
+    ax.set_ylabel('y'+units)
+    ax.set_zlabel('z'+units)
+    
+    if type(obsSat) != type(None):
+        # need to account for views not directly pointed at Sun..
+        # Get center of FoV in pixels
+        mpx, mpy = np.mean(pxFs), np.mean(pyFs) # close enough for estimate
+        
+        # Get center of FoV in Stony
+        msx = pix2St[0]((mpx, mpy))
+        msy = pix2St[1]((mpx, mpy))
+        msz = pix2St[2]((mpx, mpy))
+        mPos = np.array([msz, msy, msz])
+        
+        # Get sat loc in Stony
+        obsLon = obsSat.lon.deg
+        obsSat.representation_type = 'cartesian'
+        obsPos = np.array([obsSat.x.to_value(), obsSat.y.to_value(), obsSat.z.to_value()]) / 7e8
+        uoP = obsPos / np.sqrt(np.sum(obsPos**2))
+        # Calc angles
+        LoSvec = obsPos - mPos  
+        uLoS = LoSvec / np.sqrt(np.sum(LoSvec**2))
+        
+        
+        dAz = np.arccos(np.dot(uoP, uLoS))*180/np.pi
+        
+        eqR = np.sqrt(uLoS[0]**2 + uLoS[1]**2)
+        el  = np.arcsin(uLoS[2]/eqR) * 180. /np.pi 
+        
+        az  = np.arctan2(uLoS[1], uLoS[0])* 180. /np.pi 
+        az  = az - dAz
+        ax.view_init(elev=el, azim=az)
+    
+    plt.show()
+    
+    
 # |----------------------------|
 # |--- Density Contour plot ---|
 # |----------------------------|
@@ -2083,6 +2279,13 @@ def dingo1d(myMaps, widMapIns, xcMapIns, densMapIns, outFoVs, pix2Sts, obsSats, 
             startDiffs[i]= (times[i]-minTime).total_seconds()
             myCols.append(cmap(startDiffs[i]/dTime))
             
+    # |----------------------------|
+    # |--- Check if have sheath ---|
+    # |----------------------------|
+    incSheath = False
+    if type(np.sum(widMapIns[0][2])) != type(None):
+        incSheath = True        
+               
     # |-------------------------|
     # |--- Set up save files ---|    
     # |-------------------------|
@@ -2114,6 +2317,8 @@ def dingo1d(myMaps, widMapIns, xcMapIns, densMapIns, outFoVs, pix2Sts, obsSats, 
         myC       = myCols[iii] 
         # Main/Inner WF values
         widMap, xcMap, densMap = widMapIn[0], xcMapIn[0], densMapIn[0]
+        if incSheath:
+            widMapS, xcMapS, densMapS = widMapIn[2], xcMapIn[2], densMapIn[1]
         
         #|--- Unpackage FoV things ---|
         minpx, maxpx, minpy, maxpy, downSize = outFoV
@@ -2162,6 +2367,7 @@ def dingo1d(myMaps, widMapIns, xcMapIns, densMapIns, outFoVs, pix2Sts, obsSats, 
             radLine[i] = ISxyz[i] * np.linspace(0, 1, nLine)
             
         #|--- Figure out who projects onto PoS ---|
+        maxi = -9999
         for i in range(nLine):
             myx, myy, myz = radLine[0][i]* 7e8, radLine[1][i]* 7e8, radLine[2][i]* 7e8
             myPt = SkyCoord(x=myx*u.m, y=myy*u.m, z=myz*u.m, obstime=myMap.date, representation_type='cartesian',frame=frames.HeliographicStonyhurst)
@@ -2170,7 +2376,9 @@ def dingo1d(myMaps, widMapIns, xcMapIns, densMapIns, outFoVs, pix2Sts, obsSats, 
             
             if (px >= minpx) & (px <= maxpx) & (py >= minpy) & (py <= maxpy):
                 maxi = i
-                
+        if maxi == -9999:
+            sys.exit('Cannot make 1D plot, no intersection between WF and radial vector')        
+            
         # Set to one beyond the max good proj point
         # Repeat with finer resolution on shorter range
         scaleIt = (maxi+1) / nLine
@@ -2196,6 +2404,8 @@ def dingo1d(myMaps, widMapIns, xcMapIns, densMapIns, outFoVs, pix2Sts, obsSats, 
                 myPix[1].append(py)
                 # get the wid/xc/mask values
                 myw, myxc = widMap[int(py-minpy), int(px-minpx)], xcMap[int(py-minpy), int(px-minpx)]
+                if incSheath:
+                    mywS, myxcS = widMapS[int(py-minpy), int(px-minpx)], xcMapS[int(py-minpy), int(px-minpx)]
         
                 # get the PoS value
                 myPOSx = fovx[int(py-minpy), int(px-minpx)]
@@ -2203,7 +2413,7 @@ def dingo1d(myMaps, widMapIns, xcMapIns, densMapIns, outFoVs, pix2Sts, obsSats, 
                 myPOSz = fovy[int(py-minpy), int(px-minpx)]
                 
                 # get the LoS vector
-                LoS = np.array([myPOSx - Rxyz[0], myPOSy - Rxyz[1], myPOSz - Rxyz[2]])
+                LoS = np.array([Rxyz[0] - myPOSx, Rxyz[1] - myPOSy, Rxyz[2] - myPOSz])
                 satDist = np.sqrt(LoS[0]**2 + LoS[1]**2 + LoS[2]**2)
                 uLoS = LoS / satDist
                 
@@ -2219,10 +2429,11 @@ def dingo1d(myMaps, widMapIns, xcMapIns, densMapIns, outFoVs, pix2Sts, obsSats, 
                 totdist = np.sqrt(dx**2 + dy**2 + dz**2)
                 
                 # determine if in range
-                if totdist < myw:
-                    rIP.append(np.sqrt(myx**2 + myy**2 + myz**2)/7e8)    
+                myr = np.sqrt(myx**2 + myy**2 + myz**2)/7e8
+                rIP.append(myr)    
+                if totdist <= myw:
                     myn = densMap[int(py-minpy), int(px-minpx)]
-                    if myn != 0:
+                    if myn > 0:
                         nIP.append(myn) 
                         cs.append('m')
                         istype.append('m')
@@ -2230,250 +2441,23 @@ def dingo1d(myMaps, widMapIns, xcMapIns, densMapIns, outFoVs, pix2Sts, obsSats, 
                         nIP.append(0) 
                         cs.append('k')
                         istype.append('a')
- 
-        
-        #fig = plt.figure()
-        #plt.plot(rIP, nIP)
-        #plt.show()
-        '''fig = plt.figure(figsize=(8, 5), layout='constrained')
-        ax = fig.add_subplot(111, projection='3d')
-        im = ax.scatter(fovx, fovy, fovz, c=widMapIn[0], cmap='Reds')
-        ax.scatter(0,0,0, 'y')
-        ax.plot(radLine[0], radLine[1], radLine[2], 'k--' )
-        ax.scatter(ISxyz[0], ISxyz[1], ISxyz[2], 'b')
-        # Prettify
-        ax.set_aspect('equal') 
-        ax.set_xlabel('x')
-        ax.set_ylabel('y')
-        ax.set_zlabel('z')
-        plt.show()'''
-        #print (sd)
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        '''satLonD = myMap.observer_coordinate.lon.degree
-        satLatD = myMap.observer_coordinate.lat.degree
-        satR = myMap.observer_coordinate.radius.au 
-        satLonR = satLonD * np.pi / 180.
-        satLatR = satLatD * np.pi / 180.
-       
-        # |-----------------------------|
-        # |--- Get important vectors ---|
-        # |-----------------------------|
-        # Get vector from sun to sat
-        # (just the cartesian sat loc)
-        satxyz = np.array([np.cos(satLatR)*np.cos(satLonR), np.cos(satLatR)*np.sin(satLonR), np.sin(satLatR)]) * satR
-    
-        pixCent = [myMap.data.shape[1]/2, myMap.data.shape[0]/2] # pix is xy but shape is yx
-
-        # Get the heliprojective coord of the pixel
-        coordM = myMap.pixel_to_world(pixCent[0] * u.pix, pixCent[1] * u.pix)
-        # Get elongation angle -> distance to Thomson Sphere
-        ell = np.sqrt(coordM.Tx.rad**2 + coordM.Ty.rad**2)
-        dM = np.abs(satR * np.abs(np.cos(ell)))
-        # Make skycoord with HPC and distance (transform needs dist if off limb)
-        hpc = SkyCoord(Tx=coordM.Tx, Ty=coordM.Ty, distance=dM*u.au, frame= coordM.frame)
-        # Convert to Stonyhurst, make a Cartesian array
-        ston = hpc.transform_to(frames.HeliographicStonyhurst)
-        TSxyz = np.array([ston.cartesian.x.to_value(), ston.cartesian.y.to_value(), ston.cartesian.z.to_value()])
-        # Vectors we will need
-        LoS = TSxyz - satxyz 
-        usatxyz = satxyz / np.linalg.norm(satxyz)
-        uTSxyz = TSxyz / np.linalg.norm(TSxyz)
-        uLoS = LoS / np.linalg.norm(LoS)
-    
-        # |---------------------------------------|
-        # |--- Package and convert to FoV Cart ---|
-        # |---------------------------------------|
-        # Start coord arrays with sat loc and FoV cent
-        xs = [satxyz[0]*215, TSxyz[0]*215]
-        ys = [satxyz[1]*215, TSxyz[1]*215]
-        zs = [satxyz[2]*215, TSxyz[2]*215]
-        
-        # Add the in situ sat and Sun
-        obsCart = obsSat.cartesian
-        xs.append(obsCart.x.to_value()*215) 
-        ys.append(obsCart.y.to_value()*215)
-        zs.append(obsCart.z.to_value()*215)
-        xs.append(0) 
-        ys.append(0)
-        zs.append(0)
-        xs.append(xs[0]) 
-        ys.append(ys[0])
-        zs.append(zs[0])
-    
-        # Convert everyone at the same time
-        pts = np.array([xs, ys, zs])      
-        
-        if 'crota' in myMap.meta:
-            rollIt = myMap.meta['crota']
-        elif 'sc_roll' in myMap.meta:
-            rollIt = myMap.meta['sc_roll']
-        else:
-            print ('Neither crota or sc_roll in map metadata. Assuming zero roll')
-            rollIt = 0
-
-        res, satLoc = StonyCart2CartFoV(pts, satLatD, satLonD, rollIt)
-    
-        # |--------------------------------------|
-        # |--- Get Sun-sat intersect with pts ---|
-        # |--------------------------------------|
-        # Make a line connecting sun to sat
-        npts = 300
-    
-        sat = [res[0][0], res[1][0], res[2][0]]
-        sun = [res[0][1], res[1][1], res[2][1]]
-        # Get the r dist of everyone (from sun)
-        ssline = np.array([np.linspace(sun[0], sat[0], npts), np.linspace(sun[1], sat[1], npts), np.linspace(sun[2], sat[2], npts)])
-        rs = np.sqrt((ssline[0] - sun[0])**2 + (ssline[1] - sun[1])**2 + (ssline[2] - sun[2])**2)
-        ryzs = np.sqrt((ssline[1])**2 + (ssline[2])**2) # wrt FoV cent, not sun
-        maxryz = np.max(ryzs)
-     
-        # Find max r to check for in place version
-        #|--- Unpackage FoV things ---|
-        minpx, maxpx, minpy, maxpy, downSize = outFoV
-
-        #|--- Make the mini FoV grid in pix ---|
-        pxs = np.arange(minpx, maxpx+1, downSize)
-        pys = np.arange(minpy, maxpy+1, downSize)
-        pxx, pyy = np.meshgrid(pxs, pys)
-    
-        #|--- Make the mini FoV grid in Rs ---|
-        fovx = pix2FoV[0]((pxx, pyy))
-        fovy = pix2FoV[1]((pxx, pyy))
-        fovz = pix2FoV[2]((pxx, pyy))
-        fov_ryz = np.sqrt(fovy**2 +fovz**2)
-        maxFOV_ryz = np.max(fov_ryz)
-    
-        # Make a mini line where actually needed
-        maxIdx = np.min(np.where(ryzs >= maxFOV_ryz))
-        scaleIt = rs[maxIdx] / np.max(rs)
-        miniLine = scaleIt * ssline
-        minirs = np.sqrt((miniLine[0] - sun[0])**2 + (miniLine[1] - sun[1])**2 + (miniLine[2] - sun[2])**2)
-    
-        # |---------------------------------------|
-        # |--- Check if within wireframe width ---|
-        # |---------------------------------------|
-        # Check if we have sheath widths or not
-        incSheath = False
-        if type(np.sum(widMapIn[2])) != type(None):
-            incSheath = True
-        
-        widMap, xcMap, densMap = widMapIn[0], xcMapIn[0], densMapIn[0]
-        if incSheath:
-            widMaps, xcMaps, densMaps = widMapIn[2], xcMapIn[2], densMapIn[1]
-        
-        midpty, midptz = int(widMap.shape[1]/2), int(widMap.shape[0]/2)
-        gridys = fovy[midptz,:]
-        gridzs = fovz[:,midpty]
-        rIP, nIP = [], []
-        cs = []
-        istype = []
-        rMain = 9999.
-        hitMain = False
-        for i in range(npts):
-            # |--- Interpolate to get local width ---|
-            iy0, iyf, iz0, izf = None, None, None, None
-            if (miniLine[1][i] <= np.max(gridys)) & (miniLine[1][i] >= np.min(gridys)):
-                iy0 = np.min(np.where(gridys >= miniLine[1][i])[0])
-                iyf = np.max(np.where(gridys <= miniLine[1][i])[0])
-            if (miniLine[2][i] <= np.max(gridzs)) & (miniLine[2][i] >= np.min(gridzs)):
-                iz0 = np.min(np.where(gridzs >= miniLine[2][i])[0])
-                izf = np.max(np.where(gridzs <= miniLine[2][i])[0])
-            
-            if (type(iy0) != type(None)) & (type(iz0) != type(None)):
-                w11, xc11, d11 = widMap[iz0, iy0], xcMap[iz0, iy0], densMap[iz0, iy0] 
-                w12, xc12, d12 = widMap[iz0, iyf], xcMap[iz0, iyf], densMap[iz0, iyf]
-                w21, xc21, d21 = widMap[izf, iy0], xcMap[izf, iy0], densMap[izf, iy0]
-                w22, xc22, d22 = widMap[izf, iyf], xcMap[izf, iyf], densMap[izf, iyf]
-                # Interp in y
-                gdy = gridys[iyf] - gridys[iy0]
-                fy = (miniLine[1][i] - gridys[iy0]) / gdy
-                w1 = (1-fy) * w11 + fy * w12
-                w2 = (1-fy) * w21 + fy * w22
-                xc1 = (1-fy) * xc11 + fy * xc12
-                xc2 = (1-fy) * xc21 + fy * xc22
-                d1 = (1-fy) * d11 + fy * d12
-                d2 = (1-fy) * d21 + fy * d22
-  
-                # Interp in z
-                gdz = gridzs[izf] - gridzs[iz0]
-                fz = (miniLine[2][i] - gridzs[iz0]) / gdz
-                myw = (1-fz) * w1 + fz * w2
-                myxc = (1-fz) * xc1 + fz * xc2
-                myd = (1-fz) * d1 + fz * d2
-            
-                # |--- Repeat for the sheath ---|
-                if incSheath:
-                    w11s, xc11s, d11s = widMaps[iz0, iy0], xcMaps[iz0, iy0], densMaps[iz0, iy0] 
-                    w12s, xc12s, d12s = widMaps[iz0, iyf], xcMaps[iz0, iyf], densMaps[iz0, iyf]
-                    w21s, xc21s, d21s = widMaps[izf, iy0], xcMaps[izf, iy0], densMaps[izf, iy0]
-                    w22s, xc22s, d22s = widMaps[izf, iyf], xcMaps[izf, iyf], densMaps[izf, iyf]
-                    # Interp in y
-                    gdy = gridys[iyf] - gridys[iy0]
-                    fy = (miniLine[1][i] - gridys[iy0]) / gdy
-                    w1s = (1-fy) * w11s + fy * w12s
-                    w2s = (1-fy) * w21s + fy * w22s
-                    xc1s = (1-fy) * xc11s + fy * xc12s
-                    xc2s = (1-fy) * xc21s + fy * xc22s
-                    d1s = (1-fy) * d11s + fy * d12s
-                    d2s = (1-fy) * d21s + fy * d22s
-  
-                    # Interp in z
-                    gdz = gridzs[izf] - gridzs[iz0]
-                    fz = (miniLine[2][i] - gridzs[iz0]) / gdz
-                    myws = (1-fz) * w1s + fz * w2s
-                    myxcs = (1-fz) * xc1s + fz * xc2s
-                    myds = (1-fz) * d1s + fz * d2s
-
-                # |--- Check if in main or sheath ---|
-                if (np.abs(miniLine[1][i] - myxc)<myw) and (myd != 0):
-                    if not hitMain:
-                        rMain = minirs[i]
-                        hitMain = True
-                    rMain = np.max([minirs[i], rMain])
-                    rIP.append(minirs[i])
-                    nIP.append(myd)
-                    cs.append('m')
-                    istype.append('m')
-                elif incSheath and (minirs[i] > rMain):
-                    if np.abs(miniLine[1][i] - myxcs)<myws:
-                        rIP.append(minirs[i])
-                        nIP.append(myds)
-                        cs.append('b') 
-                        istype.append('s')
+                    
+                elif incSheath:
+                    if totdist <= mywS:
+                        myn = densMapS[int(py-minpy), int(px-minpx)]
+                        if myn > 0:
+                            nIP.append(myn) 
+                            cs.append('b')
+                            istype.append('s')
+                        else:
+                            nIP.append(0) 
+                            cs.append('k')
+                            istype.append('a')
                 else:
-                    rIP.append(minirs[i])
-                    nIP.append(0)
-                    cs.append('r')
+                    nIP.append(0) 
+                    cs.append('k')
                     istype.append('a')
-            else:
-                rIP.append(minirs[i])
-                nIP.append(0)
-                cs.append('a')'''
-        
-        
-        
-        
-        
-        
-        
-            
-    
+ 
         # |-----------------------------------|
         # |--- Convert in place to in situ ---|
         # |-----------------------------------|
@@ -2484,6 +2468,7 @@ def dingo1d(myMaps, widMapIns, xcMapIns, densMapIns, outFoVs, pix2Sts, obsSats, 
     
         # Find portion where it is actually CME/nonzero
         isCME = np.where(nIP != 0)[0]
+        isCME = np.arange(isCME[0], isCME[-1]+1) # might have zero point inside range
         rCME  = rIP[isCME]
         nCME  = nIP[isCME]
     
@@ -2576,14 +2561,12 @@ def dingo1d(myMaps, widMapIns, xcMapIns, densMapIns, outFoVs, pix2Sts, obsSats, 
         # Need new isMain/isSheath bc threw away ambient in IS calc
         isSheath = isSheath - isMain[0]
         isMain   = isMain - isMain[0]
-    
+         
         if timeMode == 'rw':
             xvals = insituDT
-            #ax[1].plot(insituDT, nIS)
             plt.gcf().autofmt_xdate() 
         elif timeMode == 'hr':
             xvals = tArr + startDiffs[iii] / 3600.
-            #ax[1].plot(tArr, nIS)
             ax[1].set_xlabel('t (hr)')
         # same plot script, different vars    
         # also time is backward from r
@@ -2962,6 +2945,12 @@ def processArgs(args):
         mode = 2
         if nTimes > 8:
             sys.exit('Quitting... 2D mode only supports 8 time steps or fewer.')
+    elif dim in ['23', '23d']:
+        mode = 23
+        if nTimes > 1:
+            sys.exit('Quitting... 2D in 3D mode only supports single time and given more than one.')
+        if not singleWF:
+            sys.exit('Quitting... 2D in 3D mode only supports single wireframe and given more than one.')
     elif dim in ['3', '3d']:
         mode = 3
         if nTimes > 1:
@@ -3201,10 +3190,11 @@ def dingoWrapper(args):
              a plus sign with no spaces (e.g. 10+11 for lines 10 and 11)
 
         dingoDim: a strong for the dimensions for the density calculation. 
-                  the option are 0D, 1D, 2D, 3D which correspond to:
+                  the option are 0D, 1D, 2D, 23D, 3D which correspond to:
                     0D - total mass
                     1D - line plot (in place and in situ)
                     2D - plane of sky contour plot
+                    23D - the 2d contour plot shown in interactive 3d
                     3D - interactive 3D scatter plot                    
 
     BONUS PARAMS: (not required, order doesn't matter as long as after main 3)
@@ -3458,6 +3448,16 @@ def dingoWrapper(args):
     #|--------------------------|
     elif mode == 2:
         dingo2d(widMaps, densMaps, maskMaps, outFoVs, pix2Sts, figName=saveName, times=uniqTs, showLog=logPlot, showRs=False)
+
+    #|------------------------------|
+    #|--- 23d - 3D contour plots ---|
+    #|------------------------------|
+    elif mode == 23:
+        fullImSize = np.array(imMaps[0].data.shape)/outFoVs[0][4]
+        showSun = False
+        if satDicts[0]['OBSTYPE'] == 'HI':
+            showSun = True
+        dingo23d(densMaps[0][0], maskMaps[0][0], outFoVs[0], pix2Sts[0], fullImSize, showLog=logPlot, obsSat=imMaps[0].observer_coordinate, showSun=showSun)
             
     
     #|--------------------------------|
