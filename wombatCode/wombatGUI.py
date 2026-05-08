@@ -2566,7 +2566,7 @@ def pts2proj(pts_in, obs, scale, mywcs, occultR=None):
     in some time
     
     Inputs:
-        pts_in:  a point (or list of points, probably) in the form [lat, lon, r]
+        pts_in:  a point (or list of points as npts x 3) in the form [lat, lon, r]
                  where the units are [deg, deg, x]. We advocate using Stonyhurst
                  (Earth at longitude 0) and meters for the radius but in theory
                  as long as the pts_in and obs are in the same coordinates it 
@@ -2613,7 +2613,7 @@ def pts2proj(pts_in, obs, scale, mywcs, occultR=None):
     
     if len(pts_in.shape) == 1:
         pts_in = np.array([pts_in])
-    
+     
     # |--------------------------------------|
     # |---- Convert to rotated Cartesian ----|    
     # |--------------------------------------|    
@@ -2971,6 +2971,10 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, labelPW=True, reloadD
     
     #|---- Pull sat number from obsFiles ----|
     nSats = len(WBinfo['Insts'])
+    
+    for i in range(nSats):
+        aSat = WBinfo['Insts'][i]
+        #print (aSat, len(proIms[aSat][0]), len(massIms[aSat]))
     
     #|-----------------------------| 
     #|---- Remap keys to ints -----|

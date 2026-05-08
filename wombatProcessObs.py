@@ -1400,7 +1400,7 @@ def thePickler(proIms, fnames, insts0, pickleJar='wbPickles/', name='temp'):
     
                         insts: a list of all available instruments (tags for other entries)
     
-                        origFiles[inst]: a list of the fits files used for that inst
+                        OrigFiles[inst]: a list of the fits files used for that inst
     
                         isEUV[inst]: whether or not an instrument is EUV type (i.e. don't mass)
     
@@ -1536,8 +1536,11 @@ def thePickler(proIms, fnames, insts0, pickleJar='wbPickles/', name='temp'):
                         if mySatStuff[j]['OBSTYPE'] == 'HI':
                             calcRsun *= 3600
                         tempMaps[key][2][j]['rsun'] = calcRsun
-                   
-                massIm, hdrM = wM.TB2mass(tempMaps[key][1][j].data, tempMaps[key][2][j])
+                        
+                despike = False
+                if mySatStuff[j]['OBSTYPE'] == 'HI':
+                    despike = True   
+                massIm, hdrM = wM.TB2mass(tempMaps[key][1][j].data, tempMaps[key][2][j], despike=despike)
                 if 'MASK' in mySatStuff[j]:
                     massIm = (1-mySatStuff[j]['MASK']) * massIm
                 #bigDill['massIms'][key].append(np.transpose(massIm))

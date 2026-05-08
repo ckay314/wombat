@@ -9,6 +9,7 @@ External calls:
 
 import numpy as np
 import sys
+from scipy import ndimage
 
 sys.path.append('prepCode/') 
 from wcs_funs import fitshead2wcs, wcs_get_coord
@@ -109,7 +110,7 @@ def elTheory(Rin,theta, center=False, limb=0.63, returnAll=False):
 #|----------------------------------|
 #|---- Total Brightness to Mass ----|
 #|----------------------------------|
-def TB2mass(img, hdr, onlyNe=False, doPB=False):
+def TB2mass(img, hdr, onlyNe=False, doPB=False, despike=False):
     """
     Function that will convert a total brightness image into a mass (density)
     image using elTheory and header information.
@@ -125,6 +126,10 @@ def TB2mass(img, hdr, onlyNe=False, doPB=False):
                 
         doPB: a flag to account for the polarization brightness and 
               use (Bt-Br) from elTheory instead of B (defaults to False) 
+    
+        despike: flag to despike the images to remove effects of stars. meant
+                 for HI, will distort small scale features in COR
+                 (default False)
     
     Outputs: 
         mass: the calculated image with mass per pixel instead of brightness
@@ -186,6 +191,19 @@ def TB2mass(img, hdr, onlyNe=False, doPB=False):
     
     # Clean out NaNs
     mass[~np.isfinite(mass)] = 0
+    
+    # Despike mass image if flagged to do so
+    if despike:
+        medVal = np.median(np.abs(mass))
+        sclMass  = mass / medVal
+
+        despiked = ndimage.median_filter(sclMass, size=20)
+        diff = despiked - sclMass
+        bigChange = np.where(np.abs(diff) >= 10)
+        pretty = np.copy(sclMass)
+        pretty[bigChange] = despiked[bigChange]
+        mass = pretty * medVal
+        
   
     # add a tag into header
     hdr['history'] = 'Converted to mass units using calcCMEmass.py'

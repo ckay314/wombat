@@ -2278,6 +2278,8 @@ def dingo1d(myMaps, widMapIns, xcMapIns, densMapIns, outFoVs, pix2Sts, obsSats, 
         for i in range(nTimes):
             startDiffs[i]= (times[i]-minTime).total_seconds()
             myCols.append(cmap(startDiffs[i]/dTime))
+    else:
+        times = [myMaps[0].date.datetime]
             
     # |----------------------------|
     # |--- Check if have sheath ---|
