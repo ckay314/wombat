@@ -606,7 +606,7 @@ class ParamWindow(QMainWindow):
         """
         temp = b.text()
         # Convert parameter value to slider idx 
-        slidx = int((float(b.text()) - x0)/dx)
+        slidx = int((float(b.text().replace(',', '.')) - x0)/dx)
         # Make sure it is in range
         # Readjust and print warning if not
         if slidx > nSli -1:
@@ -1737,7 +1737,6 @@ class FigWindow(QWidget):
         """
         #|---- Grab data for this time/scaling ----|
         myIm = self.myScls2[self.didx][self.tidx][self.sclidx]
-        
         #|---- Grab min/max from slider ----|     
         slMin = self.MinSlider.value()
         slMax = self.MaxSlider.value()
@@ -2825,7 +2824,7 @@ def sortTimeIndices(satStuff, tRes=20):
         myTimes = []
         for i in range(len(aSat)):
             myTimes.append(datetime.datetime.strptime(aSat[i]['DATEOBS'], "%Y-%m-%dT%H:%M:%S"))
-            
+             
         # Check if sorted
         if not all(a <= b for a, b in pairwise(myTimes)):
             sys.exit('Exiting from sortTimeIndices, files should be provided in time order')

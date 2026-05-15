@@ -727,7 +727,7 @@ def rdifhi_wrapper(files, side='a', tel='hi_1'):
     allIms = []
     allHdrs = []
     for j in range(nim-1):
-        print('Running rdifhi for image ', j+1, 'of ', nim)
+        print('Running rdifhi for image ', j+1, 'of ', nim-1)
         hdr1 = hdrs[j]
         hdr2 = hdrs[j+1]
         im1  = ims[j]

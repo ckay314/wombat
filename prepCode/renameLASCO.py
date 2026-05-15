@@ -3,6 +3,7 @@ import numpy as np
 
 def cleanItUp(folder):
     files = os.listdir(folder)
+    print (files)
     # Check if name file is there
     if 'img_hdr.txt' not in files:
         sys.exit('Need img_hdr.txt file to rename fits')
@@ -11,14 +12,15 @@ def cleanItUp(folder):
     files.remove('img_hdr.txt')
     
     for aF in files:
-        myIdx = np.where(deets[:,0] == aF)[0][0]
-        myDate = deets[myIdx, 1].replace('/','')
-        myTime = deets[myIdx, 2].replace(':','')[:4]
-        myInst = deets[myIdx, 3]
-        myDir  = 'pullFolder/SOHO/LASCO/'+myInst+'/' 
-        myName = myDate+'T'+myTime+'_'+myInst+'_'+aF
+        if aF[0] != '.':
+            myIdx = np.where(deets[:,0] == aF)[0][0]
+            myDate = deets[myIdx, 1].replace('/','')
+            myTime = deets[myIdx, 2].replace(':','')[:4]
+            myInst = deets[myIdx, 3]
+            myDir  = 'pullFolder/SOHO/LASCO/'+myInst+'/' 
+            myName = myDate+'T'+myTime+'_'+myInst+'_'+aF
         
-        os.replace(folder+aF,myDir+myName)
+            os.replace(folder+aF,myDir+myName)
     
     
 if __name__ == '__main__':

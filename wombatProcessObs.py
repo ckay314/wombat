@@ -84,6 +84,7 @@ from sunpy.time import parse_time
 from sunpy.coordinates import HeliographicStonyhurst, frames
 import sunpy
 import pickle
+import matplotlib.pyplot as plt
 
 sys.path.append('prepCode/') 
 sys.path.append('wombatCode/') 
@@ -977,7 +978,7 @@ def processWISPR(times, insts, wcalpath='prepFiles/psp/wispr/',  inFolder='pullF
         bonusStr = 'L3_'
     for i in range(nInsts):
         PSPfiles[i] = os.listdir(inFolder+bonusStr+insts[i])
-
+ 
     # Make sure we found something before moving on
     nFound = 0
     for i in range(nInsts):
@@ -1294,14 +1295,16 @@ def processObs(times, insts, inFolder='pullFolder/', outFolder='wbFits/', outFil
         if doLW:
             proImsLW, outLinesLW = processWISPR(times, doWISPR, doLW=True)
             for key in proImsLW:
-                allProIms[key+'_LW'] = proImsLW[key]
-                allfnames[key+'_LW'] = outLinesLW[key]
+                if len(proImsLW[key]) > 0:
+                    allProIms[key+'_LW'] = proImsLW[key]
+                    allfnames[key+'_LW'] = outLinesLW[key]
 
         if doL3:
             proImsL3, outLinesL3 = processWISPR(times, doWISPR, doL3=True)
             for key in proImsL3:
-                allProIms[key+'_L3'] = proImsL3[key]
-                allfnames[key+'_L3'] = outLinesL3[key]
+                if len(proImsL3[key]) > 0:
+                    allProIms[key+'_L3'] = proImsL3[key]
+                    allfnames[key+'_L3'] = outLinesL3[key]
                 
         proIms, outLines = processWISPR(times, doWISPR)
         for key in proIms:
@@ -1545,7 +1548,6 @@ def thePickler(proIms, fnames, insts0, pickleJar='wbPickles/', name='temp'):
                     massIm = (1-mySatStuff[j]['MASK']) * massIm
                 #bigDill['massIms'][key].append(np.transpose(massIm))
                 bigDill['massIms'][key].append(massIm)    
-                        
 
         # |-------------------------------------------|
         # |---- Calculate scaled images and store ----|
@@ -1561,9 +1563,13 @@ def thePickler(proIms, fnames, insts0, pickleJar='wbPickles/', name='temp'):
         maxlen = len(bigDill['proIms'][key][0])-1
         if bigDill['WBinfo']['isEUV'][key]: maxlen += 1
         for j in range(maxlen):
-            myMap = sunpy.map.Map(bigDill['proIms'][key][0][j], bigDill['proIms'][key][1][j])
+            if bigDill['WBinfo']['isEUV'][key]:
+                jj = j
+            else:
+                jj = j+1
+            myMap = sunpy.map.Map(bigDill['proIms'][key][0][jj], bigDill['proIms'][key][1][jj])
             bigDill['proImMaps'][key][0].append(myMap)
-            bigDill['proImMaps'][key][1].append(bigDill['proIms'][key][1][j])
+            bigDill['proImMaps'][key][1].append(bigDill['proIms'][key][1][jj])
 
     # |----------------------------------|
     # |---- Replace masses as needed ----|
@@ -2078,10 +2084,10 @@ def scaleIt(obsIn, satStuffs):
     # Pull the desired values for each instrument
     
     # mins/maxs on percentiles by instrument [[lower], [upper]] with [lin, log, sqrt]  #tagIt:dynrng
-    pMMs = {'AIA':[[0.001,10,1], [99,99,99]], 'SECCHI_EUVI':[[0.001,10,1], [99,99,99]], 'LASCO_C2':[[15,1,15], [97,99,97]], 'LASCO_C3':[[40,1,10], [99,99,90]], 'SECCHI_COR1':[[30,1,10], [99,99,90]], 'SECCHI_COR2':[[20,1,10], [92,99,93]], 'SECCHI_HI1':[[1,40,1], [99.5,80,99.9]], 'SECCHI_HI2':[[1,40,1],[99.9,80,99.9]], 'SECCHI_HI1_SR':[[1,40,1], [99.5,80,99.9]], 'SECCHI_HI2_SR':[[1,40,1],[99.9,80,99.9]], 'WISPR_HI1':[[5,40,1], [98.,80,99.9]], 'WISPR_HI2':[[1,40,1], [99.9,80,99.9]],'WISPR_HI1_LW':[[1,1,1.], [99.,99,99.]], 'WISPR_HI1_L3':[[10,40,1], [95.,80,99.9]], 'WISPR_HI2_L3':[[1,40,1], [99.9,80,99.9]], 'SoloHI':[[1,40,1], [99.5,80,99.5]] }
+    pMMs = {'AIA':[[0.001,10,1], [99,99,99]], 'SECCHI_EUVI':[[0.001,10,1], [99,99,99]], 'LASCO_C2':[[15,1,15], [97,99,97]], 'LASCO_C3':[[40,1,10], [99,99,90]], 'SECCHI_COR1':[[30,1,10], [99,99,90]], 'SECCHI_COR2':[[20,1,10], [92,99,93]], 'SECCHI_HI1':[[1,40,1], [99.5,80,99.9]], 'SECCHI_HI2':[[1,40,1],[99.9,80,99.9]], 'SECCHI_HI1_SR':[[1,40,1], [99.5,80,99.9]], 'SECCHI_HI2_SR':[[1,40,1],[99.9,80,99.9]], 'WISPR_HI1':[[5,40,1], [98.,80,99.9]], 'WISPR_HI2':[[1,40,1], [99.9,80,99.9]],'WISPR_HI1_LW':[[1,1,1.], [99.,99,99.]], 'WISPR_HI1_L3':[[10,40,1], [95.,80,99.9]], 'WISPR_HI2_L3':[[1,40,1], [99.9,80,99.9]], 'SoloHI':[[1,40,1], [99.5,80,99.5]],'WISPR_HI2_LW':[[1,1,1.], [99.,99,99.]] }
     
     # Where the background sliders start (between 0 and 255)
-    sliVals = {'AIA':[[0,0,0], [191,191,191]], 'SECCHI_EUVI':[[0,32,0], [191,191,191]], 'LASCO_C2':[[0,0,21],[191,191,191]], 'LASCO_C3':[[37,0,37],[191,191,191]], 'SECCHI_COR1':[[63,0,21],[191,191,191]], 'SECCHI_COR2':[[63,0,21],[191,191,191]], 'SECCHI_HI1':[[63,0,21],[128,191,191]], 'SECCHI_HI2':[[63,0,21],[128,191,191]], 'SECCHI_HI1_SR':[[63,0,21],[128,191,191]], 'SECCHI_HI2_SR':[[63,0,21],[128,191,191]],  'WISPR_HI1':[[20,0,21],[128,191,191]], 'WISPR_HI2':[[0,0,21],[128,191,191]], 'WISPR_HI1_LW':[[10,0,21],[191,191,191]], 'WISPR_HI1_L3':[[20,0,21],[128,191,191]], 'WISPR_HI2_L3':[[0,0,21],[128,191,191]], 'SoloHI':[[10,0,21],[128,191,191]]}
+    sliVals = {'AIA':[[0,0,0], [191,191,191]], 'SECCHI_EUVI':[[0,32,0], [191,191,191]], 'LASCO_C2':[[0,0,21],[191,191,191]], 'LASCO_C3':[[37,0,37],[191,191,191]], 'SECCHI_COR1':[[63,0,21],[191,191,191]], 'SECCHI_COR2':[[63,0,21],[191,191,191]], 'SECCHI_HI1':[[63,0,21],[128,191,191]], 'SECCHI_HI2':[[63,0,21],[128,191,191]], 'SECCHI_HI1_SR':[[63,0,21],[128,191,191]], 'SECCHI_HI2_SR':[[63,0,21],[128,191,191]],  'WISPR_HI1':[[20,0,21],[128,191,191]], 'WISPR_HI2':[[0,0,21],[128,191,191]], 'WISPR_HI1_LW':[[10,0,21],[191,191,191]], 'WISPR_HI1_L3':[[20,0,21],[128,191,191]], 'WISPR_HI2_L3':[[0,0,21],[128,191,191]], 'WISPR_HI2_LW':[[10,0,21],[191,191,191]], 'SoloHI':[[10,0,21],[128,191,191]]}
     
     # Pull the configuration based on instrument
     myInst = satStuffs[0]['INST']
@@ -2143,6 +2149,7 @@ def scaleIt(obsIn, satStuffs):
         #|---- Process linear imgs ----|   
         # Get vals at min/max percentile from the config dictionary
         linMin, linMax = np.percentile(imNonNaN[goodIdx], myMM[0][0]), np.percentile(imNonNaN[goodIdx], myMM[1][0])   
+        
         # If a diff image reset min to neg val based on max   
         if diffImg:
             linMin = - 0.5*linMax
@@ -2249,6 +2256,9 @@ def commandLineWrapper():
                             it is flagged by adding the argument 'rdiffhi' after the inst
                             tags in the command line call
                             defaults to not including
+    
+            pklName -       a string name for the output pickle. It is recognized by including
+                            '.pkl' in the string. It will be saved as wbPickles/pklName.pkl
     
         
         Available Instrument Tags:

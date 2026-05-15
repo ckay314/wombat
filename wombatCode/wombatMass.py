@@ -198,7 +198,7 @@ def TB2mass(img, hdr, onlyNe=False, doPB=False, despike=False):
         sclMass  = mass / medVal
 
         despiked = ndimage.median_filter(sclMass, size=20)
-        diff = despiked - sclMass
+        diff = (despiked - sclMass) / np.median(despiked)
         bigChange = np.where(np.abs(diff) >= 10)
         pretty = np.copy(sclMass)
         pretty[bigChange] = despiked[bigChange]
