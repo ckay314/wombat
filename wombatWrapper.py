@@ -664,6 +664,7 @@ def runWombat(args):
     theFile = args[1]
     doReload     = False
     overviewPlot = False
+    logFile      = None
     # Assume reload file not pickle if name includes SummaryFile
     if 'reload' in theFile.lower():
         doReload = True
@@ -672,6 +673,9 @@ def runWombat(args):
     # Check if its a log file and an int
     elif (len(args) == 3) and ('.pkl' not in theFile):
             bkgData, reloadDict, nWFs = reloadLogLine(theFile, args[2])
+            logFile = theFile.replace('.txt','').replace('wbOutputs/','')
+            if logFile == 'WomBlog':
+                logFile = None
     # add in ovw option    
     elif (len(args) == 4) and ('.pkl' not in theFile):
         if args[3] in ['ovw', 'OVW', 'overviewplot']:
@@ -711,7 +715,7 @@ def runWombat(args):
     if nWFs > 5:
         sys.exit('Max limit of 5 wireframes')
         
-    releaseTheWombat(bkgData, reloadDict=reloadDict, overviewPlot=overviewPlot, nWFs=nWFs)   
+    releaseTheWombat(bkgData, reloadDict=reloadDict, overviewPlot=overviewPlot, nWFs=nWFs, logFile=logFile)   
         
         
 if __name__ == '__main__':

@@ -863,7 +863,6 @@ class ParamWindow(QMainWindow):
         if nameIt == '':
             nameIt = 'WomBlog'
         logFile = open('wbOutputs/'+nameIt+'.txt', 'a')
-        
         # Check if doing one or all fits
         if type(singleSat) != type(None):
             toDo = [singleSat]
@@ -884,7 +883,6 @@ class ParamWindow(QMainWindow):
                     # Observer and time of obs
                     outStr = nowTime.strftime("%Y-%m-%dT%H:%M:%S")
                     outStr += ' ' + tag + ' ' + obsT + ' ' + aWF.WFtype.replace(' ', '') +' '
-                    
                     # Dump all the params and fill with Nones as needed
                     for ii in range(9):
                         if ii < (len(aWF.params)):
@@ -895,6 +893,7 @@ class ParamWindow(QMainWindow):
                     # Add the name of the background pickle and the time index for that data
                     outStr += bkgpkl + ' ' + str(tidx)            
             
+                    print (outStr)
                     logFile.write( outStr+ '\n')
                 else:
                     print('Cannot log WF', k, 'no parameters defined')
@@ -1132,7 +1131,7 @@ class FigWindow(QWidget):
     
      
     """
-    def __init__(self, myObs, myScls, satStuff, massIms, myNum=0, labelPW='Bottom', tmap=[0], screenXY=None, mouseEnabled=False):
+    def __init__(self, myObs, myScls, satStuff, massIms, myNum=0, tmap=[0], screenXY=None, mouseEnabled=False):
         """
         Intial setup for the figure window class.
     
@@ -1152,11 +1151,7 @@ class FigWindow(QWidget):
             myNum:    an index number for this plot window, useful when creating
                       multiple windows, but unnecessary for single window
                       defaults to 0
-    
-            labelPW:  flag to show labels of the spacecraft/instrument name and 
-                      time stamp. Can set at None, 'Top', or 'Bottom'
-                      defaults to Bottom
-    
+        
             tmap:     an array that maps the slider time index to the observation index.
                       The obs aren't necessarily uniformly spaced but the t slider is
                       so a map may look like [0, 1, 1, 2, 3, 4, 4] where 10 slider indices
@@ -1176,7 +1171,7 @@ class FigWindow(QWidget):
         
         #|---- Setup variables ----|
         self.winidx = myNum # index number for multi mode
-        self.labelIt = labelPW # show labels in plot    
+        #self.labelIt = labelPW # show labels in plot    
         self.satStuff = satStuff 
         self.satName = satStuff[0][0]['OBS'] +' '+ satStuff[0][0]['INST']
         self.OGims = myObs[0]
@@ -1277,11 +1272,11 @@ class FigWindow(QWidget):
         self.cbox = self.bgComboBox()
         layoutP.addWidget(self.cbox,12,3,1,3,alignment=QtCore.Qt.AlignCenter)
         
-        # |----- Log Fit Button ----|
-        logBut = QPushButton('Log WF Fit')
-        logBut.released.connect(self.LBclicked)
-        layoutP.addWidget(logBut, 12, 8, 1,3)
+        #|---- Time label ----|
+        self.time_label = QLabel('I AM A TIME')
+        layoutP.addWidget(self.time_label, 12,7,1,4,alignment=QtCore.Qt.AlignRight)
         
+                
         #|---- Fill slider defaults ----|
         for i in range(3):
             self.slidervals[:,i,0] = satStuff[self.didx][0]['SLIVALS'][0][i]
@@ -1315,28 +1310,45 @@ class FigWindow(QWidget):
         if self.satStuff[self.didx][0]['OBSTYPE'] == 'EUV':
             self.cbox.setCurrentIndex(1)
         
+        # |----- Log Fit Button ----|
+        logBut = QPushButton('Log WF Fit')
+        logBut.released.connect(self.LBclicked)
+        layoutP.addWidget(logBut, 17, 0, 1,3)
+        
+        
         #|---- Save button
         saveBut = QPushButton('Save')
         saveBut.released.connect(self.SBclicked)
-        layoutP.addWidget(saveBut, 17, 0, 1,3,alignment=QtCore.Qt.AlignCenter)
+        layoutP.addWidget(saveBut, 17, 3, 1,3,alignment=QtCore.Qt.AlignCenter)
 
         #|---- Mass button ----|
         massBut = QPushButton('Mass')
         massBut.released.connect(self.MBclicked)
-        layoutP.addWidget(massBut, 17, 4, 1,3,alignment=QtCore.Qt.AlignCenter)
+        layoutP.addWidget(massBut, 17, 6, 1,3,alignment=QtCore.Qt.AlignCenter)
 
         #|---- Exit button ----|
         exitBut = QPushButton('Exit')
         exitBut.released.connect(self.EBclicked)
         exitBut.setStyleSheet("background-color: red")
-        layoutP.addWidget(exitBut, 17, 8, 1,3,alignment=QtCore.Qt.AlignCenter)
+        layoutP.addWidget(exitBut, 17, 9, 1,3,alignment=QtCore.Qt.AlignCenter)
         
         #|---- Set layout ----|
         self.setLayout(layoutP)
         
         #|---- Show the background ----|
+        # not actually needed, mw will call
         self.plotBackground()
+        rw, cl = self.image.image.shape[:2]
+        self.pWindow.setRange(xRange=[0,cl], yRange=[0,rw], padding=0)
+        self.pWindow.setLimits(xMin=0,yMin=0, xMax=cl, yMax=rw)
+        self.pWindow.getViewBox().suggestPadding = lambda *_: 0.0
+        self.pWindow.getPlotItem().getViewBox().setAspectLocked(True)
         
+        #print (self.pWindow.boundingRect())
+        
+        #self.pWindow.getPlotItem().getViewBox().setAspectLocked(True)
+        
+        #print (self.pWindow.boundingRect())
         
     #|------------------------------| 
     #|----------- Layout -----------|
@@ -1622,6 +1634,11 @@ class FigWindow(QWidget):
                 
                 #|---- Set wf aesthetics ----|
                 myColor =wfs[i].WFcolor
+                # Check for GCS on cor1, switch if so
+                if ('COR1' in self.satStuff[self.didx][self.tidx]['MYTAG']):
+                    if wfs[i].WFtype in ['GCS', 'GCS*']:
+                        myColor = 'cyan'
+                
                 # change pen wid if HI
                 penwid =1
                 if self.satStuff[self.didx][self.tidx]['OBSTYPE'] == 'HI':
@@ -1785,13 +1802,14 @@ class FigWindow(QWidget):
                     self.pWindow.removeItem(self.pWindow_north)
                 self.pWindow_north = self.pWindow.plot(self.satStuff[self.didx][self.tidx]['SUNNORTH'][0], self.satStuff[self.didx][self.tidx]['SUNNORTH'][1], symbolSize=3, symbolBrush='w', pen=pg.mkPen(color='w', width=1))
                 
-        #|---- Add text labels ----|             
-        if type(self.labelIt) != type(None):
+        #|---- Add text labels ----|     
+        # Replaced with off image label (one line below)        
+        '''if type(self.labelIt) != type(None):
             geom = self.pWindow.visibleRange()
             wid = geom.width()
             hite = geom.height()
             if self.labelIt.lower() == 'bottom':
-                ypos = 0.001 * hite
+                ypos = 0.03 * hite
             elif self.labelIt.lower() == 'top': 
                 ypos = 0.95 * hite
             
@@ -1803,12 +1821,12 @@ class FigWindow(QWidget):
             elif mykey in ['WISPRI', 'WISPRI_LW', 'WISPRI_L3']:
                 instTag = mykey.replace('RI','R_I').replace('RO','R_O')
             text_item1 = pg.TextItem(self.satStuff[self.didx][self.tidx]['OBS'] + ' ' + instTag, anchor=(0, 1), fill='k')            
-            text_item1.setPos(0.001*wid, ypos)
+            text_item1.setPos(0.01*wid, ypos)
             self.pWindow.addItem(text_item1)
-            text_item2 = pg.TextItem(self.satStuff[self.didx][self.tidx]['DATEOBS'], anchor=(1, 1), fill='k')
-            text_item2.setPos(0.999*wid, ypos)
-            self.pWindow.addItem(text_item2)
-        
+            text_item2 = pg.TextItem(self.satStuff[self.didx][self.tidx]['DATEOBS'][:-3], anchor=(1, 1), fill='k')
+            text_item2.setPos(0.99*wid, ypos)
+            self.pWindow.addItem(text_item2)'''
+        self.time_label.setText(self.satStuff[self.didx][self.tidx]['DATEOBS'][:-3])
         # Make slider highlighted so key shortcuts work
         if 'mainwindow' in globals():
             tabIndex = mainwindow.tab_widget.currentIndex()
@@ -2885,7 +2903,7 @@ def sortTimeIndices(satStuff, tRes=20):
 # |------------------------------------------------------------|
 # |------------------- Main Launch Function -------------------|
 # |------------------------------------------------------------|
-def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, labelPW=True, reloadDict=None):
+def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, reloadDict=None, logFile=None):
     """
     Main wrapper function to build and run the WOMBAT GUI
 
@@ -2908,14 +2926,14 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, labelPW=True, reloadD
         overviewPlot: flag to include the polar/top-down overview panel showing the relative
                       locations of the Sun, Earth, satellites, and wireframes
                       defaults to False
-        
-        labelPWs:     flag to label plot windows with the sat/inst and the date
-                      string on the bottom of the panel
-                      defaults to True
-    
+          
         reloadDict:   option to pass a reloadDictionary (from processReload in
                       wombatWrapper.py) to relaunch the GUI from a previous state
                       defaults to None (aka no reload)
+    
+        logFile:      name of the log file used to load a recon. Will be put into the
+                      text box in the param window
+                      defaults to None
 
     Outputs:
         No outputs unless the save button is clicked. If clicked, it will save fits files
@@ -3060,16 +3078,11 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, labelPW=True, reloadD
             myTmap = tmaps[i]
         else:
             myTmap = [0] 
-        lPW = None
-        if labelPW:
-            if i2inst[i] in ['SoloHI2', 'SoloHI4']:
-                lPW = 'top'
-            else:
-                lPW = 'bottom'
-        pw = FigWindow(obsFiles[i], sclIms[i], satStuff[i], massIms[i], myNum=i, labelPW=lPW, tmap=myTmap, screenXY=screenXY)
+        
+        pw = FigWindow(obsFiles[i], sclIms[i], satStuff[i], massIms[i], myNum=i, tmap=myTmap, screenXY=screenXY)
         pw.show()
         pws.append(pw) 
-    
+        
     #|---------------------------------| 
     #|---- Launch Overview Window -----|
     #|---------------------------------|    
@@ -3084,6 +3097,9 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, labelPW=True, reloadD
     #|---- Launch Parameter Window -----|
     #|----------------------------------|
     mainwindow = ParamWindow(nwfs, tlabs=tlabs)
+    # check if we had a name for the output box
+    if type(logFile) != type(None):
+        mainwindow.oBox.setText(logFile)
     # Set time slider to highlight bc reload will
     # shift focus onto text box
     mainwindow.Tsliders[0].setFocus()
