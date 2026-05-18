@@ -1590,7 +1590,7 @@ class FigWindow(QWidget):
         # within a pixel and running much faster
         #skyPt = SkyCoord(x=0, y=0, z=1, unit='R_sun', representation_type='cartesian', frame='heliographic_stonyhurst')
         #myPt2 = self.OGims[self.tidx].world_to_pixel(skyPt)
-        
+
         #|---- Determine who to update ----|
         toDo = range(nwfs)
         if justN:
@@ -1715,20 +1715,19 @@ class FigWindow(QWidget):
                         allxs.append(myPt[0][0])      
                         allys.append(myPt[0][1])       
                         #pos.append({'pos': [myPt[0][0], myPt[0][1]], 'pen':{'color':myColor, 'width':penwid}, 'brush':pg.mkBrush(myColor)})
-                
                 #|---- Build the points ----|
                 allxs = np.array(allxs)   
                 allys = np.array(allys)   
                 skipit = 1
-                if np.sqrt(np.std(allxs)**2 + np.std(allys)**2) < 40:
-                    skipit = 2
-                    penwid = penwid/2
+                if len(allxs) > 0:
+                    if np.sqrt(np.std(allxs)**2 + np.std(allys)**2) < 40:
+                        skipit = 2
+                        penwid = penwid/2
                 for jj in range(len(allxs))[::skipit]:
                     pos.append({'pos': [allxs[jj], allys[jj]], 'pen':{'color':myColor, 'width':penwid}, 'brush':pg.mkBrush(myColor)})
                 
                 #|---- Reset the scatters to new positions ----|        
                 self.scatters[i].setData(pos)
-                
  
     def plotBackground(self):
         """
