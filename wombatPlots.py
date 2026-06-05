@@ -3,9 +3,12 @@ import matplotlib.pyplot as plt
 import pickle
 import sys, os
 import datetime
+from scipy.interpolate import UnivariateSpline
+
 
 sys.path.append('wombatCode/') 
 import wombatWF as wf
+
 
 ''' 
 syntax python wPs.py type logFile ids [ min#, max#, outName, pictype]
@@ -39,6 +42,155 @@ labelMatch = {'Tilt (deg)':['Roll (deg)'], 'AW (deg)': ['AW_FO (deg)', 'Lx (Rs)'
 
 #dubColor = '#762b99'  # color for right labels used by two+ wfs
 
+# |-----------------------------------|
+# |--- Get kinematics from results ---|
+# |-----------------------------------|
+def getKinematics(wombatRes, wfTypes, polyDeg=3, r1=5, r2=10):
+    # |--- Make holders ---|
+    times = {}
+    dts   = {}
+    heights = {}
+    for awf in wfTypes:
+        times[awf]   = []
+        heights[awf] = []
+        dts[awf] = []
+    
+    # |--- Collect things ---|
+    for aInst in wombatRes.keys():
+        subRes = wombatRes[aInst]
+        for awf in wfTypes:
+            if awf in subRes.keys():
+                myRes = subRes[awf]
+                myTimes = myRes['times']
+                for i in range(len(myTimes)):
+                    roundTime = myTimes[i].replace(second=0)
+                    if roundTime not in times[awf]:
+                        times[awf].append(roundTime)
+                        heights[awf].append(myRes['paramGrid'][0,i])
+                        
+    # |--- Sort things ---|
+    for awf in wfTypes:
+        times[awf] = np.array(times[awf])
+        heights[awf] = np.array(heights[awf])
+        idxs  = np.argsort(times[awf])
+        times[awf] = times[awf][idxs]
+        heights[awf] = heights[awf][idxs]
+        
+    # |--- Get seconds from earliest time ---|  
+    # also get max time while here   
+    earlyT = datetime.datetime(3000,1,1)
+    lateT  = datetime.datetime(1000,1,1)
+    for awf in wfTypes:
+        if times[awf][0] < earlyT:
+            earlyT = times[awf][0]
+        if times[awf][-1] > lateT:
+            lateT = times[awf][-1]
+    for awf in wfTypes:
+        for i in range(len(times[awf])):
+            dts[awf].append((times[awf][i]-earlyT).total_seconds())
+        dts[awf] = np.array(dts[awf])
+   
+   
+    # |--- Fit spline to low part of h(t) ---| 
+    Hsplines = {}
+    vsplines = {}
+    asplines = {}
+    for awf in wfTypes:
+        myIdx = np.where(heights[awf] <= r2)[0]
+        if len(myIdx) > 4:
+            Hsplines[awf] = UnivariateSpline(dts[awf][myIdx], heights[awf][myIdx])
+            vsplines[awf] = Hsplines[awf].derivative(n=1) 
+            asplines[awf] = Hsplines[awf].derivative(n=2) 
+        else:
+            Hsplines[awf] = None
+            vsplines[awf] = None
+            asplines[awf] = None
+            
+    # |--- Fit poly to high part of h(t) ---| 
+    Hpolys = {}
+    vpolys = {}
+    apolys = {}
+    for awf in wfTypes:
+        myIdx = np.where(heights[awf] >= r1)[0]
+        if len(myIdx) > 4:
+            Hpolys[awf] = np.polyfit(dts[awf][myIdx], heights[awf][myIdx], deg=polyDeg)
+            vpolys[awf] = np.polyder(Hpolys[awf])
+            apolys[awf] = np.polyder(vpolys[awf])
+        else:
+            Hpolys[awf] = None
+            vpolys[awf] = None
+            apolys[awf] = None    
+    
+        
+    # |--- Stitch together fits for v/a ---| 
+    # Get max height
+    # Make fake time array
+    rng = (lateT-earlyT).total_seconds() 
+    nT = 250
+    fakeT = np.linspace(0, rng, nT)
+    
+    # Get time cutoffs of stitching region
+    stitchIdx = {}
+    for awf in wfTypes:
+        idx1, idx2, idx3 = None, None, None
+        if type(Hsplines[awf]) != type(None):
+            allHs1 = Hsplines[awf](fakeT)
+            idx1 = np.min(np.where(allHs1 >=r1)[0]) # need to check from low side bc spline goes wonky
+        if type(Hpolys[awf]) != type(None):
+            Hpoly = np.poly1d(Hpolys[awf])
+            allHs2 = Hpoly(fakeT)
+            idx2 = np.max(np.where(allHs2 <=r2)[0])
+            idx3 = np.where(allHs2 == np.max(allHs2))[0]
+            if idx3 != idx2:
+                print ("!!! Warning -- spline height fit for " +awf+"turns over before final time")
+        stitchIdx[awf] = [idx1, idx2, idx3]            
+    
+    stitchTs = {}
+    stitchVs = {}
+    stitchAs = {}
+    for awf in wfTypes:
+        print (awf)
+        idx1, idx2, idx3 = stitchIdx[awf]
+        
+        # Set up lo/hi generators
+        if type(idx1) != type(None):
+            mySpline = Hsplines[awf]
+        else:
+            mySpline = lambda x: 9999
+        if type(idx2) != type(None):
+            myPoly = np.poly1d(Hpolys[awf])            
+        else:
+            myPoly = lambda x: -9999
+        myMaxH = myPoly(fakeT[idx3])
+            
+            
+        for i in range(nT):
+            myT = fakeT[i]
+            print (i, myT/3600., mySpline(myT), myPoly(myT))
+            
+            # ^ sort out if reg1, smush, reg2 and pick
+            # do for vels/acc at same time
+            
+            
+    
+    
+    # Testing plot script
+    fig2 = plt.figure()
+    for awf in wfTypes:
+        myIdx = np.where(heights[awf] <= 10)[0]
+        if len(myIdx) > 4:
+            plt.plot(dts[awf][myIdx]/3600, heights[awf][myIdx], 'o')
+            plt.plot(dts[awf][myIdx]/3600, Hsplines[awf](dts[awf][myIdx]), '--')
+        myIdx2 = np.where(heights[awf] >= 5)[0]  
+        if len(myIdx2) >4:
+            plt.plot(dts[awf][myIdx2]/3600, heights[awf][myIdx2], 'o')  
+            Hpoly = np.poly1d(Hpolys[awf])
+            plt.plot(dts[awf][myIdx2]/3600, Hpoly(dts[awf][myIdx2]), '--')
+            
+        #plt.plot(dts[awf]/3600, vsplines[awf](dts[awf])*7e5, '--')
+    #plt.ylim(0,2500)
+    plt.show()
+    print (sd)
 
 # |-----------------------------|
 # |--- Process Required Args ---|
@@ -205,6 +357,9 @@ def processArgs(args):
     
     return miniLog, wombatRes, mode, uniqTs, wfTypes, allInsts
 
+# |-------------------------|
+# |--- Line profile plot ---|
+# |-------------------------|
 def profilePlot(mode, wombatRes, wfTypes, logH=False, wfColors=False):
     ''' 
     Options:
@@ -409,6 +564,9 @@ def profilePlot(mode, wombatRes, wfTypes, logH=False, wfColors=False):
     #|-------------------------|
     #|--- Add in kinematics ---|
     #|-------------------------|
+    if ('kin' in mode) or ('en' in mode):
+        velRes, accRes = getKinematics(wombatRes, wfTypes)
+    
     
     #|-------------------------|
     #|--- Add in energetics ---|
@@ -457,7 +615,6 @@ def profilePlot(mode, wombatRes, wfTypes, logH=False, wfColors=False):
             if aType in subRes.keys():
                 myRes = subRes[aType]
                 myTimes = myRes['times']
-                myParams = myRes['times']
                 myC = pltColors[aType]
                 
                 for i in range(len(id2id[aType])):
