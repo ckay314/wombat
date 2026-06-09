@@ -49,6 +49,17 @@ labelMatch = {'Tilt (deg)':['Roll (deg)'], 'AW (deg)': ['AW_FO (deg)', 'Lx (Rs)'
 
 #dubColor = '#762b99'  # color for right labels used by two+ wfs
 
+def vdrag(t_in, vCME0_in, vSW_in, C_in): 
+    # Inputs should have units:
+    #   vCME_in = vCME / 600e5
+    #   vSW_in  = vSW  / 350e5
+    #   C_in = C * 1e12 (is prop to 1/v/t)
+    C = C_in / 1e12
+    t = t_in 
+    vCME0 = vCME0_in * 600e5
+    vSW   = vSW_in * 350e5
+    vout = (vCME0 - vSW) / (1 + C * (vCME0 - vSW) * t) + vSW 
+    return vout
 
 # |-----------------------------------|
 # |--- Get kinematics from results ---|
@@ -136,12 +147,14 @@ def getKinematics(wombatRes, wfTypes, polyDeg=2, dragHeights=[5,21.5]):
                 if midH[aboveDH[i]] <= dragHeights[1]:
                     x, y = midT[aboveDH[i:]] - midT[aboveDH[i]], vSmooth[aboveDH[i:]]
                     # Drag equation lambda function
-                    vdrag = lambda t, vCME0, vSW, C: (vCME0 - vSW) / (1 + C * 1e-14 * (vCME0 - vSW) * t) + vSW 
+                    #vdrag = lambda t, vCME0, vSW, C: (vCME0 - vSW) / (1 + C * 1e-14 * (vCME0 - vSW) * t) + vSW 
                     # Might not converge so put in try/except
                     # (coincidently ck was listening to Converge when writing this)
                     try:
                         goodIdx = np.where(y > 0)[0]
-                        popt, pcov = curve_fit(vdrag, x[goodIdx], y[goodIdx]*7e10, p0=[vSmooth[aboveDH[i]]*7e10, 400e5, 1])
+                        #popt, pcov = curve_fit(vdrag, x[goodIdx], y[goodIdx]*7e10, p0=[vSmooth[aboveDH[i]]*7e10, 400e5, 1])
+                        popt, pcov = curve_fit(vdrag, x[goodIdx], y[goodIdx]*7e10, p0=[1,1, 1])
+                        #print (popt)
                         errs = np.sqrt(np.diag(pcov)) # 1 stddev errors
                         v1, v2, v3 = popt
                         err1, err2, err3 = errs
@@ -151,8 +164,8 @@ def getKinematics(wombatRes, wfTypes, polyDeg=2, dragHeights=[5,21.5]):
                         if totErr < bestVal:
                             bestId = aboveDH[i]
                             bestVal = totErr
-                            bestPs = popt
-                        #print (aboveDH[i]/3600, midH[bestId], v1/1e5, v2/1e5, v3 *1e-14, totErr)
+                            bestPs = [popt, errs]
+                        print (aboveDH[i]/3600, midH[bestId], v1*600, v2*350, v3 *1e-12, totErr)
                         
                     except:
                         pass
@@ -160,8 +173,11 @@ def getKinematics(wombatRes, wfTypes, polyDeg=2, dragHeights=[5,21.5]):
  
         if (bestId != -1) and (bestVal <=10):
             print ('Starting ' +awf +' drag fit at ', bestId, midH[bestId])
-            v1, v2, v3 = bestPs
-            print (awf +' Vel fit params:', bestId, midH[bestId], v1/1e5, v2/1e5, v3 *1e-14, bestVal)
+            v1, v2, v3 = bestPs[0]
+            e1, e2, e3 = bestPs[1]
+            print (' Fit params:',  v1*600, v2*350, v3 *1e-12)
+            print (' Uncertainties:',  e1*600, e2*350, e3 *1e-12)
+            print (' Total error: ', bestVal)
         else:
             print ('Cannot fit drag eq to '+awf)
             bestId = -1
@@ -170,13 +186,12 @@ def getKinematics(wombatRes, wfTypes, polyDeg=2, dragHeights=[5,21.5]):
 
     print (sd)
        
-       
-   
-   # Check if worked
-   # If so fit poly(?) to low part
-   # If not fit poly to all?
-   # Calc accels (add newt accel above)
-   # Package points and function coeffs and return
+    
+    # Check if worked then ...
+    # If so fit poly(?) to low part
+    # If not fit poly to all?
+    # Calc accels (add newt accel above)
+    # Package points and function coeffs and return
    
    
    
