@@ -4,7 +4,14 @@ import pickle
 import sys, os
 import datetime
 from scipy.interpolate import UnivariateSpline
+from scipy.ndimage import gaussian_filter1d
+from scipy.optimize import curve_fit
+import warnings
+from scipy.optimize import OptimizeWarning
 
+# Ignore all OptimizeWarnings globally
+warnings.filterwarnings("ignore", category=OptimizeWarning)
+np.seterr(invalid='ignore', divide='ignore')
 
 sys.path.append('wombatCode/') 
 import wombatWF as wf
@@ -42,18 +49,26 @@ labelMatch = {'Tilt (deg)':['Roll (deg)'], 'AW (deg)': ['AW_FO (deg)', 'Lx (Rs)'
 
 #dubColor = '#762b99'  # color for right labels used by two+ wfs
 
+
 # |-----------------------------------|
 # |--- Get kinematics from results ---|
 # |-----------------------------------|
-def getKinematics(wombatRes, wfTypes, polyDeg=3, r1=5, r2=10):
+def getKinematics(wombatRes, wfTypes, polyDeg=2, dragHeights=[5,21.5]):
+    # |---------------------|
+    # |--- Preprocessing ---|
+    # |---------------------|
+    
     # |--- Make holders ---|
     times = {}
     dts   = {}
     heights = {}
+    newtVs  = {} # newtonian derivs
+    newtVsNS  = {} # nonsmoothed version
     for awf in wfTypes:
         times[awf]   = []
         heights[awf] = []
         dts[awf] = []
+        newtVs[awf] = []
     
     # |--- Collect things ---|
     for aInst in wombatRes.keys():
@@ -67,7 +82,7 @@ def getKinematics(wombatRes, wfTypes, polyDeg=3, r1=5, r2=10):
                     if roundTime not in times[awf]:
                         times[awf].append(roundTime)
                         heights[awf].append(myRes['paramGrid'][0,i])
-                        
+                         
     # |--- Sort things ---|
     for awf in wfTypes:
         times[awf] = np.array(times[awf])
@@ -88,11 +103,89 @@ def getKinematics(wombatRes, wfTypes, polyDeg=3, r1=5, r2=10):
     for awf in wfTypes:
         for i in range(len(times[awf])):
             dts[awf].append((times[awf][i]-earlyT).total_seconds())
+            if i != 0:
+                newtVs[awf].append((heights[awf][i]-heights[awf][i-1])/(times[awf][i]-times[awf][i-1]).total_seconds())
         dts[awf] = np.array(dts[awf])
+        newtVs[awf] = np.array(newtVs[awf])
+        newtVs[awf] = np.array(gaussian_filter1d(newtVs[awf], sigma=1))
+    
+    # |-----------------------|
+    # |--- Calc Kinematics ---|
+    # |-----------------------|
+    
+    # |--- Find portion good for drag fit ---|  
+    # Use the velocity and the given range of 
+    # heights to start checking and see where we
+    # get the best fit
+    splitIds =  {}
+    fig = plt.figure()
+    for awf in wfTypes:
+        midH = 0.5*(heights[awf][1:] + heights[awf][:-1])
+        midT = 0.5*(dts[awf][1:] + dts[awf][:-1])
+        vSmooth = gaussian_filter1d(newtVs[awf], sigma=1)
+        
+        plt.plot(midT/3600, newtVs[awf]*7e5, 'co')
+        plt.plot(midT/3600, vSmooth*7e5, 'ko')
+        
+        aboveDH = np.where(midH >= dragHeights[0])[0]
+        bestVal = 9e20 # arbitrary large
+        bestId  = -1
+        bestPs = None
+        if len(aboveDH) > 3:
+            for i in range(len(aboveDH)-3):
+                if midH[aboveDH[i]] <= dragHeights[1]:
+                    x, y = midT[aboveDH[i:]] - midT[aboveDH[i]], vSmooth[aboveDH[i:]]
+                    # Drag equation lambda function
+                    vdrag = lambda t, vCME0, vSW, C: (vCME0 - vSW) / (1 + C * 1e-14 * (vCME0 - vSW) * t) + vSW 
+                    # Might not converge so put in try/except
+                    # (coincidently ck was listening to Converge when writing this)
+                    try:
+                        goodIdx = np.where(y > 0)[0]
+                        popt, pcov = curve_fit(vdrag, x[goodIdx], y[goodIdx]*7e10, p0=[vSmooth[aboveDH[i]]*7e10, 400e5, 1])
+                        errs = np.sqrt(np.diag(pcov)) # 1 stddev errors
+                        v1, v2, v3 = popt
+                        err1, err2, err3 = errs
+                        plt.plot(x/3600+midT[aboveDH[i]]/3600, vdrag(x,v1, v2, v3)/1e5, '--')
+                        
+                        totErr = np.abs(err1/v1) + np.abs(err2/v2) + np.abs(err3/v3)
+                        if totErr < bestVal:
+                            bestId = aboveDH[i]
+                            bestVal = totErr
+                            bestPs = popt
+                        #print (aboveDH[i]/3600, midH[bestId], v1/1e5, v2/1e5, v3 *1e-14, totErr)
+                        
+                    except:
+                        pass
+        plt.show()
+ 
+        if (bestId != -1) and (bestVal <=10):
+            print ('Starting ' +awf +' drag fit at ', bestId, midH[bestId])
+            v1, v2, v3 = bestPs
+            print (awf +' Vel fit params:', bestId, midH[bestId], v1/1e5, v2/1e5, v3 *1e-14, bestVal)
+        else:
+            print ('Cannot fit drag eq to '+awf)
+            bestId = -1
+        print ('')
+        splitIds[awf] = bestId
+
+    print (sd)
+       
+       
+   
+   # Check if worked
+   # If so fit poly(?) to low part
+   # If not fit poly to all?
+   # Calc accels (add newt accel above)
+   # Package points and function coeffs and return
+   
+   
+   
+   
+   
    
    
     # |--- Fit spline to low part of h(t) ---| 
-    Hsplines = {}
+    '''Hsplines = {}
     vsplines = {}
     asplines = {}
     for awf in wfTypes:
@@ -126,7 +219,7 @@ def getKinematics(wombatRes, wfTypes, polyDeg=3, r1=5, r2=10):
     # Get max height
     # Make fake time array
     rng = (lateT-earlyT).total_seconds() 
-    nT = 250
+    nT = 500
     fakeT = np.linspace(0, rng, nT)
     
     # Get time cutoffs of stitching region
@@ -146,51 +239,107 @@ def getKinematics(wombatRes, wfTypes, polyDeg=3, r1=5, r2=10):
         stitchIdx[awf] = [idx1, idx2, idx3]            
     
     stitchTs = {}
+    stitchHs = {}
     stitchVs = {}
     stitchAs = {}
     for awf in wfTypes:
         print (awf)
         idx1, idx2, idx3 = stitchIdx[awf]
+        stitchTs[awf] = []
+        stitchHs[awf] = []
+        stitchVs[awf] = []
+        stitchAs[awf] = []
         
         # Set up lo/hi generators
         if type(idx1) != type(None):
-            mySpline = Hsplines[awf]
+            mySpline  = Hsplines[awf]
+            mySplineV = vsplines[awf]
+            mySplineA = asplines[awf]
         else:
-            mySpline = lambda x: 9999
+            mySpline  = lambda x: 9999
+            mySplineV = lambda x: 9999
+            mySplineA = lambda x: 9999
         if type(idx2) != type(None):
-            myPoly = np.poly1d(Hpolys[awf])            
+            myPoly  = np.poly1d(Hpolys[awf]) 
+            myPolyV = np.poly1d(vpolys[awf]) 
+            myPolyA = np.poly1d(apolys[awf])       
         else:
-            myPoly = lambda x: -9999
+            myPoly  = lambda x: -9999
+            myPolyV = lambda x: -9999
+            myPolyA = lambda x: -9999
         myMaxH = myPoly(fakeT[idx3])
             
             
         for i in range(nT):
             myT = fakeT[i]
-            print (i, myT/3600., mySpline(myT), myPoly(myT))
-            
-            # ^ sort out if reg1, smush, reg2 and pick
+            val1 = mySpline(myT)
+            val2 = myPoly(myT)
+            v1, v2 = mySplineV(myT), myPolyV(myT)
+            a1, a2 = mySplineA(myT), myPolyA(myT)
+            if (val1 <= r2) & (val1 >= 1) & (val1 != 9999):
+                if (val2 <=r2) & (val1 >= r1) :
+                    d1 = np.abs(val1 - r1)
+                    d2 = np.abs(r2 - val2)
+                    dtot = d1 + d2
+                    f1 = 1 - d1/ dtot
+                    f2 = 1 - d2 / dtot
+                    myh = f1*val1 + f2*val2
+                    myv = f1*v1 + f2*v2
+                    mya = f1*a1 + f2*a2
+                elif (val2 >= r2) and (val2 != 9999):
+                    myh = val2
+                    myv = v2
+                    mya = a2
+                else:
+                    myh = val1
+                    myv = v1
+                    mya = a1
+            elif val2 >=r2:
+                myh = val2
+                myv = v2
+                mya = a2
+            elif (val2 > 1) & (val1 ==9999):
+                myh = val2
+                myv = v2
+                mya = a2
+            else:
+                myh = 9999
+                        
+            if myh != 9999:
+                print (i, myT/3600., mySpline(myT), myPoly(myT), myh, myv*7e5, mya)
+                stitchTs[awf].append(myT)
+                stitchHs[awf].append(myh)
+                stitchVs[awf].append(myv)
+                stitchAs[awf].append(mya)
             # do for vels/acc at same time
-            
+        stitchTs[awf] = np.array(stitchTs[awf])
+        stitchHs[awf] = np.array(stitchHs[awf])
+        stitchVs[awf] = np.array(stitchVs[awf])
+        stitchAs[awf] = np.array(stitchAs[awf])
             
     
     
     # Testing plot script
     fig2 = plt.figure()
-    for awf in wfTypes:
-        myIdx = np.where(heights[awf] <= 10)[0]
-        if len(myIdx) > 4:
-            plt.plot(dts[awf][myIdx]/3600, heights[awf][myIdx], 'o')
-            plt.plot(dts[awf][myIdx]/3600, Hsplines[awf](dts[awf][myIdx]), '--')
-        myIdx2 = np.where(heights[awf] >= 5)[0]  
-        if len(myIdx2) >4:
-            plt.plot(dts[awf][myIdx2]/3600, heights[awf][myIdx2], 'o')  
-            Hpoly = np.poly1d(Hpolys[awf])
-            plt.plot(dts[awf][myIdx2]/3600, Hpoly(dts[awf][myIdx2]), '--')
-            
+    if False:
+        for awf in ['GCS']:#wfTypes:
+            myIdx = np.where(heights[awf] <= 10)[0]
+            if len(myIdx) > 4:
+                plt.plot(dts[awf][myIdx]/3600, heights[awf][myIdx], 'o')
+                plt.plot(dts[awf][myIdx]/3600, Hsplines[awf](dts[awf][myIdx]), '--')
+            myIdx2 = np.where(heights[awf] >= 5)[0]  
+            if len(myIdx2) >4:
+                plt.plot(dts[awf][myIdx2]/3600, heights[awf][myIdx2], 'o')  
+                Hpoly = np.poly1d(Hpolys[awf])
+                plt.plot(dts[awf][myIdx2]/3600, Hpoly(dts[awf][myIdx2]), '--')
+            plt.plot(stitchTs[awf]/3600, stitchHs[awf], c='gray')
+    else:
+        #plt.plot(stitchTs['GCS']/3600, stitchVs['GCS']*7e5)
+        plt.plot(stitchHs['GCS'], stitchVs['GCS']*7e5)
         #plt.plot(dts[awf]/3600, vsplines[awf](dts[awf])*7e5, '--')
     #plt.ylim(0,2500)
     plt.show()
-    print (sd)
+    print (sd)'''
 
 # |-----------------------------|
 # |--- Process Required Args ---|
