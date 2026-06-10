@@ -202,7 +202,7 @@ def createGrid(FoV, nGridY):
 # |------------------------------------|
 # |--- Convert points to widths map ---|
 # |------------------------------------|
-def getWidthNew(points, FoVfs, FoV, satFOVxyz, flatLim=5, nGridY=100):
+def getWidthNew(points, FoVfs, FoV, satFOVxyz, flatLim=5, nGridY=100, isHI=False):
     '''
     Helper function to take a set of points representing some 3d
     shape and determine the width perpendicular to the PoS. This will
@@ -241,6 +241,9 @@ def getWidthNew(points, FoVfs, FoV, satFOVxyz, flatLim=5, nGridY=100):
                 to an interpolator so it doesn't need to be as high of res
                 as the mass maps.
                 (defaults to 100)
+        
+        isHI:   flag to indicate is a heliospheric image so to use a larger
+                pad value when finding the nearest points for each cell
     
     Outputs:
         wids: a 2d array with the width in the x direction. Grid cells that
@@ -290,7 +293,9 @@ def getWidthNew(points, FoVfs, FoV, satFOVxyz, flatLim=5, nGridY=100):
         if (np.max([np.max(np.abs(FoVlon)), np.max(np.abs(FoVlat))])) < flatLim:
             canFlat = True
     
-    pad = 1.4 # distance from midpoint to check (in dy)   
+    pad = 0.1 # distance from midpoint to check (in dy)   
+    if isHI:
+        pad = 0.5
     # Set up empty arrays
     wids = np.zeros(FOVx.shape)
     xcs = np.zeros(FOVx.shape) -9999
@@ -947,6 +952,11 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
     # (will use same var name for interp downselects in middle)
     downSelectF = downSelect
 
+    # Check if heliospheric imager
+    isHI = False
+    if satDict['OBSTYPE'] == 'HI':
+        isHI = True
+    
     # |------------------------------------------|
     # |--- Map pixels to FoV Cartestian frame ---|
     # |------------------------------------------|
@@ -959,7 +969,6 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
         for i in range(myMap.data.shape[1]+1)[::downSize]:
             pixx.append(i)
             pixy.append(j)
-
 
     #ptsOut = map2CartFoV(myMap, [[0, myMap.data.shape[1]], [myMap.data.shape[0]/2, myMap.data.shape[0]/2]])
     ptsOut, ptsOutStony, satFOVxyz = map2CartFoV(myMap, [pixx, pixy])  # is [x,y,z] where each is same len as pixIn  
@@ -993,7 +1002,7 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
     #|-------------------------------------------------|
     # This sets up generators for the full WF shape over the full FoV
     OGfov = [[0, maxX], [0, maxY]]
-    nGridY = 50 # 50 for testing, 100 better for real results
+    nGridY = 100 # 50 for testing, 100 better for real results
     dy, ygs, zgs = createGrid(OGfov, nGridY)
     
     # |--- Do the inner/main WF ---|
@@ -1002,8 +1011,9 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
     wfPts = wf2CartFoV(myMap, awf.points)
     wfPtsT = np.transpose(np.array(wfPts))
     
-    wids, midx, mask = getWidthNew(wfPtsT,[FOV2x, FOV2y, FOV2z],OGfov, satFOVxyz, nGridY=nGridY)
+    wids, midx, mask = getWidthNew(wfPtsT,[FOV2x, FOV2y, FOV2z],OGfov, satFOVxyz, nGridY=nGridY, isHI=isHI)
     wid_smooth = ndimage.gaussian_filter(wids, sigma=2.0, order=0)
+    
     
     # indexing of func is y,z    
     widFunc  = RegularGridInterpolator((ygs, zgs), np.transpose(wid_smooth), method='linear', bounds_error=False, fill_value=0) 
@@ -1016,7 +1026,7 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
         awf2.getPoints()
         wfPts2 = wf2CartFoV(myMap, awf2.points)
         wfPts2T = np.transpose(np.array(wfPts2))
-        wids2, midx2, mask2 = getWidthNew(wfPts2T,[FOV2x, FOV2y, FOV2z], OGfov, satFOVxyz, nGridY=nGridY)
+        wids2, midx2, mask2 = getWidthNew(wfPts2T,[FOV2x, FOV2y, FOV2z], OGfov, satFOVxyz, nGridY=nGridY, isHI=isHI)
         wid_smooth2 = ndimage.gaussian_filter(wids2, sigma=2.0, order=0)
         
         # indexing of func is y,z    
@@ -1030,7 +1040,7 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
         awf.getPoints(inside=True)
         wfPtsI = wf2CartFoV(myMap, awf.points)
         wfPtsIT = np.transpose(np.array(wfPtsI))
-        widsI, midxI, maskI  = getWidthNew(wfPts2IT,[FOV2x, FOV2y, FOV2z], OGfov, satFOVxyz, nGridY=nGridY)
+        widsI, midxI, maskI  = getWidthNew(wfPts2IT,[FOV2x, FOV2y, FOV2z], OGfov, satFOVxyz, nGridY=nGridY, isHI=isHI)
         wid_smoothI = ndimage.gaussian_filter(widsI, sigma=2.0, order=0)
         
         # indexing of func is y,z    
@@ -1167,6 +1177,7 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
     # Add zero mass points (occulted) into mask
     zeroIdx = np.where(subMass == 0)
     maskIntnz[zeroIdx] = 0
+
 
     #|--- Inner region of main wireframe ---|
     if doInner:
@@ -1735,7 +1746,7 @@ def dingo23d(densMap, maskMap, outFoV, pix2St, fullImSize, showLog=False, showSu
                 showz.append(fovzF[i,j])
                 
     #|--- Add in the cutout ---|
-    dS = 2
+    dS = 4
     for i in range(len(pys))[::dS]:
         for j in range(len(pxs))[::dS]:
             densF.append(dens[i,j])
@@ -2467,7 +2478,7 @@ def dingo1d(myMaps, widMapIns, xcMapIns, densMapIns, outFoVs, pix2Sts, obsSats, 
         # Requires some form of simple expansion model
         rIP = np.array(rIP)
         nIP = np.array(nIP)
-    
+        
         # Find portion where it is actually CME/nonzero
         isCME = np.where(nIP != 0)[0]
         isCME = np.arange(isCME[0], isCME[-1]+1) # might have zero point inside range
@@ -2850,8 +2861,37 @@ def processArgs(args):
     nplus = idstr.count('+')
     singleWF = True # will overwrite later
     
+    if '-' in idstr:
+        if '+' in idstr:
+            sys.exit('Cannot process ids with both + and -')
+        splitstr = idstr.split('-')
+        if len(splitstr) > 2:
+            sys.exit('Cannot process ids with multiple -')
+        ids = np.arange(int(splitstr[0]), int(splitstr[1])+1,1, dtype=int)
+    elif '+' in idstr:
+        splitstr = idstr.split('+')
+        ids = []
+        for aStr in splitstr:
+            try:
+                ids.append(int(aStr))
+            except:
+                print ('Error in converting id string to individual ids. Error at', aStr)
+                print('Full command line syntax is')
+                for astr in errorStrings:
+                    print (astr)
+                sys.exit()                
+    else:
+        try:
+            ids = [int(idstr)]
+        except:
+            print ('Error in converting id string to individual ids. Error from', idstr)
+            print('Full command line syntax is')
+            for astr in errorStrings:
+                print (astr)
+            sys.exit()
+                
     # Will work with no + (= single id)
-    splitstr = idstr.split('+')
+    '''splitstr = idstr.split('+')
     ids = []
     for aStr in splitstr:
         try:
@@ -2861,7 +2901,7 @@ def processArgs(args):
             print('Full command line syntax is')
             for astr in errorStrings:
                 print (astr)
-            sys.exit()
+            sys.exit()'''
             
     # Check that things match as needed
     pairTimes = None
@@ -3177,7 +3217,7 @@ def processBonusArgs(allBonus, mode):
 # |--------------------|
 # |--- Main Wrapper ---|
 # |--------------------|
-def dingoWrapper(args):
+def dingoWrapper(args, pullMass=False):
     """ 
     Function that goes from the command line to the appropriate DINGO
     procedure. It can also be used for external calls by passing the 
@@ -3357,7 +3397,7 @@ def dingoWrapper(args):
         imMaps.append(bkgData['proImMaps'][obs][0][tidx])
         showMaps.append(bkgData['scaledIms'][obs][0][tidx][0])
         massMaps.append(bkgData['massIms'][obs][tidx])
-
+ 
     #|--- Make the wireframe(s) ---|
     wfsI, wfsO = [], []
     aboutMe = []
@@ -3428,13 +3468,18 @@ def dingoWrapper(args):
             print ('Time Inst WF Mass(1e15 g)')
         else:
             print ('Time Inst WF1 WF2 Mass1(1e15 g) Mass2(1e15 g)')
+        
+        massOuts = []
         for i in range(nTimes):
             masses = getMasses(widMaps[i], densMaps[i], outFoVs[i], pix2FOVs[i], printIt=False)
+            massOuts.append(masses)
             moreOut = ''
             out = aboutMe[i] + ' '
             for mass in masses:
                 moreOut += '{:.2f}'.format(mass) + ' '
             print (out+moreOut)
+        if pullMass:
+            return massOuts, aboutMe
 
     #|----------------------|
     #|--- 1d - line plot ---|

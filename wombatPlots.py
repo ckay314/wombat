@@ -5,16 +5,21 @@ import sys, os
 import datetime
 from scipy.interpolate import UnivariateSpline
 from scipy.ndimage import gaussian_filter1d
+from scipy.interpolate import CubicSpline
+
 from scipy.optimize import curve_fit
 import warnings
 from scipy.optimize import OptimizeWarning
 
+from dingo import dingoWrapper
 # Ignore all OptimizeWarnings globally
 warnings.filterwarnings("ignore", category=OptimizeWarning)
 np.seterr(invalid='ignore', divide='ignore')
 
 sys.path.append('wombatCode/') 
 import wombatWF as wf
+
+import pickle
 
 
 ''' 
@@ -49,37 +54,42 @@ labelMatch = {'Tilt (deg)':['Roll (deg)'], 'AW (deg)': ['AW_FO (deg)', 'Lx (Rs)'
 
 #dubColor = '#762b99'  # color for right labels used by two+ wfs
 
+global vdragScalers 
+vdragScalers = [600e5, 350e5, 1e-12]
+
 def vdrag(t_in, vCME0_in, vSW_in, C_in): 
-    # Inputs should have units:
-    #   vCME_in = vCME / 600e5
-    #   vSW_in  = vSW  / 350e5
-    #   C_in = C * 1e12 (is prop to 1/v/t)
-    C = C_in / 1e12
+    # Inputs are normalized to near 1 to make the 
+    # curve_fit happy, convert back to physical units 
+    # using vdragScalers (cm, cm, 1/cm)
+    C = C_in * vdragScalers[2]
     t = t_in 
-    vCME0 = vCME0_in * 600e5
-    vSW   = vSW_in * 350e5
+    vCME0 = vCME0_in * vdragScalers[0]
+    vSW   = vSW_in * vdragScalers[1]
     vout = (vCME0 - vSW) / (1 + C * (vCME0 - vSW) * t) + vSW 
     return vout
 
 # |-----------------------------------|
 # |--- Get kinematics from results ---|
 # |-----------------------------------|
-def getKinematics(wombatRes, wfTypes, polyDeg=2, dragHeights=[5,21.5]):
+def getKinematics(wombatRes, wfTypes, dragHeights=[5,21.5]):
     # |---------------------|
     # |--- Preprocessing ---|
     # |---------------------|
+    # Convert drag Heights to cm
+    dragHeights = np.array(dragHeights)*7e10
     
     # |--- Make holders ---|
     times = {}
     dts   = {}
     heights = {}
     newtVs  = {} # newtonian derivs
-    newtVsNS  = {} # nonsmoothed version
+    newtAs  = {} # newtonian derivs
     for awf in wfTypes:
         times[awf]   = []
         heights[awf] = []
         dts[awf] = []
         newtVs[awf] = []
+        newtAs[awf] = []
     
     # |--- Collect things ---|
     for aInst in wombatRes.keys():
@@ -97,13 +107,14 @@ def getKinematics(wombatRes, wfTypes, polyDeg=2, dragHeights=[5,21.5]):
     # |--- Sort things ---|
     for awf in wfTypes:
         times[awf] = np.array(times[awf])
-        heights[awf] = np.array(heights[awf])
+        heights[awf] = np.array(heights[awf])  * 7e10
         idxs  = np.argsort(times[awf])
         times[awf] = times[awf][idxs]
         heights[awf] = heights[awf][idxs]
         
-    # |--- Get seconds from earliest time ---|  
-    # also get max time while here   
+    # |-----------------|
+    # |--- Calc v/a  ---|
+    # |-----------------|
     earlyT = datetime.datetime(3000,1,1)
     lateT  = datetime.datetime(1000,1,1)
     for awf in wfTypes:
@@ -112,32 +123,42 @@ def getKinematics(wombatRes, wfTypes, polyDeg=2, dragHeights=[5,21.5]):
         if times[awf][-1] > lateT:
             lateT = times[awf][-1]
     for awf in wfTypes:
+        print ('Calculating two-point derivatives for', awf)
         for i in range(len(times[awf])):
             dts[awf].append((times[awf][i]-earlyT).total_seconds())
             if i != 0:
                 newtVs[awf].append((heights[awf][i]-heights[awf][i-1])/(times[awf][i]-times[awf][i-1]).total_seconds())
+            if i > 1:
+                j = i -1
+                newtAs[awf].append((newtVs[awf][j] - newtVs[awf][j-1])/(dts[awf][j] - dts[awf][j-1]))
+                
         dts[awf] = np.array(dts[awf])
         newtVs[awf] = np.array(newtVs[awf])
-        newtVs[awf] = np.array(gaussian_filter1d(newtVs[awf], sigma=1))
-    
-    # |-----------------------|
-    # |--- Calc Kinematics ---|
-    # |-----------------------|
-    
-    # |--- Find portion good for drag fit ---|  
-    # Use the velocity and the given range of 
-    # heights to start checking and see where we
-    # get the best fit
+        newtAs[awf] = np.array(newtAs[awf]) # matches dts[awf][1:-1]
+        
+        # |--- Print some basic things ---|
+        print ('    Max v (km/s):', '{:.1f}'.format(np.max(newtVs[awf])/1e5))
+        ipPoints = np.where(heights[awf] >= dragHeights[0])[0]
+        if len(ipPoints) > 3:
+            print (' avg IP v (km/s):', '{:.1f}'.format(np.mean(newtVs[awf][ipPoints[0]+1:])/1e5))
+            print (' med IP v (km/s):', '{:.1f}'.format(np.median(newtVs[awf][ipPoints[0]+1:])/1e5))        
+        print ('')
+             
+       
+            
+    # |--------------------|
+    # |--- Fit Drag Eq  ---|
+    # |--------------------|
+    # Fit to velocity seems to work best
     splitIds =  {}
-    fig = plt.figure()
+    dragFits = {}
     for awf in wfTypes:
         midH = 0.5*(heights[awf][1:] + heights[awf][:-1])
         midT = 0.5*(dts[awf][1:] + dts[awf][:-1])
-        vSmooth = gaussian_filter1d(newtVs[awf], sigma=1)
+        vSmooth = gaussian_filter1d(newtVs[awf], sigma=1)       
         
-        plt.plot(midT/3600, newtVs[awf]*7e5, 'co')
-        plt.plot(midT/3600, vSmooth*7e5, 'ko')
-        
+        # Consider all starting points in between heights given
+        # by dragHeights
         aboveDH = np.where(midH >= dragHeights[0])[0]
         bestVal = 9e20 # arbitrary large
         bestId  = -1
@@ -146,215 +167,149 @@ def getKinematics(wombatRes, wfTypes, polyDeg=2, dragHeights=[5,21.5]):
             for i in range(len(aboveDH)-3):
                 if midH[aboveDH[i]] <= dragHeights[1]:
                     x, y = midT[aboveDH[i:]] - midT[aboveDH[i]], vSmooth[aboveDH[i:]]
-                    # Drag equation lambda function
-                    #vdrag = lambda t, vCME0, vSW, C: (vCME0 - vSW) / (1 + C * 1e-14 * (vCME0 - vSW) * t) + vSW 
                     # Might not converge so put in try/except
                     # (coincidently ck was listening to Converge when writing this)
                     try:
                         goodIdx = np.where(y > 0)[0]
-                        #popt, pcov = curve_fit(vdrag, x[goodIdx], y[goodIdx]*7e10, p0=[vSmooth[aboveDH[i]]*7e10, 400e5, 1])
-                        popt, pcov = curve_fit(vdrag, x[goodIdx], y[goodIdx]*7e10, p0=[1,1, 1])
-                        #print (popt)
+                        popt, pcov = curve_fit(vdrag, x[goodIdx], y[goodIdx], p0=[1,1, 1])
                         errs = np.sqrt(np.diag(pcov)) # 1 stddev errors
                         v1, v2, v3 = popt
                         err1, err2, err3 = errs
-                        plt.plot(x/3600+midT[aboveDH[i]]/3600, vdrag(x,v1, v2, v3)/1e5, '--')
-                        
                         totErr = np.abs(err1/v1) + np.abs(err2/v2) + np.abs(err3/v3)
                         if totErr < bestVal:
                             bestId = aboveDH[i]
                             bestVal = totErr
-                            bestPs = [popt, errs]
-                        print (aboveDH[i]/3600, midH[bestId], v1*600, v2*350, v3 *1e-12, totErr)
-                        
+                            bestPs = [popt, errs]                       
                     except:
                         pass
-        plt.show()
- 
+        
+        # |--- Package and print info to terminal ---|
         if (bestId != -1) and (bestVal <=10):
-            print ('Starting ' +awf +' drag fit at ', bestId, midH[bestId])
             v1, v2, v3 = bestPs[0]
             e1, e2, e3 = bestPs[1]
-            print (' Fit params:',  v1*600, v2*350, v3 *1e-12)
-            print (' Uncertainties:',  e1*600, e2*350, e3 *1e-12)
-            print (' Total error: ', bestVal)
+            if bestId == 0:
+                hunc = midH[1]-midH[0]
+            else:
+                hunc = 0.5*(midH[bestId+1]-midH[bestId-1])
+            print ('Starting ' +awf +' drag fit at index', bestId)
+            print (' Total error: ', '{:.3f}'.format(bestVal), '(sum of the 3 fractional errors)')
+            print ('  vCME_0 (km/s): ', '{:.1f}'.format(v1*vdragScalers[0]/1e5), '+/-', '{:.1f}'.format(e1* vdragScalers[0]/1e5))
+            print ('   vSW_0 (km/s): ', '{:.1f}'.format(v2*vdragScalers[1]/1e5), '+/-', '{:.1f}'.format(e2*vdragScalers[1]/1e5))
+            print ('       C (1/cm): ', '{:.2e}'.format(v3 * vdragScalers[2]), '+/-', '{:.2e}'.format(e3 * vdragScalers[2]))
+            print ('starting H (Rs): ', '{:.2f}'.format(midH[bestId]/7e10), '+/-', '{:.2f}'.format(hunc/7e10), '(unc from h resolution)')
+            bestPs[0] = np.append(bestPs[0], midH[bestId])
+            bestPs[1] = np.append(bestPs[1], hunc)
+            dragFits[awf] = bestPs
+            
         else:
             print ('Cannot fit drag eq to '+awf)
             bestId = -1
         print ('')
         splitIds[awf] = bestId
-
-    print (sd)
-       
-    
-    # Check if worked then ...
-    # If so fit poly(?) to low part
-    # If not fit poly to all?
-    # Calc accels (add newt accel above)
-    # Package points and function coeffs and return
-   
-   
-   
-   
-   
-   
-   
-    # |--- Fit spline to low part of h(t) ---| 
-    '''Hsplines = {}
-    vsplines = {}
-    asplines = {}
-    for awf in wfTypes:
-        myIdx = np.where(heights[awf] <= r2)[0]
-        if len(myIdx) > 4:
-            Hsplines[awf] = UnivariateSpline(dts[awf][myIdx], heights[awf][myIdx])
-            vsplines[awf] = Hsplines[awf].derivative(n=1) 
-            asplines[awf] = Hsplines[awf].derivative(n=2) 
-        else:
-            Hsplines[awf] = None
-            vsplines[awf] = None
-            asplines[awf] = None
-            
-    # |--- Fit poly to high part of h(t) ---| 
-    Hpolys = {}
-    vpolys = {}
-    apolys = {}
-    for awf in wfTypes:
-        myIdx = np.where(heights[awf] >= r1)[0]
-        if len(myIdx) > 4:
-            Hpolys[awf] = np.polyfit(dts[awf][myIdx], heights[awf][myIdx], deg=polyDeg)
-            vpolys[awf] = np.polyder(Hpolys[awf])
-            apolys[awf] = np.polyder(vpolys[awf])
-        else:
-            Hpolys[awf] = None
-            vpolys[awf] = None
-            apolys[awf] = None    
-    
-        
-    # |--- Stitch together fits for v/a ---| 
-    # Get max height
-    # Make fake time array
-    rng = (lateT-earlyT).total_seconds() 
-    nT = 500
-    fakeT = np.linspace(0, rng, nT)
-    
-    # Get time cutoffs of stitching region
-    stitchIdx = {}
-    for awf in wfTypes:
-        idx1, idx2, idx3 = None, None, None
-        if type(Hsplines[awf]) != type(None):
-            allHs1 = Hsplines[awf](fakeT)
-            idx1 = np.min(np.where(allHs1 >=r1)[0]) # need to check from low side bc spline goes wonky
-        if type(Hpolys[awf]) != type(None):
-            Hpoly = np.poly1d(Hpolys[awf])
-            allHs2 = Hpoly(fakeT)
-            idx2 = np.max(np.where(allHs2 <=r2)[0])
-            idx3 = np.where(allHs2 == np.max(allHs2))[0]
-            if idx3 != idx2:
-                print ("!!! Warning -- spline height fit for " +awf+"turns over before final time")
-        stitchIdx[awf] = [idx1, idx2, idx3]            
-    
-    stitchTs = {}
-    stitchHs = {}
-    stitchVs = {}
-    stitchAs = {}
-    for awf in wfTypes:
-        print (awf)
-        idx1, idx2, idx3 = stitchIdx[awf]
-        stitchTs[awf] = []
-        stitchHs[awf] = []
-        stitchVs[awf] = []
-        stitchAs[awf] = []
-        
-        # Set up lo/hi generators
-        if type(idx1) != type(None):
-            mySpline  = Hsplines[awf]
-            mySplineV = vsplines[awf]
-            mySplineA = asplines[awf]
-        else:
-            mySpline  = lambda x: 9999
-            mySplineV = lambda x: 9999
-            mySplineA = lambda x: 9999
-        if type(idx2) != type(None):
-            myPoly  = np.poly1d(Hpolys[awf]) 
-            myPolyV = np.poly1d(vpolys[awf]) 
-            myPolyA = np.poly1d(apolys[awf])       
-        else:
-            myPoly  = lambda x: -9999
-            myPolyV = lambda x: -9999
-            myPolyA = lambda x: -9999
-        myMaxH = myPoly(fakeT[idx3])
-            
-            
-        for i in range(nT):
-            myT = fakeT[i]
-            val1 = mySpline(myT)
-            val2 = myPoly(myT)
-            v1, v2 = mySplineV(myT), myPolyV(myT)
-            a1, a2 = mySplineA(myT), myPolyA(myT)
-            if (val1 <= r2) & (val1 >= 1) & (val1 != 9999):
-                if (val2 <=r2) & (val1 >= r1) :
-                    d1 = np.abs(val1 - r1)
-                    d2 = np.abs(r2 - val2)
-                    dtot = d1 + d2
-                    f1 = 1 - d1/ dtot
-                    f2 = 1 - d2 / dtot
-                    myh = f1*val1 + f2*val2
-                    myv = f1*v1 + f2*v2
-                    mya = f1*a1 + f2*a2
-                elif (val2 >= r2) and (val2 != 9999):
-                    myh = val2
-                    myv = v2
-                    mya = a2
-                else:
-                    myh = val1
-                    myv = v1
-                    mya = a1
-            elif val2 >=r2:
-                myh = val2
-                myv = v2
-                mya = a2
-            elif (val2 > 1) & (val1 ==9999):
-                myh = val2
-                myv = v2
-                mya = a2
-            else:
-                myh = 9999
-                        
-            if myh != 9999:
-                print (i, myT/3600., mySpline(myT), myPoly(myT), myh, myv*7e5, mya)
-                stitchTs[awf].append(myT)
-                stitchHs[awf].append(myh)
-                stitchVs[awf].append(myv)
-                stitchAs[awf].append(mya)
-            # do for vels/acc at same time
-        stitchTs[awf] = np.array(stitchTs[awf])
-        stitchHs[awf] = np.array(stitchHs[awf])
-        stitchVs[awf] = np.array(stitchVs[awf])
-        stitchAs[awf] = np.array(stitchAs[awf])
-            
     
     
-    # Testing plot script
-    fig2 = plt.figure()
+              
+    # |----------------------------|
+    # |--- Secret testing plot  ---|
+    # |----------------------------|
     if False:
-        for awf in ['GCS']:#wfTypes:
-            myIdx = np.where(heights[awf] <= 10)[0]
-            if len(myIdx) > 4:
-                plt.plot(dts[awf][myIdx]/3600, heights[awf][myIdx], 'o')
-                plt.plot(dts[awf][myIdx]/3600, Hsplines[awf](dts[awf][myIdx]), '--')
-            myIdx2 = np.where(heights[awf] >= 5)[0]  
-            if len(myIdx2) >4:
-                plt.plot(dts[awf][myIdx2]/3600, heights[awf][myIdx2], 'o')  
-                Hpoly = np.poly1d(Hpolys[awf])
-                plt.plot(dts[awf][myIdx2]/3600, Hpoly(dts[awf][myIdx2]), '--')
-            plt.plot(stitchTs[awf]/3600, stitchHs[awf], c='gray')
-    else:
-        #plt.plot(stitchTs['GCS']/3600, stitchVs['GCS']*7e5)
-        plt.plot(stitchHs['GCS'], stitchVs['GCS']*7e5)
-        #plt.plot(dts[awf]/3600, vsplines[awf](dts[awf])*7e5, '--')
-    #plt.ylim(0,2500)
-    plt.show()
-    print (sd)'''
+        fig = plt.figure()
+        for awf in wfTypes:
+            midH = 0.5*(heights[awf][1:] + heights[awf][:-1])
+            midT = 0.5*(dts[awf][1:] + dts[awf][:-1])
+            vSmooth = gaussian_filter1d(newtVs[awf], sigma=1)
+        
+            plt.plot(midT/3600, newtVs[awf]/1e5, 'co')
+            plt.plot(midT/3600, vSmooth/1e5, 'ko')
+    
+            myIdx = splitIds[awf]
+            if myIdx != -1:
+                myParams = dragFits[awf]
+                v1, v2, v3, v4 = myParams[0]
+                x = midT[myIdx:] - midT[myIdx]
+                plt.plot((x+midT[myIdx])/3600, vdrag(x,v1, v2, v3)/1e5, '--')
+        
+        plt.show()
+    
+    # |-----------------------|
+    # |--- Package Output  ---|
+    # |-----------------------|
+    outRes = {}
+    outRes['times'] = times
+    outRes['dts'] = dts
+    outRes['heights'] = heights
+    outRes['newtVs'] = newtVs
+    outRes['newtAs'] = newtAs
+    outRes['splitIds'] = splitIds
+    outRes['dragFits'] = dragFits
+
+    return outRes
+
+# |-----------------------------------|
+# |--- Get energetics from results ---|
+# |-----------------------------------|
+def getEnergetics(args, wombatRes, wfTypes, kinRes):
+    
+    bigMassRes = {} # index by shape then inst
+    for awf in wfTypes:
+        bigMassRes[awf] = {}
+        for aInst in wombatRes.keys():
+            if awf in wombatRes[aInst]:
+                bigMassRes[awf][aInst] = {}
+                bigMassRes[awf][aInst]['times'] = []
+                bigMassRes[awf][aInst]['masses'] = []
+
+    # Have to sort into chunks for each pickle for 
+    # the dingo mass calc. Can do two WFs at same time
+    
+    
+    # |--- Collect things ---|
+    for aInst in wombatRes.keys():
+        
+        if ('EUV' not in aInst.upper()) & ('AIA' not in aInst.upper()):
+            print ('Calculating masses for', aInst)
+            # Check if one or two res, can process together
+            if len(wombatRes[aInst].keys()) < 3:
+                idsbyPickle = {}
+                # Collect all the ids for each pickle
+                for awf in wombatRes[aInst].keys():
+                    for i in range(len(wombatRes[aInst][awf]['pickles'])):
+                        if wombatRes[aInst][awf]['pickles'][i] in idsbyPickle.keys():
+                            idsbyPickle[wombatRes[aInst][awf]['pickles'][i]].append(wombatRes[aInst][awf]['ids'][i]+1)
+                        else:
+                            idsbyPickle[wombatRes[aInst][awf]['pickles'][i]] = [wombatRes[aInst][awf]['ids'][i]+1]
+                            
+                # Convert the array of ints to a string for dingo (stringo)
+                for key in idsbyPickle:
+                    myids = idsbyPickle[key]
+                    nids = len(myids)
+                    
+                    if nids == 1:
+                        strids = str(myids[0])
+                    else:
+                        strids = ''
+                        for i in range(nids-1):
+                            strids = strids + str(myids[i]) + '+'
+                        strids = strids + str(myids[-1])
+                    idsbyPickle[key] = strids
+                    
+                    # Pass to dingo
+                    dargs = [args[0], strids, '0d']
+                    if aInst == 'HI1A_SR':
+                    #if True:
+                        massRes, aboutMe = dingoWrapper(dargs, pullMass=True)
+                        print (nids)
+                        print (strids)
+                        
+                        for i in range(len(aboutMe)):
+                            mydeets = aboutMe[i].split()
+                            for j in range(len(massRes[i])):
+                                bigMassRes[mydeets[2+j]][mydeets[1]]['times'].append(mydeets[0])
+                                bigMassRes[mydeets[2+j]][mydeets[1]]['masses'].append(massRes[i][j])
+                        
+                        
+    with open("bigMassRes.pkl", "wb") as file:
+        pickle.dump(bigMassRes, file)
 
 # |-----------------------------|
 # |--- Process Required Args ---|
@@ -728,15 +683,16 @@ def profilePlot(mode, wombatRes, wfTypes, logH=False, wfColors=False):
     #|-------------------------|
     #|--- Add in kinematics ---|
     #|-------------------------|
-    if ('kin' in mode) or ('en' in mode):
-        velRes, accRes = getKinematics(wombatRes, wfTypes)
+    #kinRes = None
+    
     
     
     #|-------------------------|
     #|--- Add in energetics ---|
     #|-------------------------|
+    #enRes = None
+    #print (mode)
     
-
         
     #|-------------------------|
     #|--- Set up the figure ---|     
@@ -828,10 +784,23 @@ def wombatPlotWrapper(args):
     #|-------------------------------------|
     miniLog, wombatRes, mode, uniqTs, wfTypes, allInsts = processArgs(args)
     
+    #|--------------------------|
+    #|--- Process kinematics ---|     
+    #|--------------------------|
+    if ('kin' in mode) or ('en' in mode):
+        kinRes = getKinematics(wombatRes, wfTypes)
+    
+    #|--------------------------|
+    #|--- Process energetics ---|     
+    #|--------------------------|    
+    if ('en' in mode):
+        enRes = getEnergetics(args, wombatRes, wfTypes, kinRes)
+        
+        
     #|-------------------------|
     #|---Run line plot mode ---|     
     #|-------------------------|
-    if mode in ['ht1', 'ht2','ht3', 'kin1', 'kin2', 'kin3']:
+    if mode in ['ht1', 'ht2','ht3', 'kin1', 'kin2', 'kin3', 'en1', 'en2', 'en3']:
         profilePlot(mode, wombatRes, wfTypes)
         
 
