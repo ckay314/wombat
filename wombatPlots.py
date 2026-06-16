@@ -1113,7 +1113,7 @@ def profilePlot(mode, wombatRes, wfTypes, logH=False, wfColors=False, enRes=None
                         else:
                             myax.plot(xdata, ydata, 'o', c=myC)
                         if errorbars:
-                            myax.errorbar(xdata, ydata, yerr=myErr, c=myC, capsize=3, lw=1)
+                            myax.errorbar(xdata, ydata, yerr=myErr, c=myC, capsize=3, fmt='none')
     if logH:
         if versusH:
             ax[0].set_xscale('log')
@@ -1147,7 +1147,7 @@ def profilePlot(mode, wombatRes, wfTypes, logH=False, wfColors=False, enRes=None
                 xdata = midTimes
             ax[kinAxId].plot(xdata, myVels/1e5, 'o', c=myC)
             if errorbars:
-                ax[kinAxId].errorbar(xdata, myVels/1e5, yerr=kinRes['errs'][1][awf]/1e5, c=myC, capsize=3, lw=1)
+                ax[kinAxId].errorbar(xdata, myVels/1e5, yerr=kinRes['errs'][1][awf]/1e5, c=myC, capsize=3, fmt='none')
                 
             # Plot accels
             myAccs =  kinRes['accs'][awf]
@@ -1158,7 +1158,7 @@ def profilePlot(mode, wombatRes, wfTypes, logH=False, wfColors=False, enRes=None
                 xdata = myTimes[1:-1]
             ax[kinAxId+1].plot(xdata, myAccs/1e5, 'o', c=myC)
             if errorbars:
-                ax[kinAxId+1].errorbar(xdata, myAccs/1e5, yerr=kinRes['errs'][2][awf]/1e5, c=myC, capsize=3, lw=1)
+                ax[kinAxId+1].errorbar(xdata, myAccs/1e5, yerr=kinRes['errs'][2][awf]/1e5, c=myC, capsize=3, fmt='none')
             
             # Drag fit
             if incDrag:
@@ -1233,8 +1233,8 @@ def profilePlot(mode, wombatRes, wfTypes, logH=False, wfColors=False, enRes=None
                 if errorbars:
                     ml, mh = enRes['errs'][awf][aSat][0][goodIdx], enRes['errs'][awf][aSat][1][goodIdx]
                     kel, keh = enRes['errs'][awf][aSat][2][goodIdx], enRes['errs'][awf][aSat][3][goodIdx]
-                    ax[enAxId].errorbar(xdata, goodMs, yerr=[ml,mh], c=myC, capsize=3, lw=1)
-                    ax[enAxId+1].errorbar(xdata, goodKEs, yerr=[kel,keh], c=myC, capsize=3, lw=1)
+                    ax[enAxId].errorbar(xdata, goodMs, yerr=[ml,mh], c=myC, marker=satsyms[i], capsize=3, fmt='none')
+                    ax[enAxId+1].errorbar(xdata, goodKEs, yerr=[kel,keh], c=myC, marker=satsyms[i], capsize=3, fmt='none')
                 
         
                     
