@@ -149,6 +149,9 @@ alogger = logging.getLogger('astropy')
 alogger.setLevel(logging.ERROR)
 # Turn off divide warning globally
 np.seterr(divide='ignore', invalid='ignore')
+import warnings
+warnings.filterwarnings("ignore", message="Mean of empty slice")
+
 
 global picType
 picType = '.png' # png or pdf, gets overwritten if set in input 
@@ -202,7 +205,7 @@ def createGrid(FoV, nGridY):
 # |------------------------------------|
 # |--- Convert points to widths map ---|
 # |------------------------------------|
-def getWidthNew(points, FoVfs, FoV, satFOVxyz, flatLim=5, nGridY=100, isHI=False):
+def getWidth(points, FoVfs, FoV, satFOVxyz, flatLim=5, nGridY=100, isHI=False, silent=False):
     '''
     Helper function to take a set of points representing some 3d
     shape and determine the width perpendicular to the PoS. This will
@@ -244,6 +247,8 @@ def getWidthNew(points, FoVfs, FoV, satFOVxyz, flatLim=5, nGridY=100, isHI=False
         
         isHI:   flag to indicate is a heliospheric image so to use a larger
                 pad value when finding the nearest points for each cell
+    
+        silent: flag to surpress unnecessary printing
     
     Outputs:
         wids: a 2d array with the width in the x direction. Grid cells that
@@ -305,7 +310,8 @@ def getWidthNew(points, FoVfs, FoV, satFOVxyz, flatLim=5, nGridY=100, isHI=False
     ncount = FOVx.shape[1]
     for i in range(FOVx.shape[1]):
         # A little slow so give progress
-        print ('Calc widths', i+1, '/', ncount)
+        if not silent:
+            print ('Calc widths', i+1, '/', ncount)
         for j in range(FOVx.shape[0]):
             # For each pixel we want to rotate it so the LoS is
             # parallel to x-axis so the WF width is just the range
@@ -387,136 +393,6 @@ def getWidthNew(points, FoVfs, FoV, satFOVxyz, flatLim=5, nGridY=100, isHI=False
     xcs[np.where(xcs == -9999)] = medxcs
 
     return wids, xcs, mask
-
-def getWidth(points, FoV=None, nGridY=100):
-    '''
-    Helper function to take a set of points representing some 3d
-    shape and determine the width in the x direction. This code
-    is not sensitive to the units of distances but points and 
-    FoV should be consistent and in practice solar radii are used
-    
-    Inputs:
-        points: a [nPoints, 3] array with the xyz values for each
-                point. the coords are such that
-                    - x is the line of sight direction (at FOV center)
-                    - y is the horizontal/~longitude direction
-                    - z is the vertical/~latitude direction
-    
-    Optional Inputs:
-        FoV: the field of view to use for the output 2d arrays. If
-             not provided it will be calculated from the points. This
-             allows for a consistent FoV for multiple calls to getWidth
-             for different sets of points
-             The format is [miny, maxy, minz, maxz]
-        
-        nGridY: the number of grid points in the y direction. this is the
-                resolution for the output array which dingo intends to pass
-                to an interpolator so it doesn't need to be as high of res
-                as the mass maps.
-                (defaults to 100)
-    
-    Outputs:
-        wids: a 2d array with the width in the x direction. Grid cells that
-              don't have any corresponding points are set to zero
-        
-        midx: a 2d array with the center x value for all points in that grid
-              cell (e.g a segment symmetric about the yz plane would be 0).
-              Grid cells without corresponding points are set to the median
-              value from the other points so that when dingo passes this to 
-              an interpolator the edges don't have weird artifacts
-        
-        mask: a 2d binary array with 1 for grid cells that have an non zero width  
-              and 0 for grid cells with no corresponding points
-        
-        FoV:  either the calculated FoV or simply returning the array given as 
-              input. The format is [miny, maxy, minz, maxz]
-        
-        nGridY: the number of grid points, either the same as the provided input
-                or the default value
-
-    '''
-
-    # |--- Unpackage points ---|
-    x = points[:,0]
-    y = points[:,1]
-    z = points[:,2]
-    
-    # |---------------------|
-    # |--- Determine FoV ---|
-    # |---------------------|
-    # Get range of points in yz
-    minyP, maxyP = np.min(y), np.max(y)
-    minzP, maxzP = np.min(z), np.max(z)
-    
-    # Set up FoV (if we don't have)
-    if type(FoV) == type(None):
-        padY = 0.1*(maxyP - minyP)
-        padZ = 0.1*(maxyP - minyP)
-        FoV = [[minyP-padY, maxyP+padY], [minzP-padZ, maxzP+padZ]]
-    miny, maxy = FoV[0][0], FoV[0][1]
-    minz, maxz = FoV[1][0], FoV[1][1]
-    
-    # |-------------------|
-    # |--- Set up grid ---|
-    # |-------------------|
-    dy, ygs, yms, nGridZ, zgs, zms = createGrid(FoV, nGridY)
-        
-    wids = np.zeros([nGridZ, nGridY])
-    midx = np.zeros([nGridZ, nGridY]) - 9999
-    mask = np.zeros([nGridZ, nGridY]) 
-
-    # |----------------------------------|
-    # |--- Match points to grid cells ---|
-    # |----------------------------------|
-    pad = 1.4 # distance from midpoint to check (in dy)    
-    for i in range(nGridY):       
-        if (yms[i] >= minyP) & (yms[i] <= maxyP):
-            mypts = np.where(np.abs(y-yms[i]) <= pad*dy)[0]
-            subx, suby, subz = x[mypts], y[mypts], z[mypts]
-            if len(subz) > 0:
-                myminz, mymaxz = np.min(subz), np.max(subz)
-                if zms[0] > myminz:
-                    zidx0 = 0
-                else:
-                    zidx0 = np.max(np.where(zms <= myminz))
-                if zms[-1] < mymaxz:
-                    zidx1 = len(zms) - 1
-                else:
-                    zidx1 = np.min(np.where(zms >= mymaxz))
-                zinds = range(zidx0, zidx1)
-        
-                subx, suby, subz = x[mypts], y[mypts], z[mypts]
-        
-                for j in zinds:
-                    mypts2 = np.where(np.abs(subz - zms[j]) < pad*dy)[0]
-                    #mypts2 = np.where((subz >= z0-pad*dy) & (subz <= z1+pad*dy))[0]
-                    sortx = np.sort(subx[mypts2])
-                    if len(sortx) > 1:               
-                        fullwid = sortx[-1] - sortx[0]
-                        wids[j,i] = fullwid
-                        midx[j,i] = 0.5*(sortx[-1] + sortx[0])
-                        mask[j,i] = 1
-                  
-    # |------------------------------------------|
-    # |--- Clean up grid cells with no points ---|
-    # |------------------------------------------|
-    # need to fill in the outer -9999 region of xc so interp is happy
-    for i in range(midx.shape[1]):
-        notOut = np.where(midx[:,i] !=-9999)[0]
-        if len(notOut) >= 2:
-            midx[:notOut[0], i]  = midx[notOut[0],i]
-            midx[notOut[-1]:, i] = midx[notOut[-1],i]
-    for i in range(midx.shape[0]):
-        notOut = np.where(midx[i,:] !=-9999)[0]
-        if len(notOut) >= 2:
-            midx[i,:notOut[0]]  = midx[i, notOut[0]]
-            midx[i,notOut[-1]:] = midx[i, notOut[-1]]
-    
-    # fill in the remaining -9999 spots (inner hole) with the med midx
-    medmidx = np.median(midx[np.where(mask == 1)])
-    midx[np.where(midx == -9999)] = medmidx
-
-    return wids, midx, mask, FoV, nGridY
 
 # |---------------------------------------------|
 # |--- Stonyhurst Cartesian to FoV Cartesian ---|
@@ -865,7 +741,7 @@ def wf2CartFoV(myMap, inPts, pixCent=None):
 # |------------------------------------|
 # |--- Main mass to density routine ---|
 # |------------------------------------|
-def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSelect=8, deproj=True):
+def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSelect=8, deproj=True, silent=False):
     '''
     Fuction to take a mass image map, satellite dictionay, and wireframe object and
     determine the width perp to the plane of sky and convert integrated mass to density.
@@ -903,6 +779,9 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
         deproj:     flag to deproject the masses accounting for the wf width perp to the
                     PoS via Billings instead of treating all pts as at Thomson sphere
     
+        silent:     flag to surpress unnecessary printing. It will still warn about high deproj
+                    factors for percentages above 10%
+    
     Outputs:
         widMap:     an array of the widths (in Rs) perp to the plane of sky 
                     the array contains [wf1, wf1_inner, wf2] where inner represents
@@ -933,7 +812,6 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
                     (e.g. FoVx((pixx,pixy)) )
     
     ''' 
-    
     # |--------------------------------------|
     # |--- Decide single or multi WF mode ---|
     # |--------------------------------------|
@@ -1011,7 +889,7 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
     wfPts = wf2CartFoV(myMap, awf.points)
     wfPtsT = np.transpose(np.array(wfPts))
     
-    wids, midx, mask = getWidthNew(wfPtsT,[FOV2x, FOV2y, FOV2z],OGfov, satFOVxyz, nGridY=nGridY, isHI=isHI)
+    wids, midx, mask = getWidth(wfPtsT,[FOV2x, FOV2y, FOV2z],OGfov, satFOVxyz, nGridY=nGridY, isHI=isHI, silent=silent)
     wid_smooth = ndimage.gaussian_filter(wids, sigma=2.0, order=0)
     
     
@@ -1026,7 +904,7 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
         awf2.getPoints()
         wfPts2 = wf2CartFoV(myMap, awf2.points)
         wfPts2T = np.transpose(np.array(wfPts2))
-        wids2, midx2, mask2 = getWidthNew(wfPts2T,[FOV2x, FOV2y, FOV2z], OGfov, satFOVxyz, nGridY=nGridY, isHI=isHI)
+        wids2, midx2, mask2 = getWidth(wfPts2T,[FOV2x, FOV2y, FOV2z], OGfov, satFOVxyz, nGridY=nGridY, isHI=isHI, silent=silent)
         wid_smooth2 = ndimage.gaussian_filter(wids2, sigma=2.0, order=0)
         
         # indexing of func is y,z    
@@ -1040,7 +918,7 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
         awf.getPoints(inside=True)
         wfPtsI = wf2CartFoV(myMap, awf.points)
         wfPtsIT = np.transpose(np.array(wfPtsI))
-        widsI, midxI, maskI  = getWidthNew(wfPts2IT,[FOV2x, FOV2y, FOV2z], OGfov, satFOVxyz, nGridY=nGridY, isHI=isHI)
+        widsI, midxI, maskI  = getWidth(wfPts2IT,[FOV2x, FOV2y, FOV2z], OGfov, satFOVxyz, nGridY=nGridY, isHI=isHI, silent=silent)
         wid_smoothI = ndimage.gaussian_filter(widsI, sigma=2.0, order=0)
         
         # indexing of func is y,z    
@@ -1051,7 +929,8 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
     # Plot of widths    
     '''fig = plt.figure()
     ax = fig.add_subplot(111)
-    im = plt.imshow(wids, origin='lower', extent=[FoV[0][0], FoV[0][1], FoV[1][0], FoV[1][1]])
+    #im = plt.imshow(wids, origin='lower', extent=[FoV[0][0], FoV[0][1], FoV[1][0], FoV[1][1]])
+    im = plt.imshow(wids, origin='lower')
     cbar = fig.colorbar(im, ax=ax, orientation='vertical', fraction=.05, pad=0.02, shrink=0.5) 
     ax.set_xlabel('Proj dist (R$_S$)')
     ax.set_ylabel('Proj dist (R$_S$)')
@@ -1098,6 +977,10 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
     else:
          notZero = np.where(maskInt != 0) 
          
+    if len(notZero[0]) == 0:  
+        print('Wireframe does not project on this plane of sky')   
+        return None, None, None, None, None, None, None, None
+        
     # Get nice bounds (in range, multiple of downselect)
     downSize = downSelectF 
     halfwid = int(downSize /2)
@@ -1234,12 +1117,15 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
         # |--- Look/warn for large conversion factors ---|
         bigProj = np.where((deprojScale[0] < 0.1) & (deprojScale[0] != 0.))  
         allProj = np.where(deprojScale[0] != 0.)
+        myPerc = 100*len(bigProj[0])/len(allProj[0])
         if len(bigProj[0]) > 0:
             deprojScale[0][bigProj] = 0.1
-            print ('!!!------ Warning ------!!!')
-            print ('Wireframe shape includes points far from plane of sky')
-            print (str(len(bigProj[0])) + ' pixels ('+'{:3.1f}'.format(100*len(bigProj[0])/len(allProj[0]))+'%) have deprojection factor of 10x or greater' )
-            print( 'Capping these points at 10x')
+            if (not silent) or (myPerc > 10):
+                print (myPerc)
+                print ('!!!------ Warning ------!!!')
+                print ('Wireframe shape includes points far from plane of sky')
+                print (str(len(bigProj[0])) + ' pixels ('+'{:3.1f}'.format(myPerc)+'%) have deprojection factor of 10x or greater' )
+                print( 'Capping these points at 10x')
         
         # |--- Second WF repetition ---|
         if multiMode:
@@ -1293,56 +1179,58 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
             w1 = w1 - widsIntnzI
         w2 = widsIntnz2
             
-        dx = np.mean(np.sqrt(cellArea))    
+        dx = np.mean(np.sqrt(cellArea))  
         overlap = np.where((w2 >= dx) & (w1 >= dx))
-        ovys    = f_fovy[overlap]
-        ovzs    = f_fovz[overlap]
         ovl     = np.zeros(f_fovy.shape)
-        ovl[overlap] = 1
+        if len(overlap[0]) > 0:
+            ovys    = f_fovy[overlap]
+            ovzs    = f_fovz[overlap]
+            ovl     = np.zeros(f_fovy.shape)
+            ovl[overlap] = 1
         
-        #|--- Find the edge of the overlap ---|
-        minOx, maxOx = np.min(overlap[1]), np.max(overlap[1])
-        minOy, maxOy = np.min(overlap[0]), np.max(overlap[0])
+            #|--- Find the edge of the overlap ---|
+            minOx, maxOx = np.min(overlap[1]), np.max(overlap[1])
+            minOy, maxOy = np.min(overlap[0]), np.max(overlap[0])
         
-        # Run through each vertical line
-        for i in np.arange(minOx, maxOx+1):
-            js = overlap[0][np.where(overlap[1] == i)]
-            prej = -1
-            for j in js: 
-                if (j - prej) > 1:
-                    ovl[j,i] = 2
-                prej = j
-            ovl[j,i] = 2
+            # Run through each vertical line
+            for i in np.arange(minOx, maxOx+1):
+                js = overlap[0][np.where(overlap[1] == i)]
+                prej = -1
+                for j in js: 
+                    if (j - prej) > 1:
+                        ovl[j,i] = 2
+                    prej = j
+                ovl[j,i] = 2
 
-        # Run through each horiz line
-        for j in np.arange(minOy, maxOy+1):
-            iis = overlap[1][np.where(overlap[0] == j)]
-            prei = -1
-            for i in iis: 
-                if (i - prei) > 1:
-                    ovl[j,i] = 2
-                prei = i
-            ovl[j,i] = 2
+            # Run through each horiz line
+            for j in np.arange(minOy, maxOy+1):
+                iis = overlap[1][np.where(overlap[0] == j)]
+                prei = -1
+                for i in iis: 
+                    if (i - prei) > 1:
+                        ovl[j,i] = 2
+                    prei = i
+                ovl[j,i] = 2
             
-        #|--- Find cells one outside/inside overlap ---|  
-        # Mark as -2, 2  
-        edge = np.where(ovl == 2)
-        for k in range(len(edge[0])):
-            i,j = edge[1][k], edge[0][k]
-            if i-1 > 0: 
-                if ovl[j,i-1] == 0: ovl[j,i-1] = -2                    
-                if ovl[j,i-1] == 1: ovl[j,i-1] = 2                    
-            if i+1 < ovl.shape[1]: 
-                if ovl[j,i+1] == 0: ovl[j,i+1] = -2
-                if ovl[j,i+1] == 1: ovl[j,i+1] = 2
+            #|--- Find cells one outside/inside overlap ---|  
+            # Mark as -2, 2  
+            edge = np.where(ovl == 2)
+            for k in range(len(edge[0])):
+                i,j = edge[1][k], edge[0][k]
+                if i-1 > 0: 
+                    if ovl[j,i-1] == 0: ovl[j,i-1] = -2                    
+                    if ovl[j,i-1] == 1: ovl[j,i-1] = 2                    
+                if i+1 < ovl.shape[1]: 
+                    if ovl[j,i+1] == 0: ovl[j,i+1] = -2
+                    if ovl[j,i+1] == 1: ovl[j,i+1] = 2
                     
-            if j-1 > 0: 
-                if ovl[j-1,i] == 0: ovl[j-1,i] = -2
-                if ovl[j-1,i] == 1: ovl[j-1,i] = 2
+                if j-1 > 0: 
+                    if ovl[j-1,i] == 0: ovl[j-1,i] = -2
+                    if ovl[j-1,i] == 1: ovl[j-1,i] = 2
                     
-            if j+1 < ovl.shape[0]: 
-                if ovl[j+1,i] == 0: ovl[j+1,i] = -2
-                if ovl[j+1,i] == 1: ovl[j+1,i] = 2
+                if j+1 < ovl.shape[0]: 
+                    if ovl[j+1,i] == 0: ovl[j+1,i] = -2
+                    if ovl[j+1,i] == 1: ovl[j+1,i] = 2
 
 
     #|-------------------------|
@@ -2972,7 +2860,7 @@ def processArgs(args):
         uniqTs = np.unique(miniLog[:, 2])
         uniqShapes = np.unique(miniLog[:, 3])
         nTimes = 1
-        
+
     #|-------------------------------|
     #|--- Check the dimension tag ---|     
     #|-------------------------------|
@@ -3217,7 +3105,7 @@ def processBonusArgs(allBonus, mode):
 # |--------------------|
 # |--- Main Wrapper ---|
 # |--------------------|
-def dingoWrapper(args, pullMass=False):
+def dingoWrapper(args, pullMass=False, silent=False):
     """ 
     Function that goes from the command line to the appropriate DINGO
     procedure. It can also be used for external calls by passing the 
@@ -3304,7 +3192,16 @@ def dingoWrapper(args, pullMass=False):
               mass maps. Running full resolution is fine for modes 0-2 but it will break
               3d scatter plots.
               (defaults to 8 for 3D mode, 1 for everything else)
-                
+    
+    Non-Command Line Optional Args:
+        pullMass:   Flag to return the calculated masses as massOuts, aboutMe where
+                    massOuts = [t1, t2, ...] with each time being one or two masses
+                    and 
+                    aboutMe = string with 'YYYY-MM-DDTHH:MM:SS INST WF1 [WF2]'
+
+        silent:    Option to supress printing (mostly in mass2den)
+        
+        Both default to false/not used by command line version
     
     """
     
@@ -3347,7 +3244,7 @@ def dingoWrapper(args, pullMass=False):
     #|--- Check the critical parameters ---|     
     #|-------------------------------------|
     logFile, miniLog, uniqTs, uniqShapes, nTimes, singleWF, mode, pairTimes, pairIds = processArgs(args)          
-                
+
     #|----------------------------------|
     #|--- Check the bonus parameters ---|     
     #|----------------------------------|
@@ -3386,13 +3283,13 @@ def dingoWrapper(args, pullMass=False):
     imMaps   = []
     showMaps = []
     massMaps = []
+    
     for i in range(nTimes):
         if singleWF:
             tidx = int(miniLog[i,14])
         else:
             # Inner and outer at same tidx
             tidx = int(miniLog[pairIds[i][0],14])
-        
         satDicts.append(bkgData['satStuff'][obs][0][tidx])
         imMaps.append(bkgData['proImMaps'][obs][0][tidx])
         showMaps.append(bkgData['scaledIms'][obs][0][tidx][0])
@@ -3436,23 +3333,46 @@ def dingoWrapper(args, pullMass=False):
     #|--------------|
     #|--------------|
     #|--- Process mass maps into density ---|
-    widMaps, xcMaps, maskMaps, densMaps, subMasss, outFoVs, pix2FOVs, pix2Sts = [], [], [], [], [], [], [], []
+    widMapsA, xcMapsA, maskMapsA, densMapsA, subMasssA, outFoVsA, pix2FOVsA, pix2StsA = [], [], [], [], [], [], [], []
     for i in range(nTimes):
         print ('Processing', uniqTs[i])
+        # Mass2dens will return None for each output if it cannot calculate a density
+        # for one of the time steps. These will be passed along in the packaged arrays
+        # but we will clean them up right after
         if singleWF:
-            widMap, xcMap, maskMap, densMap, subMass, outFoV, pix2FOV, pix2St  = mass2dens(imMaps[i], satDicts[i], wfsI[i], massMaps[i], doInner=dI,  downSelect=ds, deproj=deproj)
+            widMap, xcMap, maskMap, densMap, subMass, outFoV, pix2FOV, pix2St  = mass2dens(imMaps[i], satDicts[i], wfsI[i], massMaps[i], doInner=dI,  downSelect=ds, deproj=deproj, silent=silent)
         else:
-            widMap, xcMap, maskMap, densMap, subMass, outFoV, pix2FOV, pix2St  = mass2dens(imMaps[i], satDicts[i], [wfsI[i], wfsO[i]], massMaps[i], doInner=dI,  densRatio=densratio, downSelect=ds, deproj=deproj)
+            widMap, xcMap, maskMap, densMap, subMass, outFoV, pix2FOV, pix2St  = mass2dens(imMaps[i], satDicts[i], [wfsI[i], wfsO[i]], massMaps[i], doInner=dI,  densRatio=densratio, downSelect=ds, deproj=deproj, silent=silent)
         # Package it
-        widMaps.append(widMap)
-        xcMaps.append(xcMap)
-        maskMaps.append(maskMap)
-        densMaps.append(densMap)
-        subMasss.append(subMass)
-        outFoVs.append(outFoV) 
-        pix2FOVs.append(pix2FOV)    
-        pix2Sts.append(pix2St)    
+        widMapsA.append(widMap)
+        xcMapsA.append(xcMap)
+        maskMapsA.append(maskMap)
+        densMapsA.append(densMap)
+        subMasssA.append(subMass)
+        outFoVsA.append(outFoV) 
+        pix2FOVsA.append(pix2FOV)    
+        pix2StsA.append(pix2St)  
     
+    #|--- Density fail clean up ---|
+    goodIdx = []
+    for i in range(nTimes):
+        if type(widMapsA[i]) != type(None):
+            goodIdx.append(i)
+    nTimes = len(goodIdx) 
+    if nTimes != 0:
+        widMaps, xcMaps, maskMaps, densMaps, subMasss, outFoVs, pix2FOVs, pix2Sts = [], [], [], [], [], [], [], []
+        for idx in goodIdx:
+            widMaps.append(widMapsA[idx])
+            xcMaps.append(xcMapsA[idx])
+            maskMaps.append(maskMapsA[idx])
+            densMaps.append(densMapsA[idx])
+            subMasss.append(subMasssA[idx])
+            outFoVs.append(outFoVsA[idx])
+            pix2FOVs.append(pix2FOVsA[idx])   
+            pix2Sts.append(pix2StsA[idx])    
+    else:
+        print('Cannot proceed, no successful density calculations')
+        sys.exit()
 
     #|-------------------------------|
     #|-------------------------------|
@@ -3472,6 +3392,7 @@ def dingoWrapper(args, pullMass=False):
         massOuts = []
         for i in range(nTimes):
             masses = getMasses(widMaps[i], densMaps[i], outFoVs[i], pix2FOVs[i], printIt=False)
+            
             massOuts.append(masses)
             moreOut = ''
             out = aboutMe[i] + ' '
@@ -3513,8 +3434,6 @@ def dingoWrapper(args, pullMass=False):
     elif mode == 3:
         # Already forced to be single time so can use single versions of these vars
         allPts = dingo3d(widMap, xcMap, densMap, maskMap, outFoV, pix2St, imMaps[0].observer_coordinate, shell=True, plotIt=True, showLog=logPlot)
-
-
 
 # |-----------------------|
 # |--- Text line input ---|
