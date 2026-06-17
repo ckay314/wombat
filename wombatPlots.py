@@ -319,7 +319,7 @@ def getKinematics(wombatRes, wfTypes, dragHeights=[5,21.5], incDrag=False):
 # |-----------------------------------|
 # |--- Get energetics from results ---|
 # |-----------------------------------|
-def getEnergetics(args, wombatRes, wfTypes, kinRes, reloadIt=None):
+def getEnergetics(args, wombatRes, wfTypes, kinRes, reloadIt=None, overlap=1):
         
     # |--------------------------------|
     # |--- Use Dingo to calc masses ---|
@@ -327,9 +327,9 @@ def getEnergetics(args, wombatRes, wfTypes, kinRes, reloadIt=None):
     # Check if passed reloadIt, could be an existing pkl or
     # a name to save the output for future use
     saveName = 'bigMassRes.pkl'
-    if type(reloadIt) == type(None):
+    if type(reloadIt) != type(None):
         if not os.path.isfile(reloadIt):
-            saveName = np.copy(reloadIt)
+            saveName = str(np.copy(reloadIt))
             reloadIt = None
             
     # Pull it if actually exists    
@@ -353,38 +353,61 @@ def getEnergetics(args, wombatRes, wfTypes, kinRes, reloadIt=None):
             if ('EUV' not in aInst.upper()) & ('AIA' not in aInst.upper()):
                 print ('Calculating masses for', aInst)
                 # Check if one or two res, can process together
-                if len(wombatRes[aInst].keys()) < 3:
-                    idsbyPickle = {}
-                    # Collect all the ids for each pickle
-                    for awf in wombatRes[aInst].keys():
-                        for i in range(len(wombatRes[aInst][awf]['pickles'])):
-                            myh = wombatRes[aInst][awf]['params'][wombatRes[aInst][awf]['timesSTR'][i]][0]
-                            if wombatRes[aInst][awf]['pickles'][i] in idsbyPickle.keys():
-                                idsbyPickle[wombatRes[aInst][awf]['pickles'][i]].append(wombatRes[aInst][awf]['ids'][i]+1)
-                                bigMassRes[awf][aInst]['heights'].append(myh)
-                            else:
-                                idsbyPickle[wombatRes[aInst][awf]['pickles'][i]] = [wombatRes[aInst][awf]['ids'][i]+1]
-                                bigMassRes[awf][aInst]['heights'] = [myh]
+                if len(wombatRes[aInst].keys()) >= 3:
+                    overlap = 0
+                    print ('More than two wfs for', aInst, ' cannot process as overlaping so doing individually')
+                    
+                idsbyPickle = {}
+                wfsbyPickle = {}
+                # Collect all the ids for each pickle
+                for awf in wombatRes[aInst].keys():
+                    for i in range(len(wombatRes[aInst][awf]['pickles'])):
+                        myh = wombatRes[aInst][awf]['params'][wombatRes[aInst][awf]['timesSTR'][i]][0]
+                        if wombatRes[aInst][awf]['pickles'][i] in idsbyPickle.keys():
+                            idsbyPickle[wombatRes[aInst][awf]['pickles'][i]].append(wombatRes[aInst][awf]['OGids'][i]+1)
+                            wfsbyPickle[wombatRes[aInst][awf]['pickles'][i]].append(awf)
+                            bigMassRes[awf][aInst]['heights'].append(myh)
+                        else:
+                            idsbyPickle[wombatRes[aInst][awf]['pickles'][i]] = [wombatRes[aInst][awf]['OGids'][i]+1]
+                            bigMassRes[awf][aInst]['heights'] = [myh]
+                            wfsbyPickle[wombatRes[aInst][awf]['pickles'][i]] = [awf]
          
                             
-                    # Convert the array of ints to a string for dingo (stringo)
-                    for key in idsbyPickle:
-                        myids = idsbyPickle[key]
-                        nids = len(myids)
+                # Convert the array of ints to a string for dingo (stringo)
+                for key in idsbyPickle:
+                    myids = np.array(idsbyPickle[key])
+                    mywfs = np.array(wfsbyPickle[key])
+                    nids = len(myids)
                     
-                        if nids == 1:
-                            strids = str(myids[0])
-                        else:
+                    if nids == 1:
+                        strids = [str(myids[0])]
+                    else:
+                        if overlap != 0:
                             strids = ''
                             for i in range(nids-1):
                                 strids = strids + str(myids[i]) + '+'
-                            strids = strids + str(myids[-1])
-                        idsbyPickle[key] = strids
+                            strids = [strids + str(myids[-1])]
+                        else:
+                            strids = []
+                            nowwfs = np.unique(mywfs)
+                            for awf in wombatRes[aInst].keys():
+                                nowids = myids[np.where(mywfs == awf)[0]]
+                                strid = ''
+                                for i in range(len(nowids)-1):
+                                    strid = strid + str(nowids[i]) + '+'
+                                strid = strid + str(nowids[-1])
+                                strids.append(strid)
+                                        
+                    idsbyPickle[key] = strids
                     
-                        # Pass to dingo
-                        dargs = [args[0], strids, '0d']
-                        #print (dargs)
-                        #if aInst == 'HI2A_SR':
+                    
+                    # Pass to dingo
+                    for strid in strids:
+                        dargs = [args[0], strid, '0d']
+                        if overlap != 0:
+                            ovlstr = 'densratio_'+str(overlap)
+                            dargs.append(ovlstr)
+                        # if statement to turn off actual mass calc when testing things    
                         if True:
                             massRes, aboutMe = dingoWrapper(dargs, pullMass=True, silent=True)     
                             for i in range(len(aboutMe)):
@@ -392,9 +415,17 @@ def getEnergetics(args, wombatRes, wfTypes, kinRes, reloadIt=None):
                                 for j in range(len(massRes[i])):
                                     bigMassRes[mydeets[2+j]][mydeets[1]]['times'].append(mydeets[0])
                                     bigMassRes[mydeets[2+j]][mydeets[1]]['masses'].append(massRes[i][j])
-                        
+            
         with open(saveName, 'wb') as file:
             pickle.dump(bigMassRes, file)
+            
+        # Make a fake subIdx for everyone
+        subIdx = {}
+        for aInst in wombatRes.keys():
+            subIdx[aInst] = {}
+            for awf in wfTypes:
+                if awf in wombatRes[aInst]:
+                    subIdx[aInst][awf] = range(len(bigMassRes[awf][aInst]['times']))
 
             
     # |-----------------------------------|
@@ -403,7 +434,22 @@ def getEnergetics(args, wombatRes, wfTypes, kinRes, reloadIt=None):
     else:
         with open(reloadIt, 'rb') as file:
             bigMassRes = pickle.load(file)
-    
+            
+        # Need to potentially downselect depending on what lines given
+        subIdx = {}
+        for aInst in wombatRes.keys():
+            subIdx[aInst] = {}
+            for awf in wfTypes:
+                subIdx[aInst][awf] = []
+                if awf in wombatRes[aInst]:
+                    for i in range(len(wombatRes[aInst][awf]['timesSTR'])):
+                        myBMR = np.array(bigMassRes[awf][aInst]['times'])
+                        if wombatRes[aInst][awf]['timesSTR'][i] in myBMR:
+                            thisidx = np.where( myBMR == wombatRes[aInst][awf]['timesSTR'][i])[0]
+                            subIdx[aInst][awf].append(thisidx[0])    
+                    
+ 
+ 
     # |-------------------------------|
     # |--- Package masses by shape ---|
     # |-------------------------------|
@@ -414,13 +460,14 @@ def getEnergetics(args, wombatRes, wfTypes, kinRes, reloadIt=None):
         allts = {}
         allMs = {}
         allhs = {}
-        for aInst in bigMassRes[awf]:
+        for aInst in wombatRes.keys():
             mySat = inst2sat[aInst]
             if mySat not in allts.keys():
                 allts[mySat] = []
                 allMs[mySat] = []
                 allhs[mySat] = []
-            for i in range(len(bigMassRes[awf][aInst]['times'])):
+            for i in subIdx[aInst][awf]:
+            #for i in range(len(bigMassRes[awf][aInst]['times'])):
                 mytime = datetime.datetime.strptime(bigMassRes[awf][aInst]['times'][i], "%Y-%m-%dT%H:%M:%S")
                 allts[mySat].append(mytime.replace(second=0))
                 allMs[mySat].append(bigMassRes[awf][aInst]['masses'][i]*1e15)
@@ -481,7 +528,7 @@ def getEnergetics(args, wombatRes, wfTypes, kinRes, reloadIt=None):
             MuncsH = []
             KEuncsH = []
             KEuncsL = []
-                        
+            
             for i in range(len(Mtimes)):
                 if Mtimes[i] in vtimes:
                     idx = np.where(vtimes == Mtimes[i])[0][0]
@@ -506,6 +553,7 @@ def getEnergetics(args, wombatRes, wfTypes, kinRes, reloadIt=None):
                     KEuncsH.append(np.sqrt((MuncsH[-1] * 0.5*myv**2)**2 + (myverr * Ms[i]*myv)**2))
                     
                 else:
+                    print ('nomatch')
                     matchvs.append(None)
                     nowKEs.append(None)
                     MuncsL.append(None)
@@ -657,6 +705,7 @@ def processArgs(args):
             wombatRes[aInst][aWF] = {}
             wombatRes[aInst][aWF]['type'] = myType
             wombatRes[aInst][aWF]['ids'] = myIds
+            wombatRes[aInst][aWF]['OGids'] = txtIds[myIds]
             wombatRes[aInst][aWF]['params'] = {}
             wombatRes[aInst][aWF]['times'] = []
             wombatRes[aInst][aWF]['timesSTR'] = []
@@ -1120,7 +1169,6 @@ def profilePlot(mode, wombatRes, wfTypes, logH=False, wfColors=False, enRes=None
         else:
             ax[0].set_yscale('log')
                         
-    ax[0].legend(loc='lower right', bbox_to_anchor=(1., 1.), ncols=len(hasLabel))
     
     #|-------------------------|
     #|--- Add in kinematics ---|     
@@ -1145,7 +1193,14 @@ def profilePlot(mode, wombatRes, wfTypes, logH=False, wfColors=False, enRes=None
                 xdata = midHs
             else:
                 xdata = midTimes
-            ax[kinAxId].plot(xdata, myVels/1e5, 'o', c=myC)
+            
+            # Check if we need to add a label for wf type 
+            # No params in first part for kin1/en3 cases versus height    
+            if kinAxId == 0:
+                ax[kinAxId].plot(xdata, myVels/1e5, 'o', c=myC, label=awf)
+                hasLabel.append(awf)
+            else:
+                ax[kinAxId].plot(xdata, myVels/1e5, 'o', c=myC)
             if errorbars:
                 ax[kinAxId].errorbar(xdata, myVels/1e5, yerr=kinRes['errs'][1][awf]/1e5, c=myC, capsize=3, fmt='none')
                 
@@ -1160,6 +1215,8 @@ def profilePlot(mode, wombatRes, wfTypes, logH=False, wfColors=False, enRes=None
             if errorbars:
                 ax[kinAxId+1].errorbar(xdata, myAccs/1e5, yerr=kinRes['errs'][2][awf]/1e5, c=myC, capsize=3, fmt='none')
             
+            
+                
             # Drag fit
             if incDrag:
                 try:
@@ -1198,6 +1255,9 @@ def profilePlot(mode, wombatRes, wfTypes, logH=False, wfColors=False, enRes=None
         ax[kinAxId+1].set_xlim(xlims)
         #ax[kinAxId+1].set_ylim([-750, 750])
         enAxId = kinAxId+2
+    
+    ax[0].legend(loc='lower right', bbox_to_anchor=(1., 1.), ncols=len(hasLabel))
+    
     
     #|-------------------------|
     #|--- Add in energetics ---|     
@@ -1260,10 +1320,11 @@ def profilePlot(mode, wombatRes, wfTypes, logH=False, wfColors=False, enRes=None
         if logH:
             ax[-1].xaxis.set_major_formatter(ScalarFormatter())
 
-    
-    #plt.show()
-    print ('Saving figure as', outName+picType)
-    plt.savefig(outName+picType)
+    if outName == 'showit':
+        plt.show()
+    else:
+        print ('Saving figure as', outName+picType)
+        plt.savefig(outName+picType)
 
     
 
@@ -1278,7 +1339,6 @@ def wombatPlotWrapper(args):
             print (astr)
         sys.exit()
         
-    
     #|-------------------------------------|
     #|--- Check the critical parameters ---|     
     #|-------------------------------------|
@@ -1288,7 +1348,7 @@ def wombatPlotWrapper(args):
     #|--- Check any bonus parameters ---|     
     #|----------------------------------|
     # Set defaults
-    if len(args) > 4:
+    if len(args) > 3:
        allBonus = args[3:]
        dragHeights, errorbars, incDrag, logIt, minVal, maxVal, massPkl, outName, overlap, reloadIt, versusH, wfColors  = processBonusArgs(allBonus, mode)
     
@@ -1305,7 +1365,7 @@ def wombatPlotWrapper(args):
     #|--------------------------| 
     enRes = None   
     if ('en' in mode):
-        enRes = getEnergetics(args, wombatRes, wfTypes, kinRes, reloadIt=massPkl)
+        enRes = getEnergetics(args, wombatRes, wfTypes, kinRes, reloadIt=massPkl, overlap=overlap)
         #enRes = getEnergetics(args, wombatRes, wfTypes, kinRes)
 
         
@@ -1313,7 +1373,7 @@ def wombatPlotWrapper(args):
     #|--- Run line plot mode ---|     
     #|--------------------------|
     if mode in ['ht1', 'ht2','ht3', 'kin1', 'kin2', 'kin3', 'en1', 'en2', 'en3']:
-        profilePlot(mode, wombatRes, wfTypes, logH=logIt, wfColors=wfColors, kinRes=kinRes, enRes=enRes, errorbars=errorbars, versusH=versusH, incDrag=incDrag)
+        profilePlot(mode, wombatRes, wfTypes, logH=logIt, wfColors=wfColors, kinRes=kinRes, enRes=enRes, errorbars=errorbars, versusH=versusH, incDrag=incDrag, outName=outName)
         
 
 
