@@ -87,7 +87,7 @@ def vdrag(t_in, vCME0_in, vSW_in, C_in):
 # |-----------------------------------|
 # |--- Get kinematics from results ---|
 # |-----------------------------------|
-def getKinematics(wombatRes, wfTypes, dragHeights=[5,21.5], incDrag=False):
+def getKinematics(wombatRes, wfTypes, dragHeights=[5,21.5], incDrag=False, predAT=None):
     # |---------------------|
     # |--- Preprocessing ---|
     # |---------------------|
@@ -254,7 +254,78 @@ def getKinematics(wombatRes, wfTypes, dragHeights=[5,21.5], incDrag=False):
             splitIds[awf] = bestId
     
     
-              
+    # |---------------------------|
+    # |--- Arr Time Prediction ---|
+    # |---------------------------|
+    if type(predAT) != type(None):
+        if predAT.lower() == 'l1':
+            critx = 0.99
+        elif predAT.lower() in ['1au', '1 au']:
+            critx = 1.
+        else:
+            sys.exit('Arrival time point ' + predAT + ' not understood, exiting.')
+        
+        didDrag = []
+        if incDrag:
+            print('Calculating drag model arrival time at ' + predAT)
+            for awf in wfTypes:
+                if awf in dragFits:
+                    myPs   = dragFits[awf][0]
+                    myErrs = dragFits[awf][1]
+                    v0, vsw, C = myPs[0] * vdragScalers[0], myPs[1] * vdragScalers[1], myPs[2] * vdragScalers[2] # cm/s, 1/cm
+                    h0, t0 = myPs[3], myPs[4] # cm, datetime
+                    ev, eh = myErrs[0] * vdragScalers[0], myErrs[3] 
+                    
+                    fakets = np.linspace(0,5*24*3600, 200) # 5 days in seconds
+                    modx = (1/C * np.log(1 + C * (v0 - vsw)*fakets) + vsw * fakets + h0) / 1.496e+13 
+                    
+                    # get index around crit x
+                    if (np.max(modx) > critx) and (np.min(modx) < critx):
+                        idx1 = np.max(np.where(modx <= critx)[0])
+                        idx2 = np.min(np.where(modx >= critx)[0])
+                        smallts = np.linspace(fakets[idx1],fakets[idx2], 100)
+                        modx2 = (1/C * np.log(1 + C * (v0 - vsw)*smallts) + vsw * smallts + h0) / 1.496e+13 
+                        hitIdx = np.where(np.abs(modx2 - critx) == np.min(np.abs(modx2 - critx)))[0]
+                        tt = smallts[hitIdx[0]]
+                        artime = t0 + datetime.timedelta(seconds=tt)
+                        # Get error estimate - just using x = v/t not full drag eq for now
+                        # because not easily separable to get t(x) instead of x(t)
+                        tdist = critx* 1.496e+13 - h0
+                        aterr = np.sqrt((ev * tdist/v0**2)**2 + (eh/ v0)**2)
+                        print ('   ', awf, 'impact at ', artime.strftime("%Y-%m-%d %H:%M"), '+/-', '{:.1f}'.format(aterr/3600.), ' hr' )
+                        
+                        didDrag.append(awf)
+            print ("")
+            
+        # Non drag cases
+        for awf in wfTypes:
+            if len(didDrag) != len(wfTypes):
+                print('Calculating simple '+awf+ ' arrival time at ' + predAT)
+            if awf not in didDrag:
+                # Use max v to calc
+                maxv  = np.max(newtVs[awf])
+                maxId = np.where(newtVs[awf] == maxv)[0]
+                maxh  = heights[awf][maxId[0]]
+                t0    = times[awf][maxId[0]]
+                dist  = critx* 1.496e+13 - maxh
+                
+                tt_maxv = dist / maxv
+                artimeMax = t0 + datetime.timedelta(seconds=tt_maxv)
+                print ('   max  v gives impact at ', artimeMax.strftime("%Y-%m-%d %H:%M") )
+                
+                
+                ipPoints = np.where(heights[awf] >= dragHeights[0])[0]
+                if len(ipPoints) > 3:
+                    meanv = np.mean(newtVs[awf][ipPoints[0]+1:])
+                    tt_meanv = dist / meanv
+                    artimeMean = t0 + datetime.timedelta(seconds=tt_meanv)
+                    print ('   mean v gives impact at ', artimeMean.strftime("%Y-%m-%d %H:%M") )
+                    
+                    medv  = np.median(newtVs[awf][ipPoints[0]+1:])
+                    tt_medv = dist / medv
+                    artimeMed = t0 + datetime.timedelta(seconds=tt_medv)
+                    print ('   med  v gives impact at ', artimeMed.strftime("%Y-%m-%d %H:%M") )
+                    
     # |----------------------------|
     # |--- Secret testing plot  ---|
     # |----------------------------|
@@ -579,6 +650,146 @@ def getEnergetics(args, wombatRes, wfTypes, kinRes, reloadIt=None, overlap=1):
     
     return outRes
 
+
+# |------------------------------|
+# |--- Print wireframe points ---|
+# |------------------------------|
+def printPoints(wombatRes, wfTypes, outName=None, morePts=2):
+    # Collect things
+    toDo = {}
+    for awf in wfTypes:
+        toDo[awf] = {}
+        myTimes = []
+        myParams = []
+        for aInst in wombatRes:
+            if awf in wombatRes[aInst].keys():
+                for i in range(len(wombatRes[str(aInst)][awf]['timesSTR'])):
+                    # remove seconds
+                    myTime = wombatRes[str(aInst)][awf]['timesSTR'][i][:-3] 
+                    if myTime not in myTimes:
+                        myTimes.append(myTime)
+                        myParams.append(wombatRes[str(aInst)][awf]['paramGrid'][:,i])
+        toDo[awf]['times'] = myTimes
+        toDo[awf]['params'] = myParams
+    
+    # Set up output file    
+    if type(outName) == type(None):
+        outName = 'wombatPoints'
+    f1 = open('wbOutputs/'+outName+'.txt', 'w')
+    print ('Saving points in wbOutputs/'+outName+'.txt')
+    
+    # Get points and print
+    for awf in toDo:
+        times = toDo[awf]['times']
+        for i in range(len(times)):
+            mywf = wf.wireframe(awf.replace('Half', 'Half ')) 
+            mywf.params = toDo[awf]['params'][i]
+            
+            # Rescale grid points (if needed)
+            mywf.gPoints = [i * morePts for i in mywf.gPoints]
+            mywf.getPoints()
+            npts = mywf.points.shape[0]
+            for j in range(npts):
+                f1.write(awf + ' ' + times[i] + ' ' + str(j) + ' ' +  '{:.3f}'.format(mywf.points[j][0]) + ' ' + '{:.3f}'.format(mywf.points[j][1]) + ' ' + '{:.3f}'.format(mywf.points[j][2]) +'\n')
+    f1.close()
+    
+# |------------------------------|
+# |--- Print wireframe points ---|
+# |------------------------------|
+def makeVmap(wombatRes, wfTypes, outName=None, morePts=2):
+    # Collect things
+    toDo = {}
+    if len(wfTypes) > 1:
+        sys.exit('Can only make v map for single WF at a time')
+    
+    for awf in wfTypes:
+        myTimes = []
+        myDts   = []
+        myParams = []
+        for aInst in wombatRes:
+            if awf in wombatRes[aInst].keys():
+                for i in range(len(wombatRes[str(aInst)][awf]['timesSTR'])):
+                    # remove seconds
+                    myTime = wombatRes[str(aInst)][awf]['timesSTR'][i][:-3] 
+                    if myTime not in myTimes:
+                        myTimes.append(myTime)
+                        myParams.append(wombatRes[str(aInst)][awf]['paramGrid'][:,i])
+                        myDts.append(wombatRes[str(aInst)][awf]['times'][i])
+
+    if len(myTimes) > 2:
+        sys.exit('Can only make v map using two times')
+        
+    # Get time differences
+    dt = (myDts[1] - myDts[0]).total_seconds()
+    midT =( myDts[0] + datetime.timedelta(seconds=0.5*dt)).strftime("%Y-%m-%d %H:%M:%S")
+    
+        
+    # Make the wireframes
+    wf1 = wf.wireframe(awf.replace('Half', 'Half '))  
+    wf1.params = myParams[0] 
+    wf1.gPoints = [i * morePts for i in wf1.gPoints]
+    wf1.getPoints() 
+    wf2 = wf.wireframe(awf.replace('Half', 'Half '))  
+    wf2.params = myParams[1] 
+    wf2.gPoints = [i * morePts for i in wf2.gPoints]
+    wf2.getPoints() 
+    
+    # See if showing or saving
+    if outName != 'showit':
+        if type(outName) == type(None):
+            fname = 'wbOutputs/wbVels.txt'
+            figName = 'wbOutputs/wbVels'
+        else:
+            fname = 'wbOutputs/wbVels_'+outName+'.txt'
+            figName = 'wbOutputs/wbVels_'+outName
+        f1 = open(fname, 'w')
+    
+    # Caculate mid points and velocity
+    npts = wf1.points.shape[0]
+    xs, ys, zs, vs = [], [], [], []
+    for j in range(npts):
+        myx = 0.5 * (wf1.points[j][0] + wf2.points[j][0])
+        myy = 0.5 * (wf1.points[j][1] + wf2.points[j][1])
+        myz = 0.5 * (wf1.points[j][2] + wf2.points[j][2])
+        
+        dx = wf2.points[j][0] - wf1.points[j][0]
+        dy = wf2.points[j][1] - wf1.points[j][1]
+        dz = wf2.points[j][2] - wf1.points[j][2]
+        dxyz = np.sqrt(dx**2 + dy**2 +dz**2)
+        myv = dxyz * 7e5 / dt # km/s
+        
+        xs.append(myx)
+        ys.append(myy)
+        zs.append(myz)
+        vs.append(myv)
+        
+        if outName != 'showit':
+            f1.write(midT + ' '+ awf +' ' + str(j) + ' ' + '{:.3f}'.format(myx) + ' ' + '{:.3f}'.format(myy)+' '+'{:.3f}'.format(myz) +' '+'{:.3f}'.format(myv) +'\n')
+    
+    # Plot it
+    fig = plt.figure(figsize=(6, 6), layout='constrained')
+    ax = fig.add_subplot(111, projection='3d')
+    cmap = plt.get_cmap('magma')
+    im = ax.scatter(xs, ys, zs, c=vs, cmap=cmap)
+    cbar = fig.colorbar(im, ax=ax, orientation='vertical', fraction=.05, pad=0.02, shrink=0.5) 
+    cbar.set_label('Speed (km/s)') 
+    # Prettify
+    ax.set_aspect('equal') 
+    units = ' (Rs)'
+    ax.set_xlabel('x'+units)
+    ax.set_ylabel('y'+units)
+    ax.set_zlabel('z'+units)
+    
+    
+        
+    if outName == 'showit':
+        plt.show()
+    else:
+        f1.close()
+        print ('Saving points as', fname)
+        print ('Saving figure as', figName+picType)
+        plt.savefig(figName+picType)
+   
 # |-----------------------------|
 # |--- Process Required Args ---|
 # |-----------------------------|
@@ -725,13 +936,13 @@ def processArgs(args):
                 paramGrid[:,i] = wombatRes[aInst][aWF]['params'][miniLog[myIds[i],2]]
             wombatRes[aInst][aWF]['paramGrid'] = paramGrid
     
-    #|-------------------------------|
-    #|--- Check the dimension tag ---|     
-    #|-------------------------------|
+    #|--------------------------|
+    #|--- Check the mode tag ---|     
+    #|--------------------------|
     mode = args[2].lower()
-    if mode not in ['ht1', 'kin1', 'en1', 'ht2', 'kin2', 'en2', 'ht3', 'kin3', 'en3', 'linimg', 'logimg', 'sqimg']:
+    if mode not in ['ht1', 'kin1', 'en1', 'ht2', 'kin2', 'en2', 'ht3', 'kin3', 'en3', 'linimg', 'logimg', 'sqimg', 'points', 'pts', 'vmap']:
         print ('Error in reading mode '+mode)
-        print ('Pick from [ht#, kin#, en#, linimg, logimg, sqimg]')
+        print ('Pick from [ht#, kin#, en#, linimg, logimg, sqimg, pts, vmap]')
         print('Full command line syntax is')
         for astr in errorStrings:
             print (astr)
@@ -763,6 +974,7 @@ def processBonusArgs(args, mode):
     massPkl   = None
     outName   = None
     overlap   = 1
+    predAT    = None
     reloadIt  = None
     versusH   = False
     wfColors  = False 
@@ -826,6 +1038,9 @@ def processBonusArgs(args, mode):
             if lval[0] != '.':
                 lval = '.' + lval
             picType = lval # set as global, don't need to return it
+            
+        elif lval in ['1au', 'l1']:
+            predAT = lval
         
         # |--- Check if a pickle to save mass calc ---|
         elif '.pkl' in lval:
@@ -845,7 +1060,7 @@ def processBonusArgs(args, mode):
             else:
                 outName = val
 
-    return dragHeights, errorbars, incDrag, logIt, minVal, maxVal, massPkl, outName, overlap, reloadIt, versusH, wfColors
+    return dragHeights, errorbars, incDrag, logIt, minVal, maxVal, massPkl, outName, overlap, predAT, reloadIt, versusH, wfColors
 # |-------------------------|
 # |--- Line profile plot ---|
 # |-------------------------|
@@ -1348,9 +1563,8 @@ def wombatPlotWrapper(args):
     #|--- Check any bonus parameters ---|     
     #|----------------------------------|
     # Set defaults
-    if len(args) > 3:
-       allBonus = args[3:]
-       dragHeights, errorbars, incDrag, logIt, minVal, maxVal, massPkl, outName, overlap, reloadIt, versusH, wfColors  = processBonusArgs(allBonus, mode)
+    allBonus = args[3:]
+    dragHeights, errorbars, incDrag, logIt, minVal, maxVal, massPkl, outName, overlap, predAT, reloadIt, versusH, wfColors  = processBonusArgs(allBonus, mode)
     
     
     #|--------------------------|
@@ -1358,7 +1572,7 @@ def wombatPlotWrapper(args):
     #|--------------------------|
     kinRes = None
     if ('kin' in mode) or ('en' in mode):
-        kinRes = getKinematics(wombatRes, wfTypes, incDrag=incDrag)
+        kinRes = getKinematics(wombatRes, wfTypes, incDrag=incDrag, predAT=predAT)
 
     #|--------------------------|
     #|--- Process energetics ---|     
@@ -1374,8 +1588,19 @@ def wombatPlotWrapper(args):
     #|--------------------------|
     if mode in ['ht1', 'ht2','ht3', 'kin1', 'kin2', 'kin3', 'en1', 'en2', 'en3']:
         profilePlot(mode, wombatRes, wfTypes, logH=logIt, wfColors=wfColors, kinRes=kinRes, enRes=enRes, errorbars=errorbars, versusH=versusH, incDrag=incDrag, outName=outName)
-        
-
+    
+    #|--------------------------|
+    #|--- Basic print points ---|     
+    #|--------------------------|    
+    if mode in ['pts', 'points']:
+        printPoints(wombatRes, wfTypes, outName=outName)
+    
+    #|--------------------|
+    #|--- Velocity map ---|     
+    #|--------------------|    
+    if mode in ['vmap']:
+        makeVmap(wombatRes, wfTypes, outName=outName)
+    
 
 # |-----------------------|
 # |--- Text line input ---|

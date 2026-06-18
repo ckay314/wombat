@@ -234,7 +234,7 @@ class wireframe():
             self.ranges   = np.array([np.empty(2) for i in range(self.nParams)])
             self.params   = np.empty(self.nParams)
             self.gPoints  = None # set up the number of points in the grid
-            self.points   = None # the WF grid points in theoryland coords
+            self.points   = None # the WF grid points in stony cart coords
             self.showMe   = True
             self.WFidx  = WFidx
             self.doBack   = doBack
