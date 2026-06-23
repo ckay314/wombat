@@ -285,8 +285,8 @@ def processAIA(times, wavs, inFolder='pullFolder/SDO/AIA/', saveFits=False, outF
     
     # Loop through each wavelength        
     for i in range(nWavs):
-        proIms['aia'+str(wavs[i])] = [[], []]
-        outLines['aia'+str(wavs[i])] = []
+        proIms['AIA'+str(wavs[i])] = [[], []]
+        outLines['AIA'+str(wavs[i])] = []
         if len(goodFiles[i]) > 0:
             print ('|--- Processing SDO AIA '+str(wavs[i])+'---|')      
             # Make an array and sort alphabetically = time sorted      
@@ -315,9 +315,9 @@ def processAIA(times, wavs, inFolder='pullFolder/SDO/AIA/', saveFits=False, outF
                     fullOut = outFolder+wavs[i]+'/'+fitsName
                     im.save(fullOut, overwrite=True)
                     # Add it to the list of avail obs
-                outLines['aia'+str(wavs[i])].append(goodFiles[i][k])
-                proIms['aia'+str(wavs[i])][0].append(im.data)
-                proIms['aia'+str(wavs[i])][1].append(im.meta)             
+                outLines['AIA'+str(wavs[i])].append(goodFiles[i][k])
+                proIms['AIA'+str(wavs[i])][0].append(im.data)
+                proIms['AIA'+str(wavs[i])][1].append(im.meta)             
             
         else:
             print ('No files found for AIA '+str(wavs[i]))
@@ -784,7 +784,6 @@ def processSTEREO(times, insts, inFolder='pullFolder/STEREO/', outFolder='wbFits
     ymds, hms = setupTimeStuff(times)
     nDays = len(ymds)
     
-    
     # |----------------------------------|
     # |--------- Sort the files ---------|
     # |----------------------------------|
@@ -905,12 +904,13 @@ def processSTEREO(times, insts, inFolder='pullFolder/STEREO/', outFolder='wbFits
                         aIm, aHdr = secchi_prep(goodTrips[k], polarizeOn=True, silent=True, prepDir=prepDir)
                         ims.append(aIm[0])
                         hdrs.append(aHdr[0])
-                        if saveFits:
+                        # old, probably doesn't work now
+                        '''if saveFits:
                             ymd = hdrs[k]['DATE-OBS'].replace('-','').replace(':','')[:15]  
                             fitsName = fronts2[j]+inst.lower()+'_'+ymd+'.fits' 
                             nowFold = outFolder+inst+AB[j] 
                             fullName = nowFold + '/' + fitsName   
-                            fits.writeto(fullName, ims[k], hdrs[k], overwrite=True)
+                            fits.writeto(fullName, ims[k], hdrs[k], overwrite=True)'''
                             #outLines.append(fullName+'\n')
                         proIms[inst+AB[j]][0].append(ims[k])
                         proIms[inst+AB[j]][1].append(hdrs[k])
@@ -1153,7 +1153,6 @@ def processObs(times, insts, inFolder='pullFolder/', outFolder='wbFits/', outFil
     if outFolder[-1] != '/':
         outFolder = outFolder+'/'
     
-    
     # |-------------------------------|
     # |--- Open up the output file ---|
     # |-------------------------------|
@@ -1222,9 +1221,10 @@ def processObs(times, insts, inFolder='pullFolder/', outFolder='wbFits/', outFil
         shortK = inst.replace('_SR','')
         if shortK not in doSTEREO:
             doSTEREO.append(shortK)
-
+    
+    
     if len(doSTEREO) > 0:
-        proIms, outLines = processSTEREO(times, doSTEREO)
+        proIms, outLines = processSTEREO(times, doSTEREO)        
         for key in proIms:
             # Check for lack of STB
             if len(proIms[key][0]) > 0:
@@ -1459,13 +1459,25 @@ def thePickler(proIms, fnames, insts0, pickleJar='wbPickles/', name='temp'):
     bigDill['WBinfo']['isEUV'] = {}
     for key in insts:
         bigDill['WBinfo']['OrigFiles'][key] = fnames[key]
-        if ('euvi' in key) or ('aia' in key):
+        if ('EUVI' in key) or ('AIA' in key):
             bigDill['WBinfo']['isEUV'][key] = True
         else:
             bigDill['WBinfo']['isEUV'][key] = False
             
-    # Other things to track? Arrays of times?    
-    
+    # Clean up keys for stereo a/b
+    stereo_singles = ['EUVI171', 'EUVI195', 'EUVI284', 'EUVI304', 'COR1', 'COR2', 'HI1', 'HI2']
+    redo = []
+    for inst in insts0:
+        if (inst in stereo_singles):
+            if inst+'A' in insts:
+                redo.append(inst+'A')
+            if inst+'B' in insts:
+                redo.append(inst+'B')
+        else:
+            redo.append(inst)
+    insts0 = redo
+
+
     # |---------------------------------------|
     # |---- Fill the basic processed data ----|
     # |---------------------------------------|
@@ -1584,13 +1596,30 @@ def thePickler(proIms, fnames, insts0, pickleJar='wbPickles/', name='temp'):
         if 'HI1A' in bigDill['massIms']:
             bigDill['massIms']['HI1A_SR'] = bigDill['massIms']['HI1A']
             bigDill['proImMaps']['HI1A_SR'] = bigDill['proImMaps']['HI1A']
+    if 'HI1B_SR' in bigDill['WBinfo']['Insts']:
+        if 'HI1B' in bigDill['massIms']:
+            bigDill['massIms']['HI1B_SR'] = bigDill['massIms']['HI1B']
+            bigDill['proImMaps']['HI1B_SR'] = bigDill['proImMaps']['HI1B']
+    if 'HI2A_SR' in bigDill['WBinfo']['Insts']:
+        if 'HI2A' in bigDill['massIms']:
+            bigDill['massIms']['HI2A_SR'] = bigDill['massIms']['HI2A']
+            bigDill['proImMaps']['HI2A_SR'] = bigDill['proImMaps']['HI2A']
+    if 'HI2B_SR' in bigDill['WBinfo']['Insts']:
+        if 'HI2B' in bigDill['massIms']:
+            bigDill['massIms']['HI2B_SR'] = bigDill['massIms']['HI2B']
+            bigDill['proImMaps']['HI2B_SR'] = bigDill['proImMaps']['HI2B']
+    
     
     # |-------------------------------|
     # |---- Clean out bonus insts ----|
     # |-------------------------------|
     # Might have insts used to calc mass that don't actually want pickled
+    instsUP = np.copy(insts0)
+    for i in range(len(instsUP)):
+        instsUP[i] = instsUP[i].upper()
     for aInst in insts:
-        if aInst not in insts0:
+        if aInst.upper() not in instsUP:
+            print (aInst, 'removing')
             # |--- (sub) Dictionary with standard processed data ---|
             temp = bigDill['proIms0'].pop(aInst) # base images
             temp = bigDill['proIms'].pop(aInst) # all images 
@@ -1764,7 +1793,7 @@ def getSatStuff(imMap):
     
     # Nominal radii (in Rs) for the occulters for each instrument. Pulled from google so 
     # generally correct (hopefully) but not the most precise
-    occultDict = {'STEREO_SECCHI_COR2':[3,14], 'STEREO_SECCHI_COR2A':[3,14], 'STEREO_SECCHI_COR2B':[3,14], 'STEREO_SECCHI_COR1':[1.5,4], 'STEREO_SECCHI_COR1A':[1.5,4], 'STEREO_SECCHI_COR1B':[1.5,4], 'SOHO_LASCO_C1':[1.1,3], 'SOHO_LASCO_C2':[2,6], 'SOHO_LASCO_C3':[3.7,32], 'STEREO_SECCHI_HI1':[15,80], 'STEREO_SECCHI_HI1A':[15,80], 'STEREO_SECCHI_HI1B':[15,80], 'STEREO_SECCHI_HI2':[80,215], 'STEREO_SECCHI_HI2B':[80,215], 'STEREO_SECCHI_HI2A':[80,215], 'STEREO_SECCHI_EUVI':[0,1.7],'SDO_AIA':[0,1.35]}
+    occultDict = {'STEREO_SECCHI_COR2':[3,14], 'STEREO_SECCHI_COR2A':[3,14], 'STEREO_SECCHI_COR2B':[3,14], 'STEREO_SECCHI_COR1':[1.5,4], 'STEREO_SECCHI_COR1A':[1.5,4], 'STEREO_SECCHI_COR1B':[1.5,4], 'SOHO_LASCO_C1':[1.1,3], 'SOHO_LASCO_C2':[2,6], 'SOHO_LASCO_C3':[3.7,32], 'STEREO_SECCHI_HI1':[15,80], 'STEREO_SECCHI_HI1A':[15,80], 'STEREO_SECCHI_HI1B':[15,80], 'STEREO_SECCHI_HI2':[80,215], 'STEREO_SECCHI_HI2B':[80,215], 'STEREO_SECCHI_HI2A':[80,215], 'STEREO_SECCHI_EUVI':[0,1.7],'SDO_AIA':[0,1.35], 'STEREO_SECCHI_EUVIA':[0,1.7], 'STEREO_SECCHI_EUVIB':[0,1.7]}
     
     #|---- Initialize dictionary ----|
     satDict = {}
@@ -2084,10 +2113,10 @@ def scaleIt(obsIn, satStuffs):
     # Pull the desired values for each instrument
     
     # mins/maxs on percentiles by instrument [[lower], [upper]] with [lin, log, sqrt]  #tagIt:dynrng
-    pMMs = {'AIA':[[0.001,10,1], [99,99,99]], 'SECCHI_EUVI':[[0.001,10,1], [99,99,99]], 'LASCO_C2':[[15,1,15], [97,99,97]], 'LASCO_C3':[[40,1,10], [99,99,90]], 'SECCHI_COR1':[[30,1,10], [99,99,90]], 'SECCHI_COR2':[[20,1,10], [92,99,93]], 'SECCHI_HI1':[[1,40,1], [99.5,80,99.9]], 'SECCHI_HI2':[[1,40,1],[99.9,80,99.9]], 'SECCHI_HI1_SR':[[1,40,1], [99.5,80,99.9]], 'SECCHI_HI2_SR':[[1,40,1],[99.9,80,99.9]], 'WISPR_HI1':[[5,40,1], [98.,80,99.9]], 'WISPR_HI2':[[1,40,1], [99.9,80,99.9]],'WISPR_HI1_LW':[[1,1,1.], [99.,99,99.]], 'WISPR_HI1_L3':[[10,40,1], [95.,80,99.9]], 'WISPR_HI2_L3':[[1,40,1], [99.9,80,99.9]], 'SoloHI':[[1,40,1], [99.5,80,99.5]],'WISPR_HI2_LW':[[1,1,1.], [99.,99,99.]] }
+    pMMs = {'AIA':[[0.001,10,1], [99,99,99]], 'SECCHI_EUVI':[[0.001,0.001,1], [99,99,99]], 'LASCO_C2':[[15,1,15], [97,99,97]], 'LASCO_C3':[[40,1,10], [99,99,90]], 'SECCHI_COR1':[[30,1,10], [99,99,90]], 'SECCHI_COR2':[[20,1,10], [92,99,93]], 'SECCHI_HI1':[[1,40,1], [99.5,80,99.9]], 'SECCHI_HI2':[[1,40,1],[99.9,80,99.9]], 'SECCHI_HI1_SR':[[1,40,1], [99.5,80,99.9]], 'SECCHI_HI2_SR':[[1,40,1],[99.9,80,99.9]], 'WISPR_HI1':[[5,40,1], [98.,80,99.9]], 'WISPR_HI2':[[1,40,1], [99.9,80,99.9]],'WISPR_HI1_LW':[[1,1,1.], [99.,99,99.]], 'WISPR_HI1_L3':[[10,40,1], [95.,80,99.9]], 'WISPR_HI2_L3':[[1,40,1], [99.9,80,99.9]], 'SoloHI':[[1,40,1], [99.5,80,99.5]],'WISPR_HI2_LW':[[1,1,1.], [99.,99,99.]] }
     
     # Where the background sliders start (between 0 and 255)
-    sliVals = {'AIA':[[0,0,0], [191,191,191]], 'SECCHI_EUVI':[[0,32,0], [191,191,191]], 'LASCO_C2':[[0,0,21],[191,191,191]], 'LASCO_C3':[[37,0,37],[191,191,191]], 'SECCHI_COR1':[[63,0,21],[191,191,191]], 'SECCHI_COR2':[[63,0,21],[191,191,191]], 'SECCHI_HI1':[[63,0,21],[128,191,191]], 'SECCHI_HI2':[[63,0,21],[128,191,191]], 'SECCHI_HI1_SR':[[63,0,21],[128,191,191]], 'SECCHI_HI2_SR':[[63,0,21],[128,191,191]],  'WISPR_HI1':[[20,0,21],[128,191,191]], 'WISPR_HI2':[[0,0,21],[128,191,191]], 'WISPR_HI1_LW':[[10,0,21],[191,191,191]], 'WISPR_HI1_L3':[[20,0,21],[128,191,191]], 'WISPR_HI2_L3':[[0,0,21],[128,191,191]], 'WISPR_HI2_LW':[[10,0,21],[191,191,191]], 'SoloHI':[[10,0,21],[128,191,191]]}
+    sliVals = {'AIA':[[0,0,0], [191,191,191]], 'SECCHI_EUVI':[[0,0,0], [191,191,191]], 'LASCO_C2':[[0,0,21],[191,191,191]], 'LASCO_C3':[[37,0,37],[191,191,191]], 'SECCHI_COR1':[[63,0,21],[191,191,191]], 'SECCHI_COR2':[[63,0,21],[191,191,191]], 'SECCHI_HI1':[[63,0,21],[128,191,191]], 'SECCHI_HI2':[[63,0,21],[128,191,191]], 'SECCHI_HI1_SR':[[63,0,21],[128,191,191]], 'SECCHI_HI2_SR':[[63,0,21],[128,191,191]],  'WISPR_HI1':[[20,0,21],[128,191,191]], 'WISPR_HI2':[[0,0,21],[128,191,191]], 'WISPR_HI1_LW':[[10,0,21],[191,191,191]], 'WISPR_HI1_L3':[[20,0,21],[128,191,191]], 'WISPR_HI2_L3':[[0,0,21],[128,191,191]], 'WISPR_HI2_LW':[[10,0,21],[191,191,191]], 'SoloHI':[[10,0,21],[128,191,191]]}
     
     # Pull the configuration based on instrument
     myInst = satStuffs[0]['INST']
@@ -2360,7 +2389,7 @@ def commandLineWrapper():
         load_solo_kernels(kernelSpot+'solo/')
     if loadSTEREO:
         load_stereo_kernels(kernelSpot+'stereo/')
-        
+     
     
     #|--------------------------|
     #|---- Basic processing ----|

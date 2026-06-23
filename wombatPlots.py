@@ -397,13 +397,18 @@ def getEnergetics(args, wombatRes, wfTypes, kinRes, reloadIt=None, overlap=1):
     # |--------------------------------|
     # Check if passed reloadIt, could be an existing pkl or
     # a name to save the output for future use
+    bmrDir = 'wbPlotPickles/'
+    if not os.path.exists(bmrDir):
+        os.mkdir(bmrDir)
+        print ('Created output folder', bmrDir)
+        
     saveName = 'bigMassRes.pkl'
     if type(reloadIt) != type(None):
-        if not os.path.isfile(reloadIt):
+        if not os.path.isfile(bmrDir+reloadIt):
             saveName = str(np.copy(reloadIt))
             reloadIt = None
             
-    # Pull it if actually exists    
+    # Make it if doesnt exists    
     if type(reloadIt) == type(None):
         bigMassRes = {} # index by shape then inst
         for awf in wfTypes:
@@ -487,7 +492,7 @@ def getEnergetics(args, wombatRes, wfTypes, kinRes, reloadIt=None, overlap=1):
                                     bigMassRes[mydeets[2+j]][mydeets[1]]['times'].append(mydeets[0])
                                     bigMassRes[mydeets[2+j]][mydeets[1]]['masses'].append(massRes[i][j])
             
-        with open(saveName, 'wb') as file:
+        with open(bmrDir+saveName, 'wb') as file:
             pickle.dump(bigMassRes, file)
             
         # Make a fake subIdx for everyone
@@ -503,7 +508,7 @@ def getEnergetics(args, wombatRes, wfTypes, kinRes, reloadIt=None, overlap=1):
     # |--- Alternatively reload masses ---|
     # |-----------------------------------|        
     else:
-        with open(reloadIt, 'rb') as file:
+        with open(bmrDir+reloadIt, 'rb') as file:
             bigMassRes = pickle.load(file)
             
         # Need to potentially downselect depending on what lines given
@@ -789,6 +794,7 @@ def makeVmap(wombatRes, wfTypes, outName=None, morePts=2):
         print ('Saving points as', fname)
         print ('Saving figure as', figName+picType)
         plt.savefig(figName+picType)
+
    
 # |-----------------------------|
 # |--- Process Required Args ---|
@@ -805,9 +811,7 @@ def processArgs(args):
                    two integers separated by -. The ids do not need to use
                    the same background pickle 
     
-        type - ht#, kin#, en#, linimg, logimg, sqimg. The first three are line 
-               profiles and the last three are 2D images with the projected
-               WFs.
+        type -  line profiles: ht#, kin#, en#
                     ht#  - basic fit parameters versus height
                     kin# - basic + derived velocity/acceleration
                     en#  - kin + energetics from mass calc
@@ -816,6 +820,10 @@ def processArgs(args):
                     1 - just height
                     2 - height + aw(s)
                     3 - everything
+    
+                 list of points: points or pts (same thing, just allow both tags)
+
+                 2 wf velocity: vmap 
                 
     
     Inputs:
@@ -940,7 +948,7 @@ def processArgs(args):
     #|--- Check the mode tag ---|     
     #|--------------------------|
     mode = args[2].lower()
-    if mode not in ['ht1', 'kin1', 'en1', 'ht2', 'kin2', 'en2', 'ht3', 'kin3', 'en3', 'linimg', 'logimg', 'sqimg', 'points', 'pts', 'vmap']:
+    if mode not in ['ht1', 'kin1', 'en1', 'ht2', 'kin2', 'en2', 'ht3', 'kin3', 'en3', 'linimg', 'logimg', 'sqimg', 'linim', 'logim', 'sqim', 'points', 'pts', 'vmap']:
         print ('Error in reading mode '+mode)
         print ('Pick from [ht#, kin#, en#, linimg, logimg, sqimg, pts, vmap]')
         print('Full command line syntax is')
@@ -1539,7 +1547,7 @@ def profilePlot(mode, wombatRes, wfTypes, logH=False, wfColors=False, enRes=None
         plt.show()
     else:
         print ('Saving figure as', outName+picType)
-        plt.savefig(outName+picType)
+        plt.savefig('wbOutputs/'+outName+picType)
 
     
 
@@ -1553,6 +1561,13 @@ def wombatPlotWrapper(args):
         for astr in errorStrings:
             print (astr)
         sys.exit()
+        
+    #|-------------------------------|
+    #|--- Check for output folder ---|     
+    #|-------------------------------|
+    if not os.path.exists('wbOutputs/'):
+        os.mkdir('wbOutputs/')
+        print ('Created output folder wbOutputs')
         
     #|-------------------------------------|
     #|--- Check the critical parameters ---|     
@@ -1601,6 +1616,11 @@ def wombatPlotWrapper(args):
     if mode in ['vmap']:
         makeVmap(wombatRes, wfTypes, outName=outName)
     
+    #|----------------------------- d|
+    #|--- 2D Maps (redo WOMBAT) ---|     
+    #|-----------------------------|
+    if mode in ['logimg', 'sqimg', 'linim', 'logim', 'sqim']:
+        makeImage(wombatRes, wfTypes, outName=outName, minVal=minVal, maxVal=maxVal)
 
 # |-----------------------|
 # |--- Text line input ---|

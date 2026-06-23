@@ -579,7 +579,7 @@ class ParamWindow(QMainWindow):
         # Set the box value
         if b.text() == '':
             b.setValue(myVal)
-        if np.abs(float(b.text()) - myVal) > dx:
+        if np.abs(float(b.text().replace(',','.')) - myVal) > dx:
             b.setValue(myVal)
             # Update the wirefram
             #self.updateWFpoints(myWF, widges) # not needed now with value change on spin box
@@ -857,6 +857,11 @@ class ParamWindow(QMainWindow):
                 Parameters (filled with Nones up to 9 values as needed)
                 Pickle name
                 Time index for that sat
+                Scale mode for that sat ()
+                Base mode for that sat (R or B)
+                Levels min (int)
+                Levels max
+                
         
         """
         nameIt = self.oBox.text()
@@ -891,8 +896,12 @@ class ParamWindow(QMainWindow):
                             outStr += 'None '
                             
                     # Add the name of the background pickle and the time index for that data
-                    outStr += bkgpkl + ' ' + str(tidx)            
-            
+                    outStr += bkgpkl + ' ' + str(tidx)    
+                    
+                    # Add the background info
+                    outStr += ' ' + str(aPW.didx) + ' ' + str(aPW.sclidx+1)     
+                    svals = aPW.slidervals[aPW.didx, aPW.sclidx] # diff, scale time, min/max 
+                    outStr += ' ' + str(svals[0]) + ' '+ str(svals[1])
                     print (outStr)
                     logFile.write( outStr+ '\n')
                 else:
@@ -1080,7 +1089,7 @@ class ParamWindow(QMainWindow):
         if paramsBuilt:
             for i in range(len(widges[0])):
                 if widges[0][i].text() != '':
-                    aWF.params[i] = float(widges[0][i].text())
+                    aWF.params[i] = float(widges[0][i].text().replace(',','.'))
             aWF.getPoints()
             for ipw in range(nSats):
                 pws[ipw].plotWFs(justN=aWF.WFidx-1)
@@ -1640,7 +1649,7 @@ class FigWindow(QWidget):
                         myColor = 'cyan'
                 
                 # change pen wid if HI
-                penwid =1
+                penwid =2
                 if self.satStuff[self.didx][self.tidx]['OBSTYPE'] == 'HI':
                     penwid = 4
                 
@@ -2903,7 +2912,7 @@ def sortTimeIndices(satStuff, tRes=20):
 # |------------------------------------------------------------|
 # |------------------- Main Launch Function -------------------|
 # |------------------------------------------------------------|
-def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, reloadDict=None, logFile=None):
+def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, reloadDict=None, logFile=None, tRes=20):
     """
     Main wrapper function to build and run the WOMBAT GUI
 
@@ -2934,6 +2943,11 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, reloadDict=None, logF
         logFile:      name of the log file used to load a recon. Will be put into the
                       text box in the param window
                       defaults to None
+        
+        tRes:         time resolution (in mins) to use for the main slider. The pickled data may
+                      be in higher or lower resolution but this will be mapped to the slider
+                      values (potentially downselecting if data is higher res)
+                      defaults to 20 mins
 
     Outputs:
         No outputs unless the save button is clicked. If clicked, it will save fits files
@@ -3032,7 +3046,7 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, reloadDict=None, logF
     #|---- Setup time slider vals -----|
     #|---------------------------------|
     if multiTime:
-        nTsli, tlabs, tmaps = sortTimeIndices([satStuff[i][0] for i in range(len(satStuff))])
+        nTsli, tlabs, tmaps = sortTimeIndices([satStuff[i][0] for i in range(len(satStuff))], tRes=tRes)
     else:
         nTsli = 0
         tlabs = None

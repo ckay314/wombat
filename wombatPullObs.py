@@ -409,7 +409,6 @@ def pullSTEREO(times, insts, EUVtime=10, CORtime=20, HItime=30, outFolder='pullF
     # |-----------------------------|
     # Secchi doesn't like using Sample, randomly starts yeeting things so no files left
     result = Fido.search(a.Time(times[0], times[1]), a.Instrument.secchi)
-    
             
     # |-----------------------------|
     # |---------- Sorting ----------|
@@ -430,7 +429,6 @@ def pullSTEREO(times, insts, EUVtime=10, CORtime=20, HItime=30, outFolder='pullF
             for i in range(len(EUVIwav)):
                 wavidx[i][0] =np.where((result[0]['Wavelength'][:,0] == EUVIwav[i]*u.AA) & (result[0]['Source'] == 'STEREO_A'))[0]
                 wavidx[i][1] =np.where((result[0]['Wavelength'][:,0] == EUVIwav[i]*u.AA) & (result[0]['Source'] == 'STEREO_B'))[0] 
-
                 # Manually downselect 
                 '''for j in range(2):
                     fullN = len(wavidx[i][j])
@@ -441,10 +439,11 @@ def pullSTEREO(times, insts, EUVtime=10, CORtime=20, HItime=30, outFolder='pullF
                 sublist = [[],[]]
                 for j in range(2):
                     for idx in wavidx[i][j]:
+                        
                         if len(sublist[j]) == 0:
                             sublist[j].append(idx)
                         else:
-                            if (result[0]['Start Time'][idx] - result[0]['Start Time'][sublist[j][-1]]).to(u.min).to_value() >= EUVtime:
+                            if (result[0]['Start Time'][idx] - result[0]['Start Time'][sublist[j][-1]]).to(u.min).to_value() >= 0.95*EUVtime:
                                  sublist[j].append(idx)
                 wavidx[i] = sublist
             
@@ -529,7 +528,7 @@ def pullSTEREO(times, insts, EUVtime=10, CORtime=20, HItime=30, outFolder='pullF
                 if len(justTot[j]) == 0:
                     justTot[j].append(idx)
                 else:
-                    if (result[0]['Start Time'][idx] - result[0]['Start Time'][justTot[j][-1]]).to(u.min).to_value() >= CORtime:
+                    if (result[0]['Start Time'][idx] - result[0]['Start Time'][justTot[j][-1]]).to(u.min).to_value() >= 0.95*CORtime:
                          justTot[j].append(idx)            
     whichC[1] = justTot
     
@@ -541,7 +540,7 @@ def pullSTEREO(times, insts, EUVtime=10, CORtime=20, HItime=30, outFolder='pullF
                 if len(myKeeps) == 0:
                     myKeeps.append(idx)
                 else:
-                    if (result[0]['Start Time'][idx] - result[0]['Start Time'][myKeeps[-1]]).to(u.min).to_value() >= HItime:
+                    if (result[0]['Start Time'][idx] - result[0]['Start Time'][myKeeps[-1]]).to(u.min).to_value() >= 0.95*HItime:
                          myKeeps.append(idx)
             whichC[k][j] = myKeeps
                 
@@ -821,7 +820,7 @@ def pullObs(times, insts, outFolder='pullFolder/', EUVtime=10, CORtime=20, HItim
         if inst in STkeys:
             doSTEREO.append(inst)
     if len(doSTEREO) > 0:
-        pullSTEREO(times, doSTEREO, CORtime=CORtime, outFolder=outFolder)
+        pullSTEREO(times, doSTEREO, EUVtime=EUVtime, CORtime=CORtime, HItime=HItime, outFolder=outFolder)
     
 
     # |-------------------------------|

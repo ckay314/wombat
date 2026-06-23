@@ -81,6 +81,12 @@ import sys, os
 import pickle
 import sunpy
 
+# emulate euro-mode to test if ok with 
+# commas in text box numbers 
+#from PyQt5.QtCore import QLocale
+#locale = QLocale(QLocale.German, QLocale.Germany)
+#QLocale.setDefault(locale)
+
 
 sys.path.append('wombatCode/') 
 from wombatGUI import releaseTheWombat
@@ -248,21 +254,21 @@ def reloadLogLine(theFile, lineIds):
     for i in range(nWFs):
         mytype = miniLog[i, 3]
         mytype = mytype.replace('Half', 'Half ')
-        myparams = miniLog[i,4:-2]
+        myparams = miniLog[i,4:13]
         myparams = myparams[np.where(myparams != 'None')].astype(float)
         reloadDict['WFtype'+str(i+1)] = mytype
         reloadDict['AllParams'+str(i+1)] = myparams
     
     # time index, should be same for everyone
-    reloadDict['TimeIdx'] = miniLog[0,-1]
+    reloadDict['TimeIdx'] = miniLog[0,14]
     reloadDict['Time'] = miniLog[0,2]
     
     # background pickle, should be same for everyone
-    uniqPickles = np.unique(miniLog[:, -2])
+    uniqPickles = np.unique(miniLog[:, 13])
     if len(uniqPickles) != 1:
         sys.exit('Different background pickles passed, cannot reload')
     
-    thePickle =  miniLog[0,-2]   
+    thePickle =  miniLog[0,13]   
     reloadDict['BkgPickle'] = thePickle
     with open(thePickle, 'rb') as file:
         bkgData = pickle.load(file)
@@ -665,6 +671,17 @@ def runWombat(args):
     doReload     = False
     overviewPlot = False
     logFile      = None
+    
+    #|-------------------------------|
+    #|--- Check for output folder ---|     
+    #|-------------------------------|
+    if not os.path.exists('wbOutputs/'):
+        os.mkdir('wbOutputs/')
+        print ('Created output folder wbOutputs')
+        
+    #|---------------------------|
+    #|--- Check the arguments ---|     
+    #|---------------------------|
     # Assume reload file not pickle if name includes SummaryFile
     if 'reload' in theFile.lower():
         doReload = True
@@ -715,7 +732,7 @@ def runWombat(args):
     if nWFs > 5:
         sys.exit('Max limit of 5 wireframes')
         
-    releaseTheWombat(bkgData, reloadDict=reloadDict, overviewPlot=overviewPlot, nWFs=nWFs, logFile=logFile)   
+    releaseTheWombat(bkgData, reloadDict=reloadDict, overviewPlot=overviewPlot, nWFs=nWFs, logFile=logFile, tRes=10)   
         
         
 if __name__ == '__main__':
