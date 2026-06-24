@@ -226,19 +226,117 @@ def reloadLogLine(theFile, lineIds):
     singleWF = True # will overwrite later
     
     # Will work with no + (= single id)
-    splitstr = idstr.split('+')
+    '''splitstr = idstr.split('+')
     ids = []
     for aStr in splitstr:
         try:
             ids.append(int(aStr))
         except:
-            sys.exit('Error in converting id string to individual ids')
-    ids = np.array(ids)        
+            sys.exit('Error in converting id string to individual ids')  '''  
     
+    # Range in ids
+    if '-' in idstr:
+        if '+' in idstr:
+            sys.exit('Cannot process ids with both + and -')
+        splitstr = idstr.split('-')
+        if len(splitstr) > 2:
+            sys.exit('Cannot process ids with multiple -')
+        ids = np.arange(int(splitstr[0]), int(splitstr[1])+1,1, dtype=int)
+    # Series of specific ids     
+    elif '+' in idstr:
+        splitstr = idstr.split('+')
+        ids = []
+        for aStr in splitstr:
+            try:
+                ids.append(int(aStr))
+            except:
+                print ('Error in converting id string to individual ids. Error at', aStr)
+                           
+    else:
+        try:
+            ids = [int(idstr)]
+        except:
+            print ('Error in converting id string to individual ids. Error from', idstr)
+            sys.exit()
+    
+    ids = np.array(ids)            
     miniLog = logFile[ids-1,:] # indexing starts at 0 not 1
     
+     
+    #|------------------------------|
+    #|--- Process basic log data ---|     
+    #|------------------------------|
+    reloadDict = {}
     
-    # Need to check that single time
+    # |--- Check background pickle ---|
+    # Must be same for all, can't swap in GUI (at least right now)
+    uniqPickles = np.unique(miniLog[:, 13])
+    if len(uniqPickles) != 1:
+        sys.exit('Different background pickles passed, cannot reload')
+    thePickle =  miniLog[0,13]  
+    reloadDict['BkgPickle'] = thePickle
+    with open(thePickle, 'rb') as file:
+        bkgData = pickle.load(file)
+    bkgData['pickleSource'] = thePickle
+    
+    # |--- Check times ---| *** is any of this needed?
+    # Take off the second so will pair STA/STB times that have tiny mismatch
+    tNoSec = [miniLog[i,2][:-3] for i in range(len(ids))]
+    uniqTs = np.unique(tNoSec)
+    nTimes = len(uniqTs)
+    reloadDict['nTimes'] = nTimes
+    
+    # |--- Get number of WFs ---|
+    wfTypes = np.unique(miniLog[:,3])
+    nWFs = len(wfTypes)
+    if nWFs > 5:
+        sys.exit('Max limit of 5 wireframes')
+    for i in range(nWFs):
+        wfTypes[i] = wfTypes[i].replace('Half', 'Half ')
+    reloadDict['nWFs'] = nWFs
+    reloadDict['wfTypes'] = wfTypes
+    
+    #|-----------------------------|
+    #|--- Populate reload by WF ---|     
+    #|-----------------------------|
+    reloadDict['Params'] = {}
+    reloadDict['PTimes'] = {}
+    reloadDict['Pidx']  = {}
+    reloadDict['PlotVals'] = {}
+    uniqInst = np.unique(miniLog[:, 1])
+    for aInst in uniqInst:
+        reloadDict['Pidx'][aInst]  = {}
+        reloadDict['PlotVals'][aInst]  = {}
+        
+    for aWF in wfTypes:
+        reloadDict['Params'][aWF] = {}
+        thisWF = np.where(miniLog[:,3] == aWF)[0]
+        for idx in thisWF:
+            myInst = miniLog[idx, 1]
+            myTime = miniLog[idx,2][:-3]
+            myParams = miniLog[idx,4:13]
+            myParams = myParams[myParams != 'None'].astype(float)
+            
+            if myTime in reloadDict['Params'][aWF].keys():
+                for j in range(len(myParams)):
+                    if reloadDict['Params'][aWF][myTime][j] != myParams[j]:
+                        print ('Multiple params for '+aWF+ ' at '+myTime)
+                        print (myParams)
+                        print (reloadDict['Params'][aWF][myTime])
+                        sys.exit('Disagreement in parameters for '+aWF+ ' at '+myTime)
+            else:
+                reloadDict['Params'][aWF][myTime] = myParams
+            
+            if myTime in reloadDict['Pidx'][myInst].keys():
+                if reloadDict['Pidx'][myInst][myTime] != miniLog[idx, 14]:
+                    sys.exit('Mismatch in pickle index for '+myInst+' at '+myTime)
+            else:
+                reloadDict['Pidx'][myInst][myTime] = miniLog[idx, 14]
+            
+            reloadDict['PlotVals'][myInst][myTime] = miniLog[idx, 15:] 
+                
+    
+    '''# Need to check that single time
     uniqTs = np.unique(miniLog[:, 2])
     if len(uniqTs) > 1:
         sys.exit('Multiple times selected by line ids. Need to pick single time to show but full time series will be loaded.')
@@ -249,8 +347,8 @@ def reloadLogLine(theFile, lineIds):
     nWFs = len(miniLog[:,0])
     reloadDict['nWFs'] = nWFs
     
-    if nWFs > 5:
-        sys.exit('Max limit of 5 wireframes')
+    #if nWFs > 5:
+    #    sys.exit('Max limit of 5 wireframes')
     for i in range(nWFs):
         mytype = miniLog[i, 3]
         mytype = mytype.replace('Half', 'Half ')
@@ -263,16 +361,9 @@ def reloadLogLine(theFile, lineIds):
     reloadDict['TimeIdx'] = miniLog[0,14]
     reloadDict['Time'] = miniLog[0,2]
     
-    # background pickle, should be same for everyone
-    uniqPickles = np.unique(miniLog[:, 13])
-    if len(uniqPickles) != 1:
-        sys.exit('Different background pickles passed, cannot reload')
     
-    thePickle =  miniLog[0,13]   
-    reloadDict['BkgPickle'] = thePickle
-    with open(thePickle, 'rb') as file:
-        bkgData = pickle.load(file)
-    bkgData['pickleSource'] = thePickle
+     
+    '''
             
     return bkgData, reloadDict, nWFs
 

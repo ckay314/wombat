@@ -772,28 +772,38 @@ class ParamWindow(QMainWindow):
             Changes the background time step for each plot window
         
         """
+        # Check for diff WF params in reload data
+        if type(wfParamLog) != type(None):
+            pchange = False
+            for ff in range(self.nTabs):
+                newtidx = pws[0].st2obs[tval-2]
+                isDiff = np.abs(pws[0].tidx -newtidx) == 1
+                if isDiff:
+                    wfs[ff].params = wfParamLog[wfs[ff].WFtype][tval-2]
+                    wfs[ff].getPoints()
+            # Replot wf if it changed
+            if isDiff:
+                for ipw in range(nSats):
+                    pws[ipw].plotWFs()
+
         # Cannot for the life of me figure out why having tval = 1
         # makes the parameter sliders appear at 0 (values and WFs ok tho)
         # Just avoid 1 so the slider starts at 2 and shift what is passed
         for ff in range(self.nTabs):
-            # tabIndex = mainwindow.tab_widget.currentIndex()
             if self.Tsliders[ff].value() != tval:
                 self.Tsliders[ff].setValue(tval) 
+                
+
         for aPW in pws:
             aPW.tidx = aPW.st2obs[tval-2]
             aPW.plotBackground()   
         for aTlab in self.Tlabels: 
-        #    aStr = 'Time selection:' #+ str(tval)
-        #    print (self.tlabs[tval-2])
-        #    aTlab.setText(aStr)
             aTlab.setText('Time selection: '+self.tlabs[tval-2])
-        #self.widges[ff][0][0].blockSignals(True)
-        #self.Tlabels[0].setText(str(tval).rjust(55))
+        
+        
         if ovw:
             ovw.updateFoV()
-        
-        #print (self.widges[ff][1][0].value(), self.widges[ff][1][0].value())
-        
+         
         
     def EBclicked(self):
         """
@@ -2700,7 +2710,7 @@ def pts2proj(pts_in, obs, scale, mywcs, occultR=None):
 # |------------------------------------------------------------|
 # |--------------- Set up GUI from reload file ----------------|
 # |------------------------------------------------------------|
-def reloadIt(rD):
+def reloadIt(rD, tlabs, tmaps, satNames):
     """
     Function to reload the GUI from a save file 
     
@@ -2714,10 +2724,47 @@ def reloadIt(rD):
             had when the save file was generated
         
     """
+    
+    # Reload dict has
+    # ['Params'][aWF][aTime] = [params]
+    # ['Pidx'][aInst][aTime] = pickle index
+    # ['PlotVals'][aInst][aTime] = [scale type, diff type, min, max]
+    
+    # tmaps -> slider idx to pickle idx
+    sliDts = [datetime.datetime.strptime(atime, "%Y-%m-%dT%H:%M") for atime in tlabs]
+    sliDeltas = np.array([(atime - sliDts[0]).total_seconds() for atime in sliDts])
+    
+    # Repackage the reload params by time index
+    reloadParams = {}
+    nsli = len(tmaps[0])
+    wfs = np.array([str(key) for key in rD['Params']])
+    for aWF in wfs :
+        myTimes = np.array([str(key) for key in rD['Params'][aWF]])
+        wfDts = [datetime.datetime.strptime(key, "%Y-%m-%dT%H:%M") for key in myTimes]
+        wfDeltas = np.array([(atime - sliDts[0]).total_seconds() for atime in wfDts])
+        
+        reloadParams[aWF] = []
+        # For each slider time find closest wf time
+        for i in range(nsli):
+            myDiffs = np.abs(wfDeltas - sliDeltas[i])
+            myMatch = np.where(myDiffs == np.min(myDiffs))[0][0]
+            reloadParams[aWF].append(rD['Params'][aWF][myTimes[myMatch]])
+        
+    # Loop through wfs, set at earliest time step
+    for i in range(nwfs):
+        aWF = wfs[i]
+        WFid = WFname2id[aWF]
+        mainwindow.cbs[i].setCurrentIndex(WFid)
+        myParams = reloadParams[aWF][0]
+        for j in range(len(myParams)):
+            mainwindow.widges[i][0][j].setValue(reloadParams[aWF][0][j])    
+        
+    return reloadParams
+    
     # |---------------------------|
     # |---- Check reload type ----|    
     # |---------------------------|
-    isLogLine = False
+    '''isLogLine = False
     if 'AllParams1' in rD:
         isLogLine = True    
     
@@ -2740,14 +2787,6 @@ def reloadIt(rD):
                 # Do all text boxes first
                 for j in range(len(myParams)):
                     mainwindow.widges[i][0][j].setValue(inParams[j])
-                # Then update the sliders
-                # Not needed with SpinBox
-                '''for j in range(len(myParams)):                    
-                    myRng = wfs[i].ranges[j]
-                    dx = (myRng[1] - myRng[0]) / (mainwindow.nSliders - 1)
-                    x0 = myRng[0]
-                    slidx = int((float(wfs[i].params[j]) - x0)/dx)
-                    mainwindow.widges[i][1][j].setValue(slidx)'''
             else:
                 #|---- Check for params by label ----|
                 for j in range(len(wfs[i].labels)):
@@ -2809,7 +2848,7 @@ def reloadIt(rD):
     
     #for i in range(nwfs):    
     #    mainwindow.Tsliders[i].setValue(int(rD['TimeIdx']))
-    #    mainwindow.update_tidx(int(rD['TimeIdx']))
+    #    mainwindow.update_tidx(int(rD['TimeIdx']))'''
     
 # |------------------------------------------------------------|
 # |-------------------- Setup Time Indices --------------------|
@@ -2982,9 +3021,10 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, reloadDict=None, logF
     #|-----------------------------| 
     #|---- Other Global Setup -----|
     #|-----------------------------|
-    global mainwindow, pws, nSats, wfs, nwfs, bmodes, ovw, bkgpkl
+    global mainwindow, pws, nSats, wfs, nwfs, bmodes, ovw, bkgpkl, wfParamLog
     global paramsBuilt
     paramsBuilt = False # keep from trying to build WF until param widgets done
+    wfParamLog = None
     
     #|----------------------------------------| 
     #|--- Pull apart background data input ---|
@@ -3002,9 +3042,6 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, reloadDict=None, logF
     #|---- Pull sat number from obsFiles ----|
     nSats = len(WBinfo['Insts'])
     
-    for i in range(nSats):
-        aSat = WBinfo['Insts'][i]
-        #print (aSat, len(proIms[aSat][0]), len(massIms[aSat]))
     
     #|-----------------------------| 
     #|---- Remap keys to ints -----|
@@ -3050,6 +3087,7 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, reloadDict=None, logF
     else:
         nTsli = 0
         tlabs = None
+        tmaps = None
     
 
     #|--------------------------------| 
@@ -3124,7 +3162,7 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, reloadDict=None, logF
     #|---- Set values from reload -----|
     #|---------------------------------|
     if type(reloadDict) != type(None):
-        reloadIt(reloadDict)
+        wfParamLog = reloadIt(reloadDict, tlabs, tmaps, WBinfo['Insts'])
 
     sys.exit(app.exec_())
     
