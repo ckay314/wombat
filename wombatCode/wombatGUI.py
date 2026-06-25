@@ -74,7 +74,7 @@ class ParamWindow(QMainWindow):
                defaults to none
      
     """
-    def __init__(self, nTabs, tlabs=None):
+    def __init__(self, nTabs, tlabs=None, tmap=None):
         """
         Intial setup for the param window class.
     
@@ -103,6 +103,7 @@ class ParamWindow(QMainWindow):
             self.tlabs = tlabs
             self.Tlabels = []
             self.Tsliders = []
+            self.tmap = tmap
         # Hide the time slider if we only have one time
         else:
             self.nTsli = 0 # random number to make it happy
@@ -133,6 +134,7 @@ class ParamWindow(QMainWindow):
         self.widges = [None for i in range(nTabs)]
         self.layouts = []
         self.cbs = []
+        self.radButs = []
         
         # Number of points in the parameter sliders
         self.nSliders = 201
@@ -183,10 +185,13 @@ class ParamWindow(QMainWindow):
         # |------ Time Slider ------|
         Tslider1 = QSlider()
         Tslider1.setOrientation(QtCore.Qt.Horizontal)
+        self.Tsli_dragging = False # State flag
         # Slider doesn't like the number 1 for no apparent reason
         # so easiest just to avoid
         Tslider1.setRange(2,self.nTsli+2)
+        Tslider1.sliderPressed.connect(self.dragOn)
         Tslider1.valueChanged.connect(self.update_tidx)
+        Tslider1.sliderReleased.connect(self.tsli_release)
         layout.addWidget(Tslider1, 1,0,1,11)
         Tslider1.setMaximumWidth(250)
         Tslider1.setMaximumHeight(30)
@@ -243,9 +248,10 @@ class ParamWindow(QMainWindow):
         layout.addWidget(radBut1, 41,5,1,5,alignment=QtCore.Qt.AlignCenter)
         radBut2 = QRadioButton('Base')
         layout.addWidget(radBut2, 41,8,1,5,alignment=QtCore.Qt.AlignCenter)
-        radBut1.toggled.connect(lambda:self.btnstate(radBut1))
+        if i == 0:
+            radBut1.toggled.connect(lambda:self.btnstate(radBut1))
         #radBut2.toggled.connect(lambda:self.btnstate(radBut2))
-        self.radButs = [radBut1, radBut2]
+        self.radButs.append([radBut1, radBut2])
 
         # |----- Background Drop Down Box ----|
         # Background mode drop down box
@@ -517,18 +523,27 @@ class ParamWindow(QMainWindow):
             self.close()    
         elif event.key() == QtCore.Qt.Key_Escape:
             sys.exit()
-        #|--- Time Slider ---|
+        #|--- Time Slider ---| Apparently these are useless
+        # Apparently these are useless on param window?
+        # the arrows auto connect to slider, though not sure
+        # if needed on other windows 
         elif event.key()== QtCore.Qt.Key_Right:
             Tval = self.Tsliders[0].value()
             self.Tsliders[0].setValue(Tval+1)
+            self.tsli_release() 
         elif event.key()== QtCore.Qt.Key_Left:
             Tval = self.Tsliders[0].value()
-            self.Tsliders[0].setValue(Tval-1)            
+            self.Tsliders[0].setValue(Tval-1) 
+            self.tsli_release()          
         #|--- Difference mode ---|
         elif event.key()== QtCore.Qt.Key_B:
-            self.radButs[1].setChecked(True)
+            for ff in range(self.nTabs):
+                self.radButs[ff][0].setChecked(False)
+                self.radButs[ff][1].setChecked(True)
         elif event.key()== QtCore.Qt.Key_R:
-            self.radButs[0].setChecked(True)
+            for ff in range(self.nTabs):
+                self.radButs[ff][0].setChecked(True)
+                self.radButs[ff][1].setChecked(False)
         #|--- Scaling mode ---|
         elif event.key()== QtCore.Qt.Key_1:
             self.Bcbox.setCurrentIndex(0)
@@ -686,19 +701,29 @@ class ParamWindow(QMainWindow):
         # |------- Switching existing type -------| 
         # |---------------------------------------|    
         else:
-            # Create a new wf object but pass it any matching
-            # parameters from the previous version
-            paramsBuilt = False
-            ogLabs = wfs[idx].labels
-            ogParams = wfs[idx].params
             myType = self.WFnum2type[a]
             newWF = wf.wireframe(self.WFnum2type[a], WFidx=idx+1)
-            newLabs = newWF.labels
-            for iii in range(len(ogLabs)):
-                aLab = ogLabs[iii]
-                if aLab in newLabs:
-                    pidx = np.where(newLabs == aLab)[0]
-                    newWF.params[pidx] = ogParams[iii]
+            paramsBuilt = False
+            
+            # Check if have a reload file first
+            doneReloadedIt = False
+            if type(wfParamLog) != type(None):
+                if myType in wfParamLog:
+                    tidx = self.Tsliders[0].value()
+                    newWF.params = wfParamLog[myType][tidx-2]
+                    doneReloadedIt = True
+            # Otherwise just match what params we can
+            if not doneReloadedIt:
+                # Create a new wf object but pass it any matching
+                # parameters from the previous version
+                ogLabs = wfs[idx].labels
+                ogParams = wfs[idx].params
+                newLabs = newWF.labels
+                for iii in range(len(ogLabs)):
+                    aLab = ogLabs[iii]
+                    if aLab in newLabs:
+                        pidx = np.where(newLabs == aLab)[0]
+                        newWF.params[pidx] = ogParams[iii]
                     
             # Change the tab text        
             self.tab_widget.setTabText(idx,self.WFshort[self.WFnum2type[a]])
@@ -760,6 +785,9 @@ class ParamWindow(QMainWindow):
         for aPW in pws:
              aPW.cbox.setCurrentIndex(text)         
     
+    def dragOn(self):
+        self.Tsli_dragging = True
+    
     def update_tidx(self, tval):
         """
         Event for time slider changes. It changes the time index for the 
@@ -772,38 +800,80 @@ class ParamWindow(QMainWindow):
             Changes the background time step for each plot window
         
         """
-        # Check for diff WF params in reload data
-        if type(wfParamLog) != type(None):
-            pchange = False
-            for ff in range(self.nTabs):
-                newtidx = pws[0].st2obs[tval-2]
-                isDiff = np.abs(pws[0].tidx -newtidx) == 1
-                if isDiff:
-                    wfs[ff].params = wfParamLog[wfs[ff].WFtype][tval-2]
-                    wfs[ff].getPoints()
-            # Replot wf if it changed
-            if isDiff:
-                for ipw in range(nSats):
-                    pws[ipw].plotWFs()
-
         # Cannot for the life of me figure out why having tval = 1
         # makes the parameter sliders appear at 0 (values and WFs ok tho)
         # Just avoid 1 so the slider starts at 2 and shift what is passed
         for ff in range(self.nTabs):
             if self.Tsliders[ff].value() != tval:
                 self.Tsliders[ff].setValue(tval) 
+        
+        tidx = tval - 2 # this is what everyone who is not a slider should use        
                 
-
         for aPW in pws:
-            aPW.tidx = aPW.st2obs[tval-2]
+            aPW.tidx = aPW.st2obs[tidx]
+            if type(winSettingsLog) != type(None):
+                myInst = winSettingsLog['win2name'][aPW.winidx]
+                myDif = winSettingsLog[myInst][tidx][0]
+                myscl = winSettingsLog[myInst][tidx][1]-1
+                myMin = winSettingsLog[myInst][tidx][2]
+                myMax = winSettingsLog[myInst][tidx][3]
+
+                self.radButs[0][myDif].setChecked(True)
+                self.radButs[0][np.abs(myDif-1)].setChecked(False)
+                aPW.cbox.setCurrentIndex(myscl)    
+                    
+                aPW.MinSlider.setValue(myMin)
+                aPW.MaxSlider.setValue(myMax)
+            
             aPW.plotBackground()   
+
         for aTlab in self.Tlabels: 
-            aTlab.setText('Time selection: '+self.tlabs[tval-2])
-        
-        
+            aTlab.setText('Time selection: '+self.tlabs[tidx])
+                
         if ovw:
             ovw.updateFoV()
-         
+            
+        # Update WF if not dragging
+        if not self.Tsli_dragging:
+            isDiff = False
+            if type(wfParamLog) != type(None):
+                for ff in range(self.nTabs):  
+                    if wfs[ff].WFtype in wfParamLog:
+                        # Check if changed
+                        sumDiff = 0
+                        for jj in range(len(wfs[ff].params)):
+                            sumDiff += np.abs(wfs[ff].params[jj] - wfParamLog[wfs[ff].WFtype][tidx][jj])
+                            
+                        if sumDiff != 0:
+                            wfs[ff].params = np.copy(wfParamLog[wfs[ff].WFtype][tidx]) # no pointer
+                            wfs[ff].getPoints()
+                            for j in range(len(wfs[ff].params)):
+                                self.widges[ff][0][j].setValue(wfs[ff].params[j])
+                            isDiff = True
+                            
+                            #tidx = self.Tsliders[0].value()
+                            #pidx = self.tmap[0][tidx]
+                            #allThisTidx = np.where(self.tmap[0] == pidx)[0]
+                                                                                    
+                if isDiff:
+                    for ipw in range(nSats):
+                        pws[ipw].plotWFs()
+            
+    def tsli_release(self):
+        # Check for diff WF params in reload data
+        if type(wfParamLog) != type(None):
+            self.Tsli_dragging = False
+            for ff in range(self.nTabs):  
+                if wfs[ff].WFtype in wfParamLog:           
+                    tval = self.Tsliders[ff].value()
+                    tidx = tval - 2
+                    wfs[ff].params = np.copy(wfParamLog[wfs[ff].WFtype][tidx]) 
+                    wfs[ff].getPoints()
+                    for j in range(len(wfs[ff].params)):
+                        self.widges[ff][0][j].setValue(wfs[ff].params[j])
+                
+            for ipw in range(nSats):
+                pws[ipw].plotWFs()
         
     def EBclicked(self):
         """
@@ -867,8 +937,8 @@ class ParamWindow(QMainWindow):
                 Parameters (filled with Nones up to 9 values as needed)
                 Pickle name
                 Time index for that sat
-                Scale mode for that sat ()
                 Base mode for that sat (R or B)
+                Scale mode for that sat ()
                 Levels min (int)
                 Levels max
                 
@@ -1101,6 +1171,7 @@ class ParamWindow(QMainWindow):
                 if widges[0][i].text() != '':
                     aWF.params[i] = float(widges[0][i].text().replace(',','.'))
             aWF.getPoints()
+                        
             for ipw in range(nSats):
                 pws[ipw].plotWFs(justN=aWF.WFidx-1)
             if ovw:
@@ -1413,8 +1484,24 @@ class FigWindow(QWidget):
         """
         if 'Min' in pref:
             self.slidervals[self.didx,self.sclidx,0] = x
+            if type(winSettingsLog) != type(None):
+                myInst = winSettingsLog['win2name'][self.winidx]
+                tidx = mainwindow.Tsliders[0].value()
+                pidx = self.st2obs[tidx]
+                allThisTidx = np.where(self.st2obs == pidx)[0]
+                for aId in allThisTidx:
+                    winSettingsLog[myInst][aId-2][2] = x
+            
         elif 'Max' in pref:
             self.slidervals[self.didx,self.sclidx,1] = x
+            if type(winSettingsLog) != type(None):
+                myInst = winSettingsLog['win2name'][self.winidx]
+                tidx = mainwindow.Tsliders[0].value()
+                pidx = self.st2obs[tidx]
+                allThisTidx = np.where(self.st2obs == pidx)[0]
+                for aId in allThisTidx:
+                    winSettingsLog[myInst][aId-2][3] = x
+                
         l.setText(pref + str(x))
         self.plotBackground()
 
@@ -1464,14 +1551,18 @@ class FigWindow(QWidget):
         elif event.key()== QtCore.Qt.Key_Left:
             if 'mainwindow' in globals():
                 Tval = mainwindow.Tsliders[0].value()
-                mainwindow.Tsliders[0].setValue(Tval-1)            
+                mainwindow.Tsliders[0].setValue(Tval-1)    
         #|--- Difference mode ---|
         elif event.key()== QtCore.Qt.Key_B:
             if 'mainwindow' in globals():
-                mainwindow.radButs[1].setChecked(True)
+                for ff in range(mainwindow.nTabs):
+                    mainwindow.radButs[ff][0].setChecked(False)
+                    mainwindow.radButs[ff][1].setChecked(True)
         elif event.key()== QtCore.Qt.Key_R:
             if 'mainwindow' in globals():
-                mainwindow.radButs[0].setChecked(True)
+                for ff in range(mainwindow.nTabs):
+                    mainwindow.radButs[ff][1].setChecked(False)
+                    mainwindow.radButs[ff][0].setChecked(True)
         #|--- Scaling mode ---|
         elif event.key()== QtCore.Qt.Key_1:
             if 'mainwindow' in globals():
@@ -2122,18 +2213,22 @@ class OverviewWindow(QWidget):
         elif event.key()== QtCore.Qt.Key_Right:
             if 'mainwindow' in globals():
                 Tval = mainwindow.Tsliders[0].value()
-                mainwindow.Tsliders[0].setValue(Tval+1)
+                mainwindow.tsli_release()      
         elif event.key()== QtCore.Qt.Key_Left:
             if 'mainwindow' in globals():
                 Tval = mainwindow.Tsliders[0].value()
-                mainwindow.Tsliders[0].setValue(Tval-1)            
+                mainwindow.tsli_release()                
         #|--- Difference mode ---|
         elif event.key()== QtCore.Qt.Key_B:
             if 'mainwindow' in globals():
-                mainwindow.radButs[1].setChecked(True)
+                for ff in range(mainwindow.nTabs):
+                    mainwindow.radButs[ff][0].setChecked(False)
+                    mainwindow.radButs[ff][1].setChecked(True)
         elif event.key()== QtCore.Qt.Key_R:
             if 'mainwindow' in globals():
-                mainwindow.radButs[0].setChecked(True)
+                for ff in range(mainwindow.nTabs):
+                    mainwindow.radButs[ff][1].setChecked(False)
+                    mainwindow.radButs[ff][0].setChecked(True)
         #|--- Scaling mode ---|
         elif event.key()== QtCore.Qt.Key_1:
             if 'mainwindow' in globals():
@@ -2734,7 +2829,7 @@ def reloadIt(rD, tlabs, tmaps, satNames):
     sliDts = [datetime.datetime.strptime(atime, "%Y-%m-%dT%H:%M") for atime in tlabs]
     sliDeltas = np.array([(atime - sliDts[0]).total_seconds() for atime in sliDts])
     
-    # Repackage the reload params by time index
+    # Repackage the reload params by slider time index
     reloadParams = {}
     nsli = len(tmaps[0])
     wfs = np.array([str(key) for key in rD['Params']])
@@ -2749,6 +2844,21 @@ def reloadIt(rD, tlabs, tmaps, satNames):
             myDiffs = np.abs(wfDeltas - sliDeltas[i])
             myMatch = np.where(myDiffs == np.min(myDiffs))[0][0]
             reloadParams[aWF].append(rD['Params'][aWF][myTimes[myMatch]])
+    
+    # Repackage the plot settings     
+    reloadPSettings = {}
+    insts =    np.array([str(key) for key in rD['PlotVals']])
+    for aInst in insts:
+        myTimes = np.array([str(key) for key in rD['PlotVals'][aInst]])
+        plotDts = [datetime.datetime.strptime(key, "%Y-%m-%dT%H:%M") for key in myTimes]
+        plotDeltas = np.array([(atime - sliDts[0]).total_seconds() for atime in plotDts])
+        
+        reloadPSettings[aInst] = []
+        # For each slider time find closest wf time
+        for i in range(nsli):
+            myDiffs = np.abs(plotDeltas - sliDeltas[i])
+            myMatch = np.where(myDiffs == np.min(myDiffs))[0][0]
+            reloadPSettings[aInst].append(rD['PlotVals'][aInst][myTimes[myMatch]].astype(int))
         
     # Loop through wfs, set at earliest time step
     for i in range(nwfs):
@@ -2758,98 +2868,26 @@ def reloadIt(rD, tlabs, tmaps, satNames):
         myParams = reloadParams[aWF][0]
         for j in range(len(myParams)):
             mainwindow.widges[i][0][j].setValue(reloadParams[aWF][0][j])    
+    
+    # Same thing for plot windows
+    win2name = {}
+    for apw in pws:
+        myInst = insts[apw.winidx]
+        win2name[apw.winidx] = myInst
+        myDif = reloadPSettings[myInst][0][0]
+        myscl = reloadPSettings[myInst][0][1]-1
+        myMin = reloadPSettings[myInst][0][2]
+        myMax = reloadPSettings[myInst][0][3]
         
-    return reloadParams
-    
-    # |---------------------------|
-    # |---- Check reload type ----|    
-    # |---------------------------|
-    '''isLogLine = False
-    if 'AllParams1' in rD:
-        isLogLine = True    
-    
-    # |----------------------------------|
-    # |---- Set Wireframe Parameters ----|    
-    # |----------------------------------|
-    
-    #|---- Loop through each wireframe ----|
-    for i in range(nwfs):
-        ii = str(i+1)
-        #|---- Determine type ----|
-        if 'WFtype'+ii in rD:
-            WFid = WFname2id[rD['WFtype'+ii]]
-            wfs[i]  = wf.wireframe(rD['WFtype'+ii])
-            mainwindow.cbs[i].setCurrentIndex(WFid)           
-            if isLogLine:
-                myParams = rD['AllParams'+ii]
-                wfs[i].params = myParams
-                inParams = np.copy(myParams)
-                # Do all text boxes first
-                for j in range(len(myParams)):
-                    mainwindow.widges[i][0][j].setValue(inParams[j])
-            else:
-                #|---- Check for params by label ----|
-                for j in range(len(wfs[i].labels)):
-                    thisLab = wfs[i].labels[j]
-                    if ' ' in thisLab:
-                        spIdx = thisLab.find(' ')
-                        shortStr = thisLab[:spIdx]+ii
-                    else:
-                        shortStr = thisLab+ii
-                    # If found reset the wf param value and the widges
-                    if shortStr in rD:
-                        wfs[i].params[j] = float(rD[shortStr])
-                        mainwindow.widges[i][0][j].setValue(wfs[i].params[j])
-                for j in range(len(wfs[i].labels)):        
-                    # Update the slider too
-                    myRng = wfs[i].ranges[j]
-                    dx = (myRng[1] - myRng[0]) / (mainwindow.nSliders - 1)
-                    x0 = myRng[0]
-                    slidx = int((float(wfs[i].params[j]) - x0)/dx)
-                    mainwindow.widges[i][1][j].setValue(slidx)
-            #|---- Show this wireframe ----|
-            mainwindow.updateWFpoints(wfs[i], mainwindow.widges[i])
-    
-    if not isLogLine:
-        # |-----------------------------------|
-        # |---- Set Background Parameters ----|    
-        # |-----------------------------------|
-        for i in range(nSats):
-            ii = str(i+1)
-            if ('ScaleIdx'+ii in rD):
-                myscl = int(rD['ScaleIdx'+ii])
-                pws[i].cbox.setCurrentIndex(myscl)
-            if ('MinVal'+ii in rD):    
-                myMin = int(rD['MinVal'+ii])
-                pws[i].MinSlider.setValue(myMin)
-            if ('MaxVal'+ii in rD):        
-                myMax = int(rD['MaxVal'+ii])
-                pws[i].MaxSlider.setValue(myMax)
-    
-    # |--- Give it its name ---|
-    if 'myName' in rD:
-        mainwindow.oBox.setText(rD['myName'])
-    
-    timedifs = []
-    inDT = datetime.datetime.strptime(rD['Time'], "%Y-%m-%dT%H:%M:%S" )
-    for atime in mainwindow.tlabs:
-        timedifs.append(np.abs((inDT - datetime.datetime.strptime(atime, "%Y-%m-%dT%H:%M" )).total_seconds()))
-    timedifs = np.array(timedifs)
-    
-    slidx = np.where(timedifs == np.min(timedifs))[0] 
-    for i in range(mainwindow.nTabs):
-        mainwindow.Tsliders[i].setValue(slidx[0]+2)
-        mainwindow.Tlabels[i].setText('Time selection: '+mainwindow.tlabs[slidx[0]])
-
-    #for aPW in pws:
-    #    aPW.tidx = int(rD['TimeIdx'])
-    #    aPW.plotBackground()    
-    
-    
-    #for i in range(nwfs):    
-    #    mainwindow.Tsliders[i].setValue(int(rD['TimeIdx']))
-    #    mainwindow.update_tidx(int(rD['TimeIdx']))'''
-    
+        mainwindow.radButs[0][myDif].setChecked(True)
+        mainwindow.radButs[0][np.abs(myDif-1)].setChecked(False)
+        apw.cbox.setCurrentIndex(myscl)        
+        apw.MinSlider.setValue(myMin)
+        apw.MaxSlider.setValue(myMax)
+    reloadPSettings['win2name'] = win2name
+ 
+    return reloadParams, reloadPSettings
+        
 # |------------------------------------------------------------|
 # |-------------------- Setup Time Indices --------------------|
 # |------------------------------------------------------------|
@@ -3021,10 +3059,11 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, reloadDict=None, logF
     #|-----------------------------| 
     #|---- Other Global Setup -----|
     #|-----------------------------|
-    global mainwindow, pws, nSats, wfs, nwfs, bmodes, ovw, bkgpkl, wfParamLog
+    global mainwindow, pws, nSats, wfs, nwfs, bmodes, ovw, bkgpkl, wfParamLog, winSettingsLog
     global paramsBuilt
     paramsBuilt = False # keep from trying to build WF until param widgets done
     wfParamLog = None
+    winSettingsLog = None
     
     #|----------------------------------------| 
     #|--- Pull apart background data input ---|
@@ -3148,7 +3187,7 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, reloadDict=None, logF
     #|----------------------------------| 
     #|---- Launch Parameter Window -----|
     #|----------------------------------|
-    mainwindow = ParamWindow(nwfs, tlabs=tlabs)
+    mainwindow = ParamWindow(nwfs, tlabs=tlabs, tmap=tmaps)
     # check if we had a name for the output box
     if type(logFile) != type(None):
         mainwindow.oBox.setText(logFile)
@@ -3162,7 +3201,7 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, reloadDict=None, logF
     #|---- Set values from reload -----|
     #|---------------------------------|
     if type(reloadDict) != type(None):
-        wfParamLog = reloadIt(reloadDict, tlabs, tmaps, WBinfo['Insts'])
+        wfParamLog, winSettingsLog = reloadIt(reloadDict, tlabs, tmaps, WBinfo['Insts'])
 
     sys.exit(app.exec_())
     
