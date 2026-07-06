@@ -190,7 +190,7 @@ class ParamWindow(QMainWindow):
         # so easiest just to avoid
         Tslider1.setRange(2,self.nTsli+2)
         Tslider1.sliderPressed.connect(self.dragOn)
-        Tslider1.valueChanged.connect(self.update_tidx)
+        Tslider1.valueChanged.connect(lambda x: self.update_tidx(x, i))
         Tslider1.sliderReleased.connect(self.tsli_release)
         layout.addWidget(Tslider1, 1,0,1,11)
         Tslider1.setMaximumWidth(250)
@@ -430,36 +430,36 @@ class ParamWindow(QMainWindow):
         # |------ Parameters 1 - 4 ------|
         # All wftype have 4+ parameters so these always included
         widges[1][0].valueChanged.connect(lambda x: self.s2b(x, widges[0][0], i2f[0], myWF.ranges[0][0], myWF, widges))  
-        widges[0][0].valueChanged.connect(lambda: self.b2s(widges[1][0], widges[0][0], i2f[0], myWF.ranges[0][0],nSliders, myWF, widges))     
+        widges[0][0].valueChanged.connect(lambda: self.b2s(widges[1][0], widges[0][0], i2f[0], myWF.ranges[0][0],nSliders, myWF, widges, 0))     
         widges[1][1].valueChanged.connect(lambda x: self.s2b(x, widges[0][1], i2f[1], myWF.ranges[1][0], myWF, widges))  
-        widges[0][1].valueChanged.connect(lambda: self.b2s(widges[1][1], widges[0][1], i2f[1], myWF.ranges[1][0],nSliders, myWF, widges))
+        widges[0][1].valueChanged.connect(lambda: self.b2s(widges[1][1], widges[0][1], i2f[1], myWF.ranges[1][0],nSliders, myWF, widges, 1))
         widges[1][2].valueChanged.connect(lambda x: self.s2b(x, widges[0][2], i2f[2], myWF.ranges[2][0], myWF, widges))  
-        widges[0][2].valueChanged.connect(lambda: self.b2s(widges[1][2], widges[0][2], i2f[2], myWF.ranges[2][0],nSliders, myWF, widges))
+        widges[0][2].valueChanged.connect(lambda: self.b2s(widges[1][2], widges[0][2], i2f[2], myWF.ranges[2][0],nSliders, myWF, widges, 2))
         widges[1][3].valueChanged.connect(lambda x: self.s2b(x, widges[0][3], i2f[3], myWF.ranges[3][0], myWF, widges))  
-        widges[0][3].valueChanged.connect(lambda: self.b2s(widges[1][3], widges[0][3], i2f[3], myWF.ranges[3][0],nSliders, myWF, widges))
+        widges[0][3].valueChanged.connect(lambda: self.b2s(widges[1][3], widges[0][3], i2f[3], myWF.ranges[3][0],nSliders, myWF, widges, 3))
         # |-------- Parameters 5+ -------|
         # Need to check each of the remaining bc depends on wftype
         myNP = len(myWF.labels)
         # At least 5 params
         if myNP > 4:
             widges[1][4].valueChanged.connect(lambda x: self.s2b(x, widges[0][4], i2f[4], myWF.ranges[4][0], myWF, widges))  
-            widges[0][4].valueChanged.connect(lambda: self.b2s(widges[1][4], widges[0][4], i2f[4], myWF.ranges[4][0],nSliders, myWF, widges))
+            widges[0][4].valueChanged.connect(lambda: self.b2s(widges[1][4], widges[0][4], i2f[4], myWF.ranges[4][0],nSliders, myWF, widges, 4))
         # At least 6 params    
         if myNP > 5:
             widges[1][5].valueChanged.connect(lambda x: self.s2b(x, widges[0][5], i2f[5], myWF.ranges[5][0], myWF, widges))  
-            widges[0][5].valueChanged.connect(lambda: self.b2s(widges[1][5], widges[0][5], i2f[5], myWF.ranges[5][0],nSliders, myWF, widges))
+            widges[0][5].valueChanged.connect(lambda: self.b2s(widges[1][5], widges[0][5], i2f[5], myWF.ranges[5][0],nSliders, myWF, widges, 5))
         # At least 7 params    
         if myNP > 6:
             widges[1][6].valueChanged.connect(lambda x: self.s2b(x, widges[0][6], i2f[6], myWF.ranges[6][0], myWF, widges))  
-            widges[0][6].valueChanged.connect(lambda: self.b2s(widges[1][6], widges[0][6], i2f[6], myWF.ranges[6][0],nSliders, myWF, widges))
+            widges[0][6].valueChanged.connect(lambda: self.b2s(widges[1][6], widges[0][6], i2f[6], myWF.ranges[6][0],nSliders, myWF, widges, 6))
         # At least 8 params           
         if myNP > 7:
             widges[1][7].valueChanged.connect(lambda x: self.s2b(x, widges[0][7], i2f[7], myWF.ranges[7][0], myWF, widges))  
-            widges[0][7].valueChanged.connect(lambda: self.b2s(widges[1][7], widges[0][7], i2f[7], myWF.ranges[7][0],nSliders, myWF, widges))
+            widges[0][7].valueChanged.connect(lambda: self.b2s(widges[1][7], widges[0][7], i2f[7], myWF.ranges[7][0],nSliders, myWF, widges, 7))
         # At least 9 params    
         if myNP > 8:
             widges[1][8].valueChanged.connect(lambda x: self.s2b(x, widges[0][8], i2f[8], myWF.ranges[8][0], myWF, widges))  
-            widges[0][8].valueChanged.connect(lambda: self.b2s(widges[1][8], widges[0][8], i2f[8], myWF.ranges[8][0],nSliders, myWF, widges))
+            widges[0][8].valueChanged.connect(lambda: self.b2s(widges[1][8], widges[0][8], i2f[8], myWF.ranges[8][0],nSliders, myWF, widges, 8))
 
         # |---------------------------------------|
         # |------- Initiate Widget Values --------| 
@@ -468,15 +468,16 @@ class ParamWindow(QMainWindow):
         inParams = np.copy(myWF.params)
         for i in range(myNP):
             myVal = inParams[i]
-            slidx = int((myVal - myWF.ranges[i][0])/ i2f[i])
-            if slidx > nSliders -1:
-                slidx = nSliders -1
-                myVal = myWF.ranges[i][1]
-            elif slidx < 0:
-                slidx = 0
-                myVal = myWF.ranges[i][0]
-            widges[1][i].setValue(slidx)
-            widges[0][i].setValue(myVal)
+            if type(myVal) != type(None):
+                slidx = int((myVal - myWF.ranges[i][0])/ i2f[i])
+                if slidx > nSliders -1:
+                    slidx = nSliders -1
+                    myVal = myWF.ranges[i][1]
+                elif slidx < 0:
+                    slidx = 0
+                    myVal = myWF.ranges[i][0]
+                widges[1][i].setValue(slidx)
+                widges[0][i].setValue(myVal)
         
         # An attempt to make things always stay the same size
         # This isn't exact same across all WF but close
@@ -528,13 +529,15 @@ class ParamWindow(QMainWindow):
         # the arrows auto connect to slider, though not sure
         # if needed on other windows 
         elif event.key()== QtCore.Qt.Key_Right:
-            Tval = self.Tsliders[0].value()
-            self.Tsliders[0].setValue(Tval+1)
-            self.tsli_release() 
+            print ("r")
+            #Tval = self.Tsliders[0].value()
+            #self.Tsliders[0].setValue(Tval+1)
+            #self.tsli_release() 
         elif event.key()== QtCore.Qt.Key_Left:
-            Tval = self.Tsliders[0].value()
-            self.Tsliders[0].setValue(Tval-1) 
-            self.tsli_release()          
+            print('l')
+            #Tval = self.Tsliders[0].value()
+            #self.Tsliders[0].setValue(Tval-1) 
+            #self.tsli_release()          
         #|--- Difference mode ---|
         elif event.key()== QtCore.Qt.Key_B:
             for ff in range(self.nTabs):
@@ -598,8 +601,9 @@ class ParamWindow(QMainWindow):
             b.setValue(myVal)
             # Update the wirefram
             #self.updateWFpoints(myWF, widges) # not needed now with value change on spin box
+        
 
-    def b2s(self,s,b, dx=None, x0=None, nSli=None, myWF=None, widges=None):
+    def b2s(self,s,b, dx=None, x0=None, nSli=None, myWF=None, widges=None, myOrd=None):
         """
         Event for slider changes
         
@@ -635,6 +639,18 @@ class ParamWindow(QMainWindow):
         # Set slider value    
         s.setValue(slidx)
         
+        if type(wfParamLog) != type(None):
+            tidx = self.Tsliders[0].value() - 2
+            pidx = self.tmap[0][tidx]
+            allThisTidx = np.where(self.tmap[0] == pidx)[0]
+            doRest = False
+            # Check if other params are all Nones -> first time hitting
+            # an unused line in Log file
+            newPs = myWF.params
+            newPs[myOrd] = float(temp)
+            for anIdx in allThisTidx:
+                wfParamLog[myWF.WFtype][anIdx] = np.copy(newPs)
+                   
         # The above triggers s2b since the slider changes so
         # reset it to what we actual wanted instead of slider rounded val
         #b.setValue(float(temp))
@@ -707,11 +723,13 @@ class ParamWindow(QMainWindow):
             
             # Check if have a reload file first
             doneReloadedIt = False
-            if type(wfParamLog) != type(None):
-                if myType in wfParamLog:
-                    tidx = self.Tsliders[0].value()
-                    newWF.params = wfParamLog[myType][tidx-2]
-                    doneReloadedIt = True
+            #if type(wfParamLog) != type(None):
+            #if myType in wfParamLog:
+            tidx = self.Tsliders[0].value()
+            myPs = wfParamLog[myType][tidx-2]
+            if type(myPs[0]) != type(None):
+                newWF.params = wfParamLog[myType][tidx-2]
+                doneReloadedIt = True
             # Otherwise just match what params we can
             if not doneReloadedIt:
                 # Create a new wf object but pass it any matching
@@ -724,6 +742,12 @@ class ParamWindow(QMainWindow):
                     if aLab in newLabs:
                         pidx = np.where(newLabs == aLab)[0]
                         newWF.params[pidx] = ogParams[iii]
+                # save the new values in param log
+                tidx = self.Tsliders[0].value() - 2
+                ppidx = self.tmap[0][tidx]
+                allThisTidx = np.where(self.tmap[0] == ppidx)[0]
+                for anIdx in allThisTidx:
+                    wfParamLog[myType][anIdx] = newWF.params
                     
             # Change the tab text        
             self.tab_widget.setTabText(idx,self.WFshort[self.WFnum2type[a]])
@@ -788,7 +812,7 @@ class ParamWindow(QMainWindow):
     def dragOn(self):
         self.Tsli_dragging = True
     
-    def update_tidx(self, tval):
+    def update_tidx(self, tval, myId=None):
         """
         Event for time slider changes. It changes the time index for the 
         window and just calls the basic plot function 
@@ -803,61 +827,66 @@ class ParamWindow(QMainWindow):
         # Cannot for the life of me figure out why having tval = 1
         # makes the parameter sliders appear at 0 (values and WFs ok tho)
         # Just avoid 1 so the slider starts at 2 and shift what is passed
+        
+        # Reset all time sliders to the same value
         for ff in range(self.nTabs):
             if self.Tsliders[ff].value() != tval:
                 self.Tsliders[ff].setValue(tval) 
         
-        tidx = tval - 2 # this is what everyone who is not a slider should use        
-                
-        for aPW in pws:
-            aPW.tidx = aPW.st2obs[tidx]
-            if type(winSettingsLog) != type(None):
-                myInst = winSettingsLog['win2name'][aPW.winidx]
-                myDif = winSettingsLog[myInst][tidx][0]
-                myscl = winSettingsLog[myInst][tidx][1]-1
-                myMin = winSettingsLog[myInst][tidx][2]
-                myMax = winSettingsLog[myInst][tidx][3]
+        # Only do the full update process once
+        if self.tab_widget.currentIndex() == myId:
+            tidx = tval - 2 # this is what everyone who is not a slider should use        
+            for aPW in pws:
+                aPW.tidx = aPW.st2obs[tidx]
+                if type(winSettingsLog) != type(None):
+                    myInst = winSettingsLog['win2name'][aPW.winidx]
+                    myDif = winSettingsLog[myInst][tidx][0]
+                    myscl = winSettingsLog[myInst][tidx][1]-1
+                    myMin = winSettingsLog[myInst][tidx][2]
+                    myMax = winSettingsLog[myInst][tidx][3]
 
-                self.radButs[0][myDif].setChecked(True)
-                self.radButs[0][np.abs(myDif-1)].setChecked(False)
-                aPW.cbox.setCurrentIndex(myscl)    
+                    self.radButs[0][myDif].setChecked(True)
+                    self.radButs[0][np.abs(myDif-1)].setChecked(False)
+                    aPW.cbox.setCurrentIndex(myscl)    
                     
-                aPW.MinSlider.setValue(myMin)
-                aPW.MaxSlider.setValue(myMax)
+                    aPW.MinSlider.setValue(myMin)
+                    aPW.MaxSlider.setValue(myMax)
             
-            aPW.plotBackground()   
+                aPW.plotBackground()   
 
-        for aTlab in self.Tlabels: 
-            aTlab.setText('Time selection: '+self.tlabs[tidx])
+            for aTlab in self.Tlabels: 
+                aTlab.setText('Time selection: '+self.tlabs[tidx])
                 
-        if ovw:
-            ovw.updateFoV()
+            if ovw:
+                ovw.updateFoV()
             
-        # Update WF if not dragging
-        if not self.Tsli_dragging:
-            isDiff = False
-            if type(wfParamLog) != type(None):
-                for ff in range(self.nTabs):  
-                    if wfs[ff].WFtype in wfParamLog:
-                        # Check if changed
-                        sumDiff = 0
-                        for jj in range(len(wfs[ff].params)):
-                            sumDiff += np.abs(wfs[ff].params[jj] - wfParamLog[wfs[ff].WFtype][tidx][jj])
+            # Update WF if not dragging
+            if not self.Tsli_dragging:
+                isDiff = False
+                if type(wfParamLog) != type(None):
+                    for ff in range(self.nTabs):  
+                        if None in wfParamLog[wfs[ff].WFtype][tidx]:
+                            wfParamLog[wfs[ff].WFtype][tidx] = wfs[ff].params
                             
-                        if sumDiff != 0:
-                            wfs[ff].params = np.copy(wfParamLog[wfs[ff].WFtype][tidx]) # no pointer
-                            wfs[ff].getPoints()
-                            for j in range(len(wfs[ff].params)):
-                                self.widges[ff][0][j].setValue(wfs[ff].params[j])
-                            isDiff = True
+                        else:
+                            # Check if changed
+                            sumDiff = 0
+                            nowVals = []
+                            #print (tidx, wfs[ff].params, wfParamLog[wfs[ff].WFtype][tidx])
+                            for jj in range(len(wfs[ff].params)):
+                                sumDiff += np.abs(wfs[ff].params[jj] - wfParamLog[wfs[ff].WFtype][tidx][jj])
+                                nowVals.append(wfs[ff].params[jj])
                             
-                            #tidx = self.Tsliders[0].value()
-                            #pidx = self.tmap[0][tidx]
-                            #allThisTidx = np.where(self.tmap[0] == pidx)[0]
+                            if sumDiff != 0:                            
+                                wfs[ff].params = np.copy(wfParamLog[wfs[ff].WFtype][tidx]) # no pointer
+                                wfs[ff].getPoints()
+                                for j in range(len(wfs[ff].params)):
+                                    self.widges[ff][0][j].setValue(wfs[ff].params[j])
+                                isDiff = True
                                                                                     
-                if isDiff:
-                    for ipw in range(nSats):
-                        pws[ipw].plotWFs()
+                    if isDiff:
+                        for ipw in range(nSats):
+                            pws[ipw].plotWFs()
             
     def tsli_release(self):
         # Check for diff WF params in reload data
@@ -867,7 +896,23 @@ class ParamWindow(QMainWindow):
                 if wfs[ff].WFtype in wfParamLog:           
                     tval = self.Tsliders[ff].value()
                     tidx = tval - 2
-                    wfs[ff].params = np.copy(wfParamLog[wfs[ff].WFtype][tidx]) 
+                    
+                    # Check if param log is empty for this WF
+                    if type(wfParamLog[wfs[ff].WFtype][tidx][0]) == type(None):
+                        for i in range(len(self.widges[ff][0])):
+                            if self.widges[ff][0][i].text() != '':
+                                wfs[ff].params[i] = float(self.widges[ff][0][i].text().replace(',','.'))
+                                
+                        # save the new values in param log
+                        tidx = self.Tsliders[0].value() - 2
+                        ppidx = self.tmap[0][tidx]
+                        allThisTidx = np.where(self.tmap[0] == ppidx)[0]
+                        for anIdx in allThisTidx:
+                            wfParamLog[wfs[ff].WFtype][anIdx] = wfs[ff].params
+                                
+                    else:
+                        wfs[ff].params = np.copy(wfParamLog[wfs[ff].WFtype][tidx]) 
+                    
                     wfs[ff].getPoints()
                     for j in range(len(wfs[ff].params)):
                         self.widges[ff][0][j].setValue(wfs[ff].params[j])
@@ -2822,7 +2867,7 @@ def reloadIt(rD, tlabs, tmaps, satNames):
     
     # Reload dict has
     # ['Params'][aWF][aTime] = [params]
-    # ['Pidx'][aInst][aTime] = pickle index
+    # ['Pidx'][aInst][aTime] = pickle index -> no exist now?
     # ['PlotVals'][aInst][aTime] = [scale type, diff type, min, max]
     
     # tmaps -> slider idx to pickle idx
@@ -2833,17 +2878,24 @@ def reloadIt(rD, tlabs, tmaps, satNames):
     reloadParams = {}
     nsli = len(tmaps[0])
     wfs = np.array([str(key) for key in rD['Params']])
-    for aWF in wfs :
-        myTimes = np.array([str(key) for key in rD['Params'][aWF]])
-        wfDts = [datetime.datetime.strptime(key, "%Y-%m-%dT%H:%M") for key in myTimes]
-        wfDeltas = np.array([(atime - sliDts[0]).total_seconds() for atime in wfDts])
+    for aWFspace in wf.npDict:
+        aWF = aWFspace.replace(' ', '')
+        if aWF in wfs:
+            print ('Reloading values for', aWF)
+            myTimes = np.array([str(key) for key in rD['Params'][aWF]])
+            wfDts = [datetime.datetime.strptime(key, "%Y-%m-%dT%H:%M") for key in myTimes]
+            wfDeltas = np.array([(atime - sliDts[0]).total_seconds() for atime in wfDts])
         
-        reloadParams[aWF] = []
-        # For each slider time find closest wf time
-        for i in range(nsli):
-            myDiffs = np.abs(wfDeltas - sliDeltas[i])
-            myMatch = np.where(myDiffs == np.min(myDiffs))[0][0]
-            reloadParams[aWF].append(rD['Params'][aWF][myTimes[myMatch]])
+            reloadParams[aWF] = []
+            # For each slider time find closest wf time
+            for i in range(nsli):
+                myDiffs = np.abs(wfDeltas - sliDeltas[i])
+                myMatch = np.where(myDiffs == np.min(myDiffs))[0][0]
+                reloadParams[aWF].append(rD['Params'][aWF][myTimes[myMatch]])
+        else:
+            reloadParams[aWF] = []
+            for i in range(nsli):
+                reloadParams[aWF].append(np.copy([None for j in range(wf.npDict[aWFspace])]))
     
     # Repackage the plot settings     
     reloadPSettings = {}
