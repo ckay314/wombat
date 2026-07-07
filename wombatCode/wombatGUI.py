@@ -838,7 +838,9 @@ class ParamWindow(QMainWindow):
         
         # Only do the full update process once
         if self.tab_widget.currentIndex() == myId:
-            tidx = tval - 2 # this is what everyone who is not a slider should use        
+            tidx = tval - 2 # this is what everyone who is not a slider should use   
+            ff = 0  
+            #print (tidx, wfParamLog[wfs[ff].WFtype+str(ff+1)][tidx])   
             for aPW in pws:
                 aPW.tidx = aPW.st2obs[tidx]
                 if type(winSettingsLog) != type(None):
@@ -884,8 +886,10 @@ class ParamWindow(QMainWindow):
                                 if sumDiff != 0:                            
                                     wfs[ff].params = np.copy(wfParamLog[theKey][tidx]) # no pointer
                                     wfs[ff].getPoints()
+                                    #print ('update')
                                     for j in range(len(wfs[ff].params)):
-                                        self.widges[ff][0][j].setValue(wfs[ff].params[j])
+                                        #print (wfs[ff].params[j], wfParamLog[theKey][tidx][j])
+                                        self.widges[ff][0][j].setValue(wfParamLog[theKey][tidx][j])
                                     isDiff = True
                                                                                     
                     if isDiff:
@@ -935,7 +939,7 @@ class ParamWindow(QMainWindow):
                     
                         wfs[ff].getPoints()
                         for j in range(len(wfs[ff].params)):
-                            self.widges[ff][0][j].setValue(wfs[ff].params[j])
+                            self.widges[ff][0][j].setValue(wfParamLog[theKey][tidx][j])
                 
             for ipw in range(nSats):
                 pws[ipw].plotWFs()
@@ -977,7 +981,7 @@ class ParamWindow(QMainWindow):
                 aPW.plotWFs(justN=i)
 
 
-    def LBclicked(self, singleSat=None):
+    def LBclicked(self, singleSat=None, doItAll=False):
         """
         Event for clicking the log button. If called by the parameter
         window it will log the wf parameters for each of the plot panels. 
@@ -989,6 +993,9 @@ class ParamWindow(QMainWindow):
         
         Optional Inputs:
             singleSat: the index of a single plot window
+        
+            doItAll: a flag to save all the current WF fits for all times and all
+                     instruments. defaults to False
         
         Actions:
             Adds a line in wbOutputs/oBoxText.txt where oBox text is the 
@@ -1003,7 +1010,7 @@ class ParamWindow(QMainWindow):
                 Pickle name
                 Time index for that sat
                 Base mode for that sat (R or B)
-                Scale mode for that sat ()
+                Scale mode for that sat (1 2 3 for lin, log, sqrt)
                 Levels min (int)
                 Levels max
                 
@@ -1018,37 +1025,53 @@ class ParamWindow(QMainWindow):
             toDo = [singleSat]
         else:
             toDo = range(nSats)
-            
+                
         # Time one is doing the fit
         nowTime = datetime.datetime.now()  
         for j in toDo:
             aPW = pws[j]
+            tidx2do = [] # uniform time index (for param log)
+            pidx2do = [] # plot window (for sat stuff)
+            if doItAll:
+                for ii in range(len(aPW.satStuff[0])):
+                    myLogId = np.where(aPW.st2obs == ii)[0][0]
+                    pidx2do.append(ii)
+                    tidx2do.append(myLogId)
+            else:
+                pidx2do = [aPW.tidx]
+                myLogId = np.where(aPW.st2obs == aPW.tidx)[0][0]
+                tidx2do = [myLogId]
+            
             for k in range(nwfs):
                 aWF = wfs[k]
                 if type(aWF.WFtype) != type(None):
-                    tidx = aPW.tidx
-                    tag = aPW.satStuff[0][0]['KEY']
-                    obsT = aPW.satStuff[0][tidx]['DATEOBS']
+                    #tidx = aPW.tidx
+                    for iii in range(len(tidx2do)):
+                        pidx = pidx2do[iii]
+                        tidx = tidx2do[iii]
+                        tag = aPW.satStuff[0][0]['KEY']
+                        obsT = aPW.satStuff[0][pidx]['DATEOBS']
                     
-                    # Observer and time of obs
-                    outStr = nowTime.strftime("%Y-%m-%dT%H:%M:%S")
-                    outStr += ' ' + tag + ' ' + obsT + ' ' + aWF.WFtype.replace(' ', '') +' '
-                    # Dump all the params and fill with Nones as needed
-                    for ii in range(9):
-                        if ii < (len(aWF.params)):
-                            outStr += str(aWF.params[ii]) + ' '
-                        else:
-                            outStr += 'None '
+                        # Observer and time of obs
+                        outStr = nowTime.strftime("%Y-%m-%dT%H:%M:%S")
+                        outStr += ' ' + tag + ' ' + obsT + ' ' + aWF.WFtype.replace(' ', '') +' '
+                        # Dump all the params and fill with Nones as needed
+                        for ii in range(9):
+                            if ii < (len(aWF.params)):
+                                outStr += str(aWF.params[ii]) + ' '
+                            else:
+                                outStr += 'None '
                             
-                    # Add the name of the background pickle and the time index for that data
-                    outStr += bkgpkl + ' ' + str(tidx)    
+                        # Add the name of the background pickle and the time index for that data
+                        outStr += bkgpkl + ' ' + str(tidx)    
                     
-                    # Add the background info
-                    outStr += ' ' + str(aPW.didx) + ' ' + str(aPW.sclidx+1)     
-                    svals = aPW.slidervals[aPW.didx, aPW.sclidx] # diff, scale time, min/max 
-                    outStr += ' ' + str(svals[0]) + ' '+ str(svals[1])
-                    print (outStr)
-                    logFile.write( outStr+ '\n')
+                        # Add the background info
+                        outStr += ' ' + str(aPW.didx) + ' ' + str(aPW.sclidx+1)     
+                        svals = aPW.slidervals[aPW.didx, aPW.sclidx] # diff, scale time, min/max 
+                        outStr += ' ' + str(svals[0]) + ' '+ str(svals[1])
+                        print (outStr)
+                        print(tidx, wfParamLog[aWF.WFtype+str(k+1)][tidx])
+                        #logFile.write( outStr+ '\n')
                 else:
                     print('Cannot log WF', k, 'no parameters defined')
         logFile.close()
@@ -1062,18 +1085,16 @@ class ParamWindow(QMainWindow):
         
         Optional Inputs:
             singleSat: the index of a single plot window
-        
+                
         Actions:
-            Saves reload file wombatSummaryFile.txt
             Saves a png for each plot window (only at current time index)
             Saves a png of the overview window
-            Saves fits files of the processed backgrounds (all time steps)
         
         """
         #|------------------------------------| 
         #|-------- Save Reload File ----------|
         #|------------------------------------|
-        fileName = 'wombatSummaryFile.txt'
+        '''fileName = 'wombatSummaryFile.txt'
         if self.oBox.text().lower() in ['womblog', 'wblog', '']:
             fileName = 'wombatReload.txt'
         else:
@@ -1130,12 +1151,16 @@ class ParamWindow(QMainWindow):
             outStr = 'MaxVal'+str(j+1)+': ' +str(aPW.MaxSlider.value())
             outFile.write(outStr+'\n') 
                                
-        outFile.close()
+        outFile.close()'''
 
         #|------------------------------------| 
         #|---------- Save Figures ------------|
         #|------------------------------------|
-        
+        if type(singleSat) != type(None):
+            toDo = [singleSat]
+        else:
+            toDo = range(nSats)
+            
         #|--------- Save plot windows --------|         
         for j in toDo:
             aPW = pws[j]
@@ -1144,6 +1169,7 @@ class ParamWindow(QMainWindow):
             figGrab = aPW.pWindow.grab()
             figGrab.save('wbOutputs/'+figName)
             print ('Saving figure in wbOutputs/'+figName )
+            
         #|------- Save overview window -------|   
         if ovw:
             figName = 'wombat_'+ pws[0].satStuff[0][0]['DATEOBS'].replace(':','') + '_overview.png'
@@ -1551,21 +1577,21 @@ class FigWindow(QWidget):
             self.slidervals[self.didx,self.sclidx,0] = x
             if type(winSettingsLog) != type(None):
                 myInst = winSettingsLog['win2name'][self.winidx]
-                tidx = mainwindow.Tsliders[0].value()
+                tidx = mainwindow.Tsliders[0].value() -2
                 pidx = self.st2obs[tidx]
                 allThisTidx = np.where(self.st2obs == pidx)[0]
                 for aId in allThisTidx:
-                    winSettingsLog[myInst][aId-2][2] = x
+                    winSettingsLog[myInst][aId][2] = x
             
         elif 'Max' in pref:
             self.slidervals[self.didx,self.sclidx,1] = x
             if type(winSettingsLog) != type(None):
                 myInst = winSettingsLog['win2name'][self.winidx]
-                tidx = mainwindow.Tsliders[0].value()
+                tidx = mainwindow.Tsliders[0].value() -2
                 pidx = self.st2obs[tidx]
                 allThisTidx = np.where(self.st2obs == pidx)[0]
                 for aId in allThisTidx:
-                    winSettingsLog[myInst][aId-2][3] = x
+                    winSettingsLog[myInst][aId][3] = x
                 
         l.setText(pref + str(x))
         self.plotBackground()
