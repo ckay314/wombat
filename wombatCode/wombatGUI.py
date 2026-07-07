@@ -2902,6 +2902,13 @@ def reloadIt(rD, tlabs, tmaps, satNames):
     if type(rD) != type(None):
         hasRD = True
         wfs = np.array([str(key) for key in rD['Params']])
+        # check if have a 2 in the tag but only using single ef
+        # higher number mess ups ignored
+        if len(wfs) == 1:
+            if wfs[0][:-1] != '1':
+                newName = wfs[0][:-1]+'1'
+                rD['Params'][newName] = rD['Params'][wfs[0]]
+                wfs = [newName]
     else:
         hasRD = False
         wfs = []
@@ -2915,13 +2922,14 @@ def reloadIt(rD, tlabs, tmaps, satNames):
             allNames[aWF + str(i+1)] = wf.npDict[aWF]
     
     # Fill in what we have from reload, otherwise fill with Nones to replace later
+    allt0s = []
     for aName in allNames:
         reloadParams[aName] = []
         if aName in wfs:
             myTimes = np.array([str(key) for key in rD['Params'][aName]])
             wfDts = [datetime.datetime.strptime(key, "%Y-%m-%dT%H:%M") for key in myTimes]
+            allt0s.append(wfDts[0])
             wfDeltas = np.array([(atime - sliDts[0]).total_seconds() for atime in wfDts])
-        
             # For each slider time find closest wf time
             for i in range(nsli):
                 myDiffs = np.abs(wfDeltas - sliDeltas[i])
@@ -2931,9 +2939,7 @@ def reloadIt(rD, tlabs, tmaps, satNames):
         else:
             for i in range(nsli):
                 reloadParams[aName].append(np.copy([None for j in range(allNames[aName])]))
-        
-    
-    
+
     # Repackage the plot settings     
     reloadPSettings = {}    
     for aInst in instNames:
@@ -2966,13 +2972,17 @@ def reloadIt(rD, tlabs, tmaps, satNames):
       
     # Loop through wfs, set at earliest time step
     if hasRD:
+        firstDiff = (np.min(allt0s) - sliDts[0]).total_seconds()
+        firstdelts = np.abs(sliDeltas-firstDiff)
+        myMatch = np.where(firstdelts == np.min(firstdelts))[0][0]
+        mainwindow.Tsliders[0].setValue(myMatch+2)     
         for i in range(nwfs):
             aWF = wfs[i]
             WFid = WFname2id[aWF[:-1]]
             mainwindow.cbs[i].setCurrentIndex(WFid)
-            myParams = reloadParams[aWF][0]
+            myParams = reloadParams[aWF][myMatch]
             for j in range(len(myParams)):
-                mainwindow.widges[i][0][j].setValue(reloadParams[aWF][0][j])    
+                mainwindow.widges[i][0][j].setValue(reloadParams[aWF][myMatch][j])    
     
     # Same thing for plot windows
     win2name = {}
