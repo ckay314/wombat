@@ -31,6 +31,7 @@ import sys, os
 import numpy as np
 from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QLabel, QGridLayout, QTabWidget, QSlider, QComboBox, QLineEdit, QDoubleSpinBox, QPushButton, QRadioButton
 from PyQt5 import QtCore
+from PyQt5.QtGui import QPixmap, QPainter
 import pyqtgraph as pg
 import datetime
 from itertools import pairwise
@@ -135,6 +136,10 @@ class ParamWindow(QMainWindow):
         self.layouts = []
         self.cbs = []
         self.radButs = []
+        self.textBoxes = []
+        
+        # log File name
+        self.saveName = ''
         
         # Number of points in the parameter sliders
         self.nSliders = 201
@@ -228,9 +233,10 @@ class ParamWindow(QMainWindow):
         layout.addWidget(label, 4,0, 1, 5,alignment=QtCore.Qt.AlignLeft)
         
         # |----- Output Name Text Box ----|
-        oBox = QLineEdit()
-        oBox.setText('')
-        self.oBox = oBox
+        oBox = QLineEdit(self)
+        oBox.setText(self.saveName)
+        oBox.editingFinished.connect(lambda: self.updateSaveName(i))
+        self.textBoxes.append(oBox)
         layout.addWidget(oBox, 4,5,1,6)
         
         # |----- Nested parameter layout ----|       
@@ -557,10 +563,14 @@ class ParamWindow(QMainWindow):
         #|--- Mass ---|
         elif event.key() == QtCore.Qt.Key_M:
             self.MBclicked()       
-        #|--- Saving ---|
+        #|--- Saving/Logging ---|
+        elif event.modifiers() & QtCore.Qt.KeyboardModifier.ShiftModifier:   
+            if event.key() ==  QtCore.Qt.Key_L:
+                self.LBclicked(doItAll=True)
+            elif event.key() == QtCore.Qt.Key_S:
+                self.SBclicked(doItAll=True)
         elif event.key() == QtCore.Qt.Key_S:
             self.SBclicked()
-        #|--- Logging ---|
         elif event.key() == QtCore.Qt.Key_L:
             self.LBclicked()
         #|--- Show/Hide ---|
@@ -569,6 +579,11 @@ class ParamWindow(QMainWindow):
                 self.HBclicked(i)
 
         
+    def updateSaveName(self, i):
+        self.saveName = self.textBoxes[i].text()
+        for iii in range(nwfs):
+            self.textBoxes[iii].setText(self.saveName)
+    
     def s2b(self, x=None, b=None, dx=None, x0=None, myWF=None, widges=None):
         """
         Event for slider changes. Triggered on enter press, not just a text change
@@ -1016,15 +1031,17 @@ class ParamWindow(QMainWindow):
                 
         
         """
-        nameIt = self.oBox.text()
+        nameIt = self.saveName
         if nameIt == '':
             nameIt = 'WomBlog'
         logFile = open('wbOutputs/'+nameIt+'.txt', 'a')
+
         # Check if doing one or all fits
         if type(singleSat) != type(None):
             toDo = [singleSat]
         else:
             toDo = range(nSats)
+        
                 
         # Time one is doing the fit
         nowTime = datetime.datetime.now()  
@@ -1056,27 +1073,27 @@ class ParamWindow(QMainWindow):
                         outStr = nowTime.strftime("%Y-%m-%dT%H:%M:%S")
                         outStr += ' ' + tag + ' ' + obsT + ' ' + aWF.WFtype.replace(' ', '') +' '
                         # Dump all the params and fill with Nones as needed
+                        myPs = wfParamLog[aWF.WFtype+str(k+1)][tidx]
                         for ii in range(9):
-                            if ii < (len(aWF.params)):
-                                outStr += str(aWF.params[ii]) + ' '
+                            if ii < (len(myPs)):
+                                outStr += str(myPs[ii]) + ' '
                             else:
                                 outStr += 'None '
                             
                         # Add the name of the background pickle and the time index for that data
-                        outStr += bkgpkl + ' ' + str(tidx)    
+                        outStr += bkgpkl + ' ' + str(pidx)    
                     
                         # Add the background info
                         outStr += ' ' + str(aPW.didx) + ' ' + str(aPW.sclidx+1)     
                         svals = aPW.slidervals[aPW.didx, aPW.sclidx] # diff, scale time, min/max 
                         outStr += ' ' + str(svals[0]) + ' '+ str(svals[1])
                         print (outStr)
-                        print(tidx, wfParamLog[aWF.WFtype+str(k+1)][tidx])
-                        #logFile.write( outStr+ '\n')
+                        logFile.write( outStr+ '\n')
                 else:
                     print('Cannot log WF', k, 'no parameters defined')
         logFile.close()
 
-    def SBclicked(self, singleSat=None):
+    def SBclicked(self, singleSat=None, doItAll=False):
         """
         Event for clicking the save button. If called by the parameter
         window it will save the wf parameters/reload file and images 
@@ -1091,67 +1108,6 @@ class ParamWindow(QMainWindow):
             Saves a png of the overview window
         
         """
-        #|------------------------------------| 
-        #|-------- Save Reload File ----------|
-        #|------------------------------------|
-        '''fileName = 'wombatSummaryFile.txt'
-        if self.oBox.text().lower() in ['womblog', 'wblog', '']:
-            fileName = 'wombatReload.txt'
-        else:
-            fileName = self.oBox.text() + '_reload.txt'
-        outFile = open('wbOutputs/'+fileName, 'w')
-        print ('Saving results in wbOutputs/'+fileName)
-        
-        # |----- Save the wireframe parameters ----|
-        for j in range(nwfs):
-            aWF = wfs[j]
-            # Only save if turned on
-            if aWF.WFtype:
-                outFile.write('WFtype'+str(j+1)+': ' + str(aWF.WFtype).replace(' ','')+'\n')
-                for i in range(len(aWF.labels)):
-                    thisLab = aWF.labels[i]
-                    spIdx = thisLab.find(' ')
-                    if spIdx > 0:
-                        outStr = thisLab[:spIdx]+str(j+1)+': ' + str(aWF.params[i])
-                    else:
-                        outStr = thisLab+str(j+1)+': ' + str(aWF.params[i])
-                    outFile.write(outStr+'\n')
-                
-                    
-        # |----- Save the background parameters ----|
-        # Check if doing single sat or all
-        outStr = 'BkgPickle: ' + bkgpkl + '\n'
-        outFile.write(outStr)
-        outStr = 'TimeIdx: ' +str(self.Tsliders[0].value())
-        outFile.write(outStr+'\n')
-        outStr = 'Time: ' + self.tlabs[self.Tsliders[0].value()-2]+':00'
-        outFile.write(outStr+'\n')
-        if ovw:
-            outStr = 'OVWindow:  True'
-        else:
-            outStr = 'OVWindow:  False'
-        outFile.write(outStr+'\n')
-        if type(singleSat) != type(None):
-            toDo = [singleSat]
-        else:
-            toDo = range(nSats)
-        # Look through whoever we included    
-        for j in toDo:
-            aPW = pws[j]
-            tidx = aPW.tidx
-
-            # Scaling parameters
-            # Toss obs type since using pkl now?
-            #outStr = 'ObsType'+str(j+1)+': ' + aPW.satStuff[0][tidx]['MYTAG'].replace(' ','_')
-            #outFile.write(outStr+'\n')            
-            outStr = 'ScaleIdx'+str(j+1)+': ' +str(aPW.sclidx)
-            outFile.write(outStr+'\n')
-            outStr = 'MinVal'+str(j+1)+': ' +str(aPW.MinSlider.value())
-            outFile.write(outStr+'\n')
-            outStr = 'MaxVal'+str(j+1)+': ' +str(aPW.MaxSlider.value())
-            outFile.write(outStr+'\n') 
-                               
-        outFile.close()'''
 
         #|------------------------------------| 
         #|---------- Save Figures ------------|
@@ -1160,22 +1116,54 @@ class ParamWindow(QMainWindow):
             toDo = [singleSat]
         else:
             toDo = range(nSats)
+        
+        if doItAll:
+            alltidx = []    
+            for j in toDo:
+                aPW = pws[j]
+                for ii in range(len(aPW.satStuff[0])):
+                    myLogId = np.where(aPW.st2obs == ii)[0][0]
+                    if myLogId not in alltidx:
+                        alltidx.append(myLogId)
+            counter = 1
+            for aIdx in alltidx:
+                self.Tsliders[0].setValue(aIdx+2) 
+                print ('--- Saving time step', counter, 'out of',len(alltidx),'---')
+                self.makeFigs(toDo)
+                counter += 1
+        else:
+            self.makeFigs(toDo) 
+           
             
+    def makeFigs(self, toDo, silent=False):
         #|--------- Save plot windows --------|         
         for j in toDo:
             aPW = pws[j]
-            tidx = aPW.tidx
-            figName = 'wombat_'+ aPW.satStuff[0][tidx]['DATEOBS'].replace(':','') + '_' +  aPW.satStuff[0][tidx]['MYTAG'].replace(' ','_') +'.png'
+            pidx = aPW.tidx
+            figName = 'wombat_'+ self.saveName + '_' +  aPW.satStuff[0][pidx]['MYTAG'].replace(' ','_') + '_' + aPW.satStuff[0][pidx]['DATEOBS'].replace(':','')  +'.png'
+            
             figGrab = aPW.pWindow.grab()
+            
+            if figLabels:
+                painter = QPainter(figGrab)
+                painter.setPen(pg.mkPen('w', width=1.75)) 
+                #painter.setFont(QFont("Arial", 20, QFont.Weight.Bold))
+                painter.drawText(5, 395, aPW.satStuff[0][pidx]['MYTAG'].replace('_',' ')) # X, Y coordinates
+                painter.drawText(285, 395, aPW.satStuff[0][pidx]['DATEOBS']) # X, Y coordinates
+                painter.end()
+                QApplication.processEvents()
+            
             figGrab.save('wbOutputs/'+figName)
-            print ('Saving figure in wbOutputs/'+figName )
+            if not silent:
+                print ('Saving figure in wbOutputs/'+figName )
             
         #|------- Save overview window -------|   
         if ovw:
-            figName = 'wombat_'+ pws[0].satStuff[0][0]['DATEOBS'].replace(':','') + '_overview.png'
+            figName = 'wombat_'+ self.saveName + '_overview_' + pws[0].satStuff[0][0]['DATEOBS'].replace(':','') + '.png'
             figGrab = ovw.pWindow.grab()
             figGrab.save('wbOutputs/'+figName)
-            print ('Saving figure in wbOutputs/'+figName )
+            if not silent:
+                print ('Saving figure in wbOutputs/'+figName )
             
         
     def MBclicked(self):
@@ -1626,14 +1614,19 @@ class FigWindow(QWidget):
             self.close()
         elif event.key() == QtCore.Qt.Key_Escape:
             sys.exit()
-        #|--- Saving ---|
-        elif event.key() == QtCore.Qt.Key_S:
-            if 'mainwindow' in globals():
-                mainwindow.SBclicked(singleSat=self.winidx)
-        #|--- Logging ---|
+        #|--- Saving/Logging ---|
+        elif event.modifiers() & QtCore.Qt.KeyboardModifier.ShiftModifier:  
+            if 'mainwindow' in globals(): 
+                if event.key() ==  QtCore.Qt.Key_L:
+                    mainwindow.LBclicked(doItAll=True, singleSat=self.winidx)
+                elif event.key() == QtCore.Qt.Key_S:
+                        mainwindow.SBclicked(doItAll=True, singleSat=self.winidx)
         elif event.key() == QtCore.Qt.Key_L:
             if 'mainwindow' in globals():
                 mainwindow.LBclicked(singleSat=self.winidx)
+        elif event.key() == QtCore.Qt.Key_S:
+            if 'mainwindow' in globals():
+                mainwindow.SBclicked(singleSat=self.winidx)
         #|--- Time Slider ---|
         elif event.key()== QtCore.Qt.Key_Right:
             if 'mainwindow' in globals():
@@ -2292,14 +2285,22 @@ class OverviewWindow(QWidget):
             self.close()
         elif event.key() == QtCore.Qt.Key_Escape:
             sys.exit()
-        #|--- Saving ---|
+        #|--- Saving/Logging ---|
+        elif event.modifiers() & QtCore.Qt.KeyboardModifier.ShiftModifier:  
+            if 'mainwindow' in globals(): 
+                if event.key() ==  QtCore.Qt.Key_L:
+                    mainwindow.LBclicked(doItAll=True)
+                elif event.key() == QtCore.Qt.Key_S:
+                        mainwindow.SBclicked(doItAll=True)
+        elif event.key() == QtCore.Qt.Key_L:
+            if 'mainwindow' in globals():
+                mainwindow.LBclicked()
         elif event.key() == QtCore.Qt.Key_S:
             if 'mainwindow' in globals():
                 mainwindow.SBclicked()
-        #|--- Logging ---|
         elif event.key() == QtCore.Qt.Key_L:
             if 'mainwindow' in globals():
-                mainwindow.LBclicked(singleSat=self.winidx)
+                mainwindow.LBclicked()
         #|--- Time Slider ---|
         elif event.key()== QtCore.Qt.Key_Right:
             if 'mainwindow' in globals():
@@ -3130,7 +3131,7 @@ def sortTimeIndices(satStuff, tRes=20):
 # |------------------------------------------------------------|
 # |------------------- Main Launch Function -------------------|
 # |------------------------------------------------------------|
-def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, reloadDict=None, logFile=None, tRes=20):
+def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, reloadDict=None, logFile=None, tRes=20, doFigLabs=True):
     """
     Main wrapper function to build and run the WOMBAT GUI
 
@@ -3201,10 +3202,11 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, reloadDict=None, logF
     #|---- Other Global Setup -----|
     #|-----------------------------|
     global mainwindow, pws, nSats, wfs, nwfs, bmodes, ovw, bkgpkl, wfParamLog, winSettingsLog
-    global paramsBuilt
+    global paramsBuilt, figLabels
     paramsBuilt = False # keep from trying to build WF until param widgets done
     wfParamLog = None
     winSettingsLog = None
+    figLabels = doFigLabs
     
     #|----------------------------------------| 
     #|--- Pull apart background data input ---|
@@ -3332,7 +3334,9 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, reloadDict=None, logF
     mainwindow = ParamWindow(nwfs, tlabs=tlabs, tmap=tmaps)
     # check if we had a name for the output box
     if type(logFile) != type(None):
-        mainwindow.oBox.setText(logFile)
+        for i in range(nwfs):
+            mainwindow.textBoxes[i].setText(logFile)
+        
     # Set time slider to highlight bc reload will
     # shift focus onto text box
     mainwindow.Tsliders[0].setFocus()

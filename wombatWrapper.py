@@ -758,10 +758,17 @@ def findFiles(timesIn, insts, nMax=20, obsFold='wbFits/', diffEUV=False, tRes=No
 # |----------------------- Main Wrapper -----------------------|
 # |------------------------------------------------------------|
 def runWombat(args):
+    ''' 
+    syntax is python wombatWrapper.py pkl/logFile (nwf/lines, [ovw, tRes, noFigLabs])
+    
+    '''
+    
     theFile = args[1]
     doReload     = False
     overviewPlot = False
     logFile      = None
+    doFigLabs = True
+    tRes = 20
     
     #|-------------------------------|
     #|--- Check for output folder ---|     
@@ -773,8 +780,45 @@ def runWombat(args):
     #|---------------------------|
     #|--- Check the arguments ---|     
     #|---------------------------|
+    
+    # Check if the File is pkl or log file
+    if ('.pkl' in theFile):
+        reloadDict = None
+        # Open the pickle
+        with open(theFile, 'rb') as file:
+            bkgData = pickle.load(file)
+        bkgData['pickleSource'] = theFile
+        nWFs = 1
+        if len(args) >2:
+            try: 
+                nWFs = int(args[2])
+                if nWFs > 5:
+                    sys.exit('Max limit of 5 wireframes')
+            except:
+                print ('Setting number of wireframes to 1. Change by passing integer after pkl file')
+        
+    # Not pickle, assume logFile
+    else:
+        bkgData, reloadDict, nWFs = reloadLogLine(theFile, args[2])
+        logFile = theFile.replace('.txt','').replace('wbOutputs/','')
+        if logFile == 'WomBlog':
+            logFile = None # just the name to save to... WomBlog is default
+        
+    # Check remaining for ovw, tRes, noFigLabs
+    for arg in args[1:]:
+        if arg.lower() in ['ovw', 'overviewplot', 'ovp']:
+            overviewPlot = True
+        elif arg.lower in ['nofiglabs', 'nolabs', 'nfl']:
+            doFigLabs = False
+        elif 'tres' in arg.lower():
+            num = arg.lower().replace('tres','')
+            try:
+                tRes = int(num)
+            except:
+                sys.exit('Error in converting tRes into integer number of minutes')    
+    
     # Assume reload file not pickle if name includes SummaryFile
-    if 'reload' in theFile.lower():
+    '''if 'reload' in theFile.lower():
         doReload = True
         bkgData, reloadDict, nWFs, overviewPlot = processReload(theFile)
         #sys.exit("Need to redo loading reload")
@@ -821,9 +865,9 @@ def runWombat(args):
             overviewPlot = True
     
     if nWFs > 5:
-        sys.exit('Max limit of 5 wireframes')
+        sys.exit('Max limit of 5 wireframes')'''
         
-    releaseTheWombat(bkgData, reloadDict=reloadDict, overviewPlot=overviewPlot, nWFs=nWFs, logFile=logFile, tRes=10)   
+    releaseTheWombat(bkgData, reloadDict=reloadDict, overviewPlot=overviewPlot, nWFs=nWFs, logFile=logFile, tRes=tRes, doFigLabs=doFigLabs)   
         
         
 if __name__ == '__main__':
