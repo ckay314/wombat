@@ -254,8 +254,8 @@ class ParamWindow(QMainWindow):
         layout.addWidget(radBut1, 41,5,1,5,alignment=QtCore.Qt.AlignCenter)
         radBut2 = QRadioButton('Base')
         layout.addWidget(radBut2, 41,8,1,5,alignment=QtCore.Qt.AlignCenter)
-        if i == 0:
-            radBut1.toggled.connect(lambda:self.btnstate(radBut1))
+        radBut1.clicked.connect(lambda:self.btnstate(radBut1, isMain=True))
+        radBut2.clicked.connect(lambda:self.btnstate(radBut1, isMain=True))
         #radBut2.toggled.connect(lambda:self.btnstate(radBut2))
         self.radButs.append([radBut1, radBut2])
 
@@ -545,14 +545,9 @@ class ParamWindow(QMainWindow):
             #self.Tsliders[0].setValue(Tval-1) 
             #self.tsli_release()          
         #|--- Difference mode ---|
-        elif event.key()== QtCore.Qt.Key_B:
-            for ff in range(self.nTabs):
-                self.radButs[ff][0].setChecked(False)
-                self.radButs[ff][1].setChecked(True)
-        elif event.key()== QtCore.Qt.Key_R:
-            for ff in range(self.nTabs):
-                self.radButs[ff][0].setChecked(True)
-                self.radButs[ff][1].setChecked(False)
+        #elif event.key() in [QtCore.Qt.Key_B, QtCore.Qt.Key_R]:
+        #    self.updateDiffMode(event.key())
+
         #|--- Scaling mode ---|
         elif event.key()== QtCore.Qt.Key_1:
             self.Bcbox.setCurrentIndex(0)
@@ -563,21 +558,80 @@ class ParamWindow(QMainWindow):
         #|--- Mass ---|
         elif event.key() == QtCore.Qt.Key_M:
             self.MBclicked()       
-        #|--- Saving/Logging ---|
+        #|--- Upper case for save/log/diff/scl ---|
         elif event.modifiers() & QtCore.Qt.KeyboardModifier.ShiftModifier:   
             if event.key() ==  QtCore.Qt.Key_L:
                 self.LBclicked(doItAll=True)
             elif event.key() == QtCore.Qt.Key_S:
                 self.SBclicked(doItAll=True)
+            elif event.key() in [QtCore.Qt.Key_B, QtCore.Qt.Key_R]:
+                self.updateDiffMode(event.key(), doItAll=True)
+        #|--- Difference mode ---|
+        elif event.key() in [QtCore.Qt.Key_B, QtCore.Qt.Key_R]:
+            self.updateDiffMode(event.key())    
+        #|--- Save fig ---|    
         elif event.key() == QtCore.Qt.Key_S:
             self.SBclicked()
+        #|--- Log it ---|
         elif event.key() == QtCore.Qt.Key_L:
             self.LBclicked()
         #|--- Show/Hide ---|
         elif event.key() == QtCore.Qt.Key_H:
             for i in range(self.nTabs):
                 self.HBclicked(i)
+    
+    def updateDiffMode(self, key, doItAll=False, justSat=None):
+        print('hi')
+        if type(justSat) == type(None):
+            justSat = range(nSats)
+            allSats = True
+        else:
+            allSats = False
+        
+        if doItAll:
+            if key == QtCore.Qt.Key_B:
+                setidx = 1
+                if allSats:
+                    for ff in range(self.nTabs):
+                        self.radButs[ff][0].setChecked(False)
+                        self.radButs[ff][1].setChecked(True)
+            elif key == QtCore.Qt.Key_R:
+                setidx = 0
+                if allSats:
+                    for ff in range(self.nTabs):
+                        self.radButs[ff][0].setChecked(True)
+                        self.radButs[ff][1].setChecked(False)
+                
+            
+        '''for ff in justSat:
+            myInst = winSettingsLog['win2name'][ff]
+            tidx = np.where(pws[ff].st2obs == pws[ff].pickIdx)[0]
+            if doItAll:
+                allids = range(len(pws[ff].st2obs))
+                tidx = allids[tidx[0]:]
+            
+            for aId in tidx:
+                sclidx = winSettingsLog[myInst][aId][1] 
+                winSettingsLog[myInst][aId][0] = setidx
+                winSettingsLog[myInst][aId][2] = pws[ff].prevSliderVals[setidx,sclidx,aId,0]
+                winSettingsLog[myInst][aId][3] = pws[ff].prevSliderVals[setidx,sclidx,aId,1]
+        
+            if not allSats:
+                aPW = pws[ff]
+                #aPW.didx = setidx
+                aPW.MinSlider.setValue(aPW.prevSliderVals[setidx,sclidx,tidx[0],0])  
+                aPW.MaxSlider.setValue(aPW.prevSliderVals[setidx,sclidx,tidx[0],1])  
+        
+                aPW.plotBackground()
+                        
+                        
+                #myDif = reloadPSettings[myInst][0][0]
+                #myscl = reloadPSettings[myInst][0][1]-1
+                #myMin = reloadPSettings[myInst][0][2]
+                #myMax = reloadPSettings[myInst][0][3]'''
+            
 
+        
         
     def updateSaveName(self, i):
         self.saveName = self.textBoxes[i].text()
@@ -857,7 +911,8 @@ class ParamWindow(QMainWindow):
             ff = 0  
             #print (tidx, wfParamLog[wfs[ff].WFtype+str(ff+1)][tidx])   
             for aPW in pws:
-                aPW.tidx = aPW.st2obs[tidx]
+                aPW.tslIdx = tidx
+                aPW.pickIdx = aPW.st2obs[tidx]
                 if type(winSettingsLog) != type(None):
                     myInst = winSettingsLog['win2name'][aPW.winidx]
                     myDif = winSettingsLog[myInst][tidx][0]
@@ -1189,22 +1244,31 @@ class ParamWindow(QMainWindow):
                 print ('No mass calc for EUV images')
                 
     
-    def btnstate(self,b):
+    def btnstate(self,b, isMain=False):
+        # this only gets hit from actually toggling the
+        # button, not from things that cause it to chage
         if b.isChecked():
             setidx = 0
             oidx = 1
         else:
             setidx = 1
             oidx = 0
+
         for aPW in pws:            
-            
-            aPW.slidervals[oidx,aPW.sclidx,0] = aPW.MinSlider.value()
-            aPW.slidervals[oidx,aPW.sclidx,1] = aPW.MaxSlider.value()
-            
-            aPW.didx = setidx
-            aPW.MinSlider.setValue(aPW.slidervals[setidx,aPW.sclidx,0])  
-            aPW.MaxSlider.setValue(aPW.slidervals[setidx,aPW.sclidx,1])  
-            
+            myInst = instNames[aPW.winidx]
+            for i in range(len(winSettingsLog[myInst])):
+                winSettingsLog[myInst][i][0] = setidx
+                sclidx = winSettingsLog[myInst][i][1] - 1
+                # Save current settings to prev sliders
+                aPW.prevSliderVals[oidx,sclidx,i,0] = winSettingsLog[myInst][i][2]
+                aPW.prevSliderVals[oidx,sclidx,i,1] = winSettingsLog[myInst][i][3]
+                # Pull new settings from other index of prev sliders
+                winSettingsLog[myInst][i][2] = aPW.prevSliderVals[setidx,sclidx,i,0]
+                winSettingsLog[myInst][i][3] = aPW.prevSliderVals[setidx,sclidx,i,1]
+            # Update the widgets    
+            aPW.MinSlider.setValue(aPW.prevSliderVals[setidx,sclidx,aPW.tslIdx,0])  
+            aPW.MaxSlider.setValue(aPW.prevSliderVals[setidx,sclidx,aPW.tslIdx,1])  
+            # Update the images
             aPW.plotBackground()
                     
     
@@ -1347,13 +1411,15 @@ class FigWindow(QWidget):
         self.mIms  = massIms
         self.hdrs = myObs[1]
         self.myScls2 = myScls # the scaled images
-        self.tidx = 0
-        self.didx = 0 # difference index
-        self.sclidx = 0
+        self.pickIdx = 0 # index within the pickle
+        self.tslIdx = 0 # index within the time slider
+        # no more single vals, allow to vary with time
+        #self.didx = 0 # difference index
+        #self.sclidx = 0
         self.st2obs = tmap # slider time to obs index
-        self.slidervals = np.zeros([2,3,2], dtype=int) # diff, scale time, min/max
+        self.prevSliderVals = np.zeros([2,3,len(tmap),2], dtype=int) # diff, scale, time , min/max
         self.nowMass = False # show the region used to calc mass
-        self.WFmasks = [np.zeros(myObs[self.didx][0].data.shape, dtype=int) for i in range(nwfs)]
+        self.WFmasks = [np.zeros(myObs[0][0].data.shape, dtype=int) for i in range(nwfs)]
         
         #|---- Set up/name window ----|
         if type(screenXY) == type(None):
@@ -1418,7 +1484,7 @@ class FigWindow(QWidget):
         self.pWindow.addItem(self.image)
         self.pWindow.addItem(self.MCimage)
         # shape is [rows, columns] = [y,x]
-        self.pWindow.setRange(xRange=(0,myObs[self.didx][0].data.shape[1]), yRange=(0,myObs[self.didx][0].data.shape[0]), padding=0)
+        self.pWindow.setRange(xRange=(0,myObs[0][0].data.shape[1]), yRange=(0,myObs[0][0].data.shape[0]), padding=0)
         self.pWindow_circle = None
         self.pWindow_north  = None
         
@@ -1448,8 +1514,9 @@ class FigWindow(QWidget):
                 
         #|---- Fill slider defaults ----|
         for i in range(3):
-            self.slidervals[:,i,0] = satStuff[self.didx][0]['SLIVALS'][0][i]
-            self.slidervals[:,i,1] = satStuff[self.didx][0]['SLIVALS'][1][i]
+            for j in range(len(tmap)):
+                self.prevSliderVals[:,i,j,0] = satStuff[0][0]['SLIVALS'][0][i]
+                self.prevSliderVals[:,i,j,1] = satStuff[0][0]['SLIVALS'][1][i]
         
         #|---- Min brightness label/slider ----|
         minL = QLabel('Min Value:     ')
@@ -1458,7 +1525,7 @@ class FigWindow(QWidget):
         self.MinSlider.setOrientation(QtCore.Qt.Horizontal)
         self.MinSlider.setMinimum(0)
         self.MinSlider.setMaximum(255)
-        self.MinSlider.setValue(satStuff[self.didx][0]['SLIVALS'][0][0])
+        self.MinSlider.setValue(satStuff[0][0]['SLIVALS'][0][0])
         layoutP.addWidget(self.MinSlider, 13,3,1,9)
         self.MinSlider.valueChanged.connect(lambda x: self.s2l(x, minL, 'Min Value: '))  
         
@@ -1469,14 +1536,14 @@ class FigWindow(QWidget):
         self.MaxSlider.setOrientation(QtCore.Qt.Horizontal)
         self.MaxSlider.setMinimum(0)
         self.MaxSlider.setMaximum(255)
-        self.MaxSlider.setValue(satStuff[self.didx][0]['SLIVALS'][1][0])
+        self.MaxSlider.setValue(satStuff[0][0]['SLIVALS'][1][0])
         layoutP.addWidget(self.MaxSlider, 15,3,1,9)
         self.MaxSlider.valueChanged.connect(lambda x: self.s2l(x, maxL, 'Max Value: '))  
         
         #|---- EUV Dispay Mode ----|
         # If EUV switch to show log at the start. Have to do after
         # we've addded the sliders since will adjust them
-        if self.satStuff[self.didx][0]['OBSTYPE'] == 'EUV':
+        if self.satStuff[0][0]['OBSTYPE'] == 'EUV':
             self.cbox.setCurrentIndex(1)
         
         # |----- Log Fit Button ----|
@@ -1561,8 +1628,15 @@ class FigWindow(QWidget):
             Replots background using update min/max values
      
         """
+        if type(winSettingsLog) != type(None):
+            didx = winSettingsLog[instNames[self.winidx]][self.tslIdx][0]
+            sclidx = winSettingsLog[instNames[self.winidx]][self.tslIdx][1]
+        else:
+            didx = 0
+            sclidx = 0
+            
         if 'Min' in pref:
-            self.slidervals[self.didx,self.sclidx,0] = x
+            self.prevSliderVals[didx, sclidx, self.tslIdx,0] = x
             if type(winSettingsLog) != type(None):
                 myInst = winSettingsLog['win2name'][self.winidx]
                 tidx = mainwindow.Tsliders[0].value() -2
@@ -1572,7 +1646,7 @@ class FigWindow(QWidget):
                     winSettingsLog[myInst][aId][2] = x
             
         elif 'Max' in pref:
-            self.slidervals[self.didx,self.sclidx,1] = x
+            self.prevSliderVals[didx, sclidx, self.tslIdx,1] = x
             if type(winSettingsLog) != type(None):
                 myInst = winSettingsLog['win2name'][self.winidx]
                 tidx = mainwindow.Tsliders[0].value() -2
@@ -1621,6 +1695,8 @@ class FigWindow(QWidget):
                     mainwindow.LBclicked(doItAll=True, singleSat=self.winidx)
                 elif event.key() == QtCore.Qt.Key_S:
                         mainwindow.SBclicked(doItAll=True, singleSat=self.winidx)
+                elif event.key() in [QtCore.Qt.Key_B, QtCore.Qt.Key_R]:
+                        mainwindow.updateDiffMode(event.key(), doItAll=True, justSat=[self.winidx])
         elif event.key() == QtCore.Qt.Key_L:
             if 'mainwindow' in globals():
                 mainwindow.LBclicked(singleSat=self.winidx)
@@ -1637,16 +1713,10 @@ class FigWindow(QWidget):
                 Tval = mainwindow.Tsliders[0].value()
                 mainwindow.Tsliders[0].setValue(Tval-1)    
         #|--- Difference mode ---|
-        elif event.key()== QtCore.Qt.Key_B:
+        elif event.key() in [QtCore.Qt.Key_B, QtCore.Qt.Key_R]:
             if 'mainwindow' in globals():
-                for ff in range(mainwindow.nTabs):
-                    mainwindow.radButs[ff][0].setChecked(False)
-                    mainwindow.radButs[ff][1].setChecked(True)
-        elif event.key()== QtCore.Qt.Key_R:
-            if 'mainwindow' in globals():
-                for ff in range(mainwindow.nTabs):
-                    mainwindow.radButs[ff][1].setChecked(False)
-                    mainwindow.radButs[ff][0].setChecked(True)
+                mainwindow.updateDiffMode(event.key(), justSat=[self.winidx])
+                                        
         #|--- Scaling mode ---|
         elif event.key()== QtCore.Qt.Key_1:
             if 'mainwindow' in globals():
@@ -1946,11 +2016,21 @@ class FigWindow(QWidget):
         
         """
         #|---- Grab data for this time/scaling ----|
-        myIm = self.myScls2[self.didx][self.tidx][self.sclidx]
+        if type(winSettingsLog) != type(None):
+            didx = winSettingsLog[instNames[self.winidx]][self.tslIdx][0]
+            sclidx = winSettingsLog[instNames[self.winidx]][self.tslIdx][1] -1
+            slMin = winSettingsLog[instNames[self.winidx]][self.tslIdx][2]#self.MinSlider.value()
+            slMax = winSettingsLog[instNames[self.winidx]][self.tslIdx][3]#self.MaxSlider.value()
+            
+        else:
+            didx = 0
+            sclidx = 0
+            slMin = self.MinSlider.value()
+            slMax = self.MaxSlider.value()
+        myIm = self.myScls2[didx][self.pickIdx][sclidx]
         #|---- Grab min/max from slider ----|     
-        slMin = self.MinSlider.value()
-        slMax = self.MaxSlider.value()
-
+        print (didx, sclidx, slMin, slMax, self.tslIdx, self.pickIdx)
+        
         #|---- Update image ----|     
         self.image.updateImage(image=myIm, levels=(slMin, slMax))
         #self.image.updateImage(image=self.mIms[self.tidx], levels=(-5e9, 5e9))
@@ -1959,11 +2039,11 @@ class FigWindow(QWidget):
         #fakeIm = np.zeros(myIm.shape)
         #fakeIm[250:350] = 1
         if self.nowMass: 
-            bigMask = np.zeros(self.mIms[self.tidx].shape, dtype=float)
+            bigMask = np.zeros(self.mIms[self.pickIdx].shape, dtype=float)
             for i in range(nwfs):
                 if type(self.WFmasks[i]) != type(None):
                     bigMask += self.WFmasks[i]
-                    seps = np.abs(wfs[i].params[1]-self.satStuff[self.didx][self.tidx]['POSLON'])
+                    seps = np.abs(wfs[i].params[1]-self.satStuff[didx][self.tidx]['POSLON'])
                     seps[np.where(seps > 90)] = 180 - seps[np.where(seps > 90)]
                     mySep = np.min(np.abs(seps))
                     if mySep > 80:
@@ -1973,8 +2053,8 @@ class FigWindow(QWidget):
                     rpos, Bpos = wM.elTheory([wfs[i].params[0]], 0)
                     rsep, Bsep = wM.elTheory([wfs[i].params[0]], mySep)
                     sclfct = Bsep / Bpos
-                    print ((self.satName + ' PoS WF' + str(i+1) + ' mass (g): ').rjust(50) + "{:.3e}".format(np.sum(self.WFmasks[i]* self.mIms[self.tidx])))
-                    print ((self.satName + ' deProj WF' + str(i+1) + ' mass (g): ').rjust(50) + "{:.3e}".format(np.sum(self.WFmasks[i]* self.mIms[self.tidx]/sclfct)), ' (scale factor ', "{:.1f}".format(1/sclfct[0]), ')')
+                    print ((self.satName + ' PoS WF' + str(i+1) + ' mass (g): ').rjust(50) + "{:.3e}".format(np.sum(self.WFmasks[i]* self.mIms[self.pickIdx])))
+                    print ((self.satName + ' deProj WF' + str(i+1) + ' mass (g): ').rjust(50) + "{:.3e}".format(np.sum(self.WFmasks[i]* self.mIms[self.pickIdx]/sclfct)), ' (scale factor ', "{:.1f}".format(1/sclfct[0]), ')')
                 print ('')
             self.MCimage.updateImage(image= bigMask, opacity=0.5, levels=(0,nwfs-0.5))
 
@@ -1983,44 +2063,21 @@ class FigWindow(QWidget):
             self.MCimage.updateImage(image= self.WFmasks[0], opacity=0.0, levels=(0,1))
         
         #|---- Draw stuff on top ----|     
-        if self.satStuff[self.didx][self.tidx]['OBSTYPE'] != 'EUV':
+        if self.satStuff[didx][self.pickIdx]['OBSTYPE'] != 'EUV':
             #|---- Circle at 1 Rs ----|     
-            if 'SUNCIRC' in self.satStuff[self.didx][self.tidx]:
+            if 'SUNCIRC' in self.satStuff[didx][self.pickIdx]:
                 if self.pWindow_circle:
                     self.pWindow.removeItem(self.pWindow_circle)
-                self.pWindow_circle = self.pWindow.plot(self.satStuff[self.didx][self.tidx]['SUNCIRC'][0], self.satStuff[self.didx][self.tidx]['SUNCIRC'][1])
+                self.pWindow_circle = self.pWindow.plot(self.satStuff[didx][self.pickIdx]['SUNCIRC'][0], self.satStuff[didx][self.pickIdx]['SUNCIRC'][1])
             
             #|---- Line for Solar N ----|         
-            if 'SUNNORTH' in self.satStuff[self.didx][self.tidx]:
+            if 'SUNNORTH' in self.satStuff[didx][self.pickIdx]:
                 if self.pWindow_north:
                     self.pWindow.removeItem(self.pWindow_north)
-                self.pWindow_north = self.pWindow.plot(self.satStuff[self.didx][self.tidx]['SUNNORTH'][0], self.satStuff[self.didx][self.tidx]['SUNNORTH'][1], symbolSize=3, symbolBrush='w', pen=pg.mkPen(color='w', width=1))
+                self.pWindow_north = self.pWindow.plot(self.satStuff[didx][self.pickIdx]['SUNNORTH'][0], self.satStuff[didx][self.pickIdx]['SUNNORTH'][1], symbolSize=3, symbolBrush='w', pen=pg.mkPen(color='w', width=1))
                 
-        #|---- Add text labels ----|     
-        # Replaced with off image label (one line below)        
-        '''if type(self.labelIt) != type(None):
-            geom = self.pWindow.visibleRange()
-            wid = geom.width()
-            hite = geom.height()
-            if self.labelIt.lower() == 'bottom':
-                ypos = 0.03 * hite
-            elif self.labelIt.lower() == 'top': 
-                ypos = 0.95 * hite
-            
-            instTag = self.satStuff[self.didx][self.tidx]['INST']
-            mykey = self.satStuff[0][0]['KEY']
-            # Replace general solohi with a single panel if needed
-            if mykey in ['SoloHI1', 'SoloHI2', 'SoloHI3', 'SoloHI4']:
-                instTag = self.satStuff[0][0]['KEY']
-            elif mykey in ['WISPRI', 'WISPRI_LW', 'WISPRI_L3']:
-                instTag = mykey.replace('RI','R_I').replace('RO','R_O')
-            text_item1 = pg.TextItem(self.satStuff[self.didx][self.tidx]['OBS'] + ' ' + instTag, anchor=(0, 1), fill='k')            
-            text_item1.setPos(0.01*wid, ypos)
-            self.pWindow.addItem(text_item1)
-            text_item2 = pg.TextItem(self.satStuff[self.didx][self.tidx]['DATEOBS'][:-3], anchor=(1, 1), fill='k')
-            text_item2.setPos(0.99*wid, ypos)
-            self.pWindow.addItem(text_item2)'''
-        self.time_label.setText(self.satStuff[self.didx][self.tidx]['DATEOBS'][:-3])
+        #|---- Add time labels ----|     
+        self.time_label.setText(self.satStuff[didx][self.pickIdx]['DATEOBS'][:-3])
         # Make slider highlighted so key shortcuts work
         if 'mainwindow' in globals():
             tabIndex = mainwindow.tab_widget.currentIndex()
