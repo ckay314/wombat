@@ -343,7 +343,7 @@ class ParamWindow(QMainWindow):
         cbox.addItem('SQRT')
         
         # |----- Connect Event -----|
-        cbox.currentIndexChanged.connect(self.back_changed)
+        cbox.activated.connect(lambda x:self.back_changed(x, doItAll=True))
         return cbox
         
     def WFparamLayout(self, myWF):
@@ -516,6 +516,7 @@ class ParamWindow(QMainWindow):
             h      = show/hide wfs
      
         """
+        #print (event.key())
         #|--- Pull Params/Plot ---|
         if event.key() == QtCore.Qt.Key_Return:
             for iii in range(nwfs):
@@ -551,13 +552,6 @@ class ParamWindow(QMainWindow):
         #elif event.key() in [QtCore.Qt.Key_B, QtCore.Qt.Key_R]:
         #    self.updateDiffMode(event.key())
 
-        #|--- Scaling mode ---|
-        elif event.key()== QtCore.Qt.Key_1:
-            self.Bcbox.setCurrentIndex(0)
-        elif event.key()== QtCore.Qt.Key_2:
-            self.Bcbox.setCurrentIndex(1)
-        elif event.key()== QtCore.Qt.Key_3:
-            self.Bcbox.setCurrentIndex(2)
         #|--- Mass ---|
         elif event.key() == QtCore.Qt.Key_M:
             self.MBclicked()       
@@ -569,6 +563,18 @@ class ParamWindow(QMainWindow):
                 self.SBclicked(doItAll=True)
             elif event.key() in [QtCore.Qt.Key_B, QtCore.Qt.Key_R]:
                 self.updateDiffMode(event.key(), doItAll=True)
+            elif event.key() in [33, 64, 35]:
+                if event.key() == 33: #shift 1
+                    key = QtCore.Qt.Key_1
+                elif event.key() == 64: #shift 2
+                    key = QtCore.Qt.Key_2
+                elif event.key() == 35: #shift 3
+                    key = QtCore.Qt.Key_3
+                self.updateScaleMode(key, doItAll=True)
+        #|--- Scaling mode ---|
+        elif event.key() in [QtCore.Qt.Key_1, QtCore.Qt.Key_2, QtCore.Qt.Key_3]:
+            self.updateScaleMode(event.key(), doItAll=False)
+
         #|--- Difference mode ---|
         elif event.key() in [QtCore.Qt.Key_B, QtCore.Qt.Key_R]:
             self.updateDiffMode(event.key())    
@@ -582,58 +588,63 @@ class ParamWindow(QMainWindow):
         elif event.key() == QtCore.Qt.Key_H:
             for i in range(self.nTabs):
                 self.HBclicked(i)
+                
+    def updateScaleMode(self, key, doItAll=False, justSat=None):
+        if key == QtCore.Qt.Key_1:
+            val = 0
+        elif key == QtCore.Qt.Key_2:
+            val = 1
+        elif key == QtCore.Qt.Key_3:
+            val = 2
+        self.Bcbox.setCurrentIndex(val)
+        self.back_changed(val, doItAll=doItAll, justSat=justSat)
+        
     
     def updateDiffMode(self, key, doItAll=False, justSat=None):
-        print('hi')
+        # Check if doing all instruments or single one
         if type(justSat) == type(None):
             justSat = range(nSats)
             allSats = True
         else:
             allSats = False
+            
+        # Figure out if moving to running or base 
+        if key == QtCore.Qt.Key_B:
+            setidx = 1
+        elif key == QtCore.Qt.Key_R:
+            setidx = 0
+        offidx = np.abs(setidx-1) # the other one
         
+        # Switch radio button if doing all
         if doItAll:
-            if key == QtCore.Qt.Key_B:
-                setidx = 1
-                if allSats:
-                    for ff in range(self.nTabs):
-                        self.radButs[ff][0].setChecked(False)
-                        self.radButs[ff][1].setChecked(True)
-            elif key == QtCore.Qt.Key_R:
-                setidx = 0
-                if allSats:
-                    for ff in range(self.nTabs):
-                        self.radButs[ff][0].setChecked(True)
-                        self.radButs[ff][1].setChecked(False)
+            for ff in range(self.nTabs):
+                self.radButs[ff][offidx].setChecked(False)
+                self.radButs[ff][setidx].setChecked(True)
+        
+        # |--- Loop through whatever inst we have ---|        
+        for iii in justSat:
+            aPW = pws[iii]
+            # 
+            if doItAll:
+                allThisTidx = range(len(aPW.t2p))
+            else:
+                tidx = self.Tsliders[0].value() - 2
+                # Switch all tidx for the pidx of this inst
+                pidx = aPW.t2p[tidx]
+                allThisTidx = aPW.p2t[pidx]
+            
+            # Get current values 
+            myscl = curSet[aPW.instTag][1][aPW.tslIdx]
+            setLog[aPW.instTag][offidx][myscl][0][allThisTidx] = np.copy(curSet[aPW.instTag][2][allThisTidx])
+            setLog[aPW.instTag][offidx][myscl][1][allThisTidx] = np.copy(curSet[aPW.instTag][3][allThisTidx])
+            curSet[aPW.instTag][0][allThisTidx] = setidx
+            curSet[aPW.instTag][2][allThisTidx] = np.copy(setLog[aPW.instTag][setidx][myscl][0][allThisTidx])
+            curSet[aPW.instTag][3][allThisTidx] = np.copy(setLog[aPW.instTag][setidx][myscl][1][allThisTidx])
                 
             
-        '''for ff in justSat:
-            myInst = winSettingsLog['win2name'][ff]
-            tidx = np.where(pws[ff].st2obs == pws[ff].pickIdx)[0]
-            if doItAll:
-                allids = range(len(pws[ff].st2obs))
-                tidx = allids[tidx[0]:]
-            
-            for aId in tidx:
-                sclidx = winSettingsLog[myInst][aId][1] 
-                winSettingsLog[myInst][aId][0] = setidx
-                winSettingsLog[myInst][aId][2] = pws[ff].prevSliderVals[setidx,sclidx,aId,0]
-                winSettingsLog[myInst][aId][3] = pws[ff].prevSliderVals[setidx,sclidx,aId,1]
-        
-            if not allSats:
-                aPW = pws[ff]
-                #aPW.didx = setidx
-                aPW.MinSlider.setValue(aPW.prevSliderVals[setidx,sclidx,tidx[0],0])  
-                aPW.MaxSlider.setValue(aPW.prevSliderVals[setidx,sclidx,tidx[0],1])  
-        
-                aPW.plotBackground()
-                        
-                        
-                #myDif = reloadPSettings[myInst][0][0]
-                #myscl = reloadPSettings[myInst][0][1]-1
-                #myMin = reloadPSettings[myInst][0][2]
-                #myMax = reloadPSettings[myInst][0][3]'''
-            
-
+            aPW.MinSlider.setValue(curSet[aPW.instTag][2][aPW.tslIdx])  
+            aPW.MaxSlider.setValue(curSet[aPW.instTag][3][aPW.tslIdx])
+            aPW.plotBackground()                
         
         
     def updateSaveName(self, i):
@@ -808,11 +819,15 @@ class ParamWindow(QMainWindow):
             
             # Check if have a reload file first
             doneReloadedIt = False
-            tidx = self.Tsliders[0].value()
+            tidx = self.Tsliders[0].value() - 2
             myTab = str(self.tab_widget.currentIndex() +1)
-            myPs = wfParamLog[myType+myTab][tidx-2]
-            if type(myPs[0]) != type(None):
-                newWF.params = wfParamLog[myType+myTab][tidx-2]
+            checkIt = paramLog[myType+myTab][0][tidx]
+            if type(checkIt) != type(None):
+                nps = len(paramLog[myType+myTab])
+                newPs = np.zeros(len(paramLog[myType+myTab]))
+                for iii in range(nps):
+                    newPs[iii] = paramLog[myType+myTab][iii][tidx]
+                newWF.params = newPs
                 doneReloadedIt = True
             # Otherwise just match what params we can
             if not doneReloadedIt:
@@ -824,14 +839,21 @@ class ParamWindow(QMainWindow):
                 for iii in range(len(ogLabs)):
                     aLab = ogLabs[iii]
                     if aLab in newLabs:
+                        # find matching parameter labels
                         pidx = np.where(newLabs == aLab)[0]
                         newWF.params[pidx] = ogParams[iii]
+                        
                 # save the new values in param log
-                tidx = self.Tsliders[0].value() - 2
-                ppidx = self.tmap[0][tidx]
-                allThisTidx = np.where(self.tmap[0] == ppidx)[0]
-                for anIdx in allThisTidx:
-                    wfParamLog[myType+myTab][anIdx] = newWF.params
+                # Grab range to switch
+                toSwitch = range(200)
+                for aPW in pws:
+                    pidx = aPW.t2p[tidx]
+                    allThisTidx = aPW.p2t[pidx]
+                    if len(allThisTidx) < len(toSwitch):
+                        toSwitch = allThisTidx
+                        
+                for iii in range(len(newLabs)):
+                    paramLog[myType+myTab][iii][toSwitch] = newWF.params[iii]
                     
             # Change the tab text        
             self.tab_widget.setTabText(idx,self.WFshort[self.WFnum2type[a]])
@@ -877,7 +899,7 @@ class ParamWindow(QMainWindow):
             aPW.plotBackground()
             aPW.plotWFs(justN=idx)
             
-    def back_changed(self,text):
+    def back_changed(self,text, doItAll=False, justSat=None):
         """
         Event for background combo box changes. The plot window combo box
         event handles most of the heavy lifting. This just passed the change
@@ -890,8 +912,23 @@ class ParamWindow(QMainWindow):
             Changes the background scaling for each plot window
         
         """
-        for aPW in pws:
-             aPW.cbox.setCurrentIndex(text)         
+        if type(justSat) == type(None):
+            justSat = range(nSats)
+            allSats = True
+        else:
+            allSats = False
+           
+        for iii in justSat:
+            aPW = pws[iii]
+            
+            print ('Current scl', curSet[aPW.instTag][1][aPW.tslIdx])
+            
+            # Set just the inst slider without plotting yet
+            self.holdIt = True
+            aPW.cbox.setCurrentIndex(text)       
+            self.holdIt = False
+            aPW.back_changed(text, doItAll=doItAll)   
+            print ('Upd scl', curSet[aPW.instTag][1][aPW.tslIdx])
     
     def dragOn(self):
         self.Tsli_dragging = True
@@ -923,9 +960,7 @@ class ParamWindow(QMainWindow):
             for aPW in pws:
                 aPW.tslIdx = tidx
                 aPW.pickIdx = aPW.t2p[tidx]
-                #if type(curSet) != type(None):
-                if paramsBuilt:
-                    #myInst = winSettingsLog['win2name'][aPW.winidx]
+                if type(curSet) != type(None):
                     myInst = aPW.instTag
                     myDif = curSet[myInst][0][tidx]
                     myscl = curSet[myInst][1][tidx]
@@ -998,8 +1033,6 @@ class ParamWindow(QMainWindow):
                     for ipw in range(nSats):
                         pws[ipw].plotWFs()
                         
-                            
-            
     def tsli_release(self):
         # Check for diff WF params in paramLog
         if type(paramLog) != type(None):
@@ -1290,20 +1323,20 @@ class ParamWindow(QMainWindow):
 
         for aPW in pws:            
             myInst = instNames[aPW.winidx]
-            for i in range(len(winSettingsLog[myInst])):
-                winSettingsLog[myInst][i][0] = setidx
-                sclidx = winSettingsLog[myInst][i][1] - 1
-                # Save current settings to prev sliders
-                aPW.prevSliderVals[oidx,sclidx,i,0] = winSettingsLog[myInst][i][2]
-                aPW.prevSliderVals[oidx,sclidx,i,1] = winSettingsLog[myInst][i][3]
-                # Pull new settings from other index of prev sliders
-                winSettingsLog[myInst][i][2] = aPW.prevSliderVals[setidx,sclidx,i,0]
-                winSettingsLog[myInst][i][3] = aPW.prevSliderVals[setidx,sclidx,i,1]
-            # Update the widgets    
-            aPW.MinSlider.setValue(aPW.prevSliderVals[setidx,sclidx,aPW.tslIdx,0])  
-            aPW.MaxSlider.setValue(aPW.prevSliderVals[setidx,sclidx,aPW.tslIdx,1])  
-            # Update the images
+            
+            allThisTidx = range(len(aPW.t2p))
+            
+            myscl = curSet[aPW.instTag][1][allThisTidx[0]]
+            setLog[aPW.instTag][oidx][myscl][0][allThisTidx] = np.copy(curSet[aPW.instTag][2][allThisTidx])
+            setLog[aPW.instTag][oidx][myscl][1][allThisTidx] = np.copy(curSet[aPW.instTag][3][allThisTidx])
+            curSet[aPW.instTag][0][allThisTidx] = setidx
+            curSet[aPW.instTag][2][allThisTidx] = np.copy(setLog[aPW.instTag][setidx][myscl][0][allThisTidx])
+            curSet[aPW.instTag][3][allThisTidx] = np.copy(setLog[aPW.instTag][setidx][myscl][1][allThisTidx])
+            
+            aPW.MinSlider.setValue(curSet[aPW.instTag][2][aPW.tslIdx])  
+            aPW.MaxSlider.setValue(curSet[aPW.instTag][3][aPW.tslIdx])
             aPW.plotBackground()
+            
                     
     
     #|------------------------------| 
@@ -1671,38 +1704,19 @@ class FigWindow(QWidget):
         
         # Make sure we change all tidx that match this pidx 
         if type(curSet) != type(None):
+                      
             if 'Min' in pref:
                 curSet[self.instTag][2][self.tslIdx] = x
-                allThisTidx = self.p2t[self.pickIdx]
+                allThisTidx = self.p2t[self.pickIdx]                
                 for aId in allThisTidx:
                     curSet[self.instTag][2][aId] = x
-            elif 'Min' in pref:
+                
+            elif 'Max' in pref:
                 curSet[self.instTag][3][self.tslIdx] = x
                 allThisTidx = self.p2t[self.pickIdx]
                 for aId in allThisTidx:
                     curSet[self.instTag][3][aId] = x
-                
-            #self.prevSliderVals[didx, sclidx, self.tslIdx,0] = x
-            '''if type(winSettingsLog) != type(None):
-                myInst = winSettingsLog['win2name'][self.winidx]
-                tidx = mainwindow.Tsliders[0].value() -2
-                pidx = self.t2p[tidx]
-                #allThisTidx = np.where(self.st2obs == pidx)[0]
-                allThisTidx = self.p2t[pidx]
-                for aId in allThisTidx:
-                    winSettingsLog[myInst][aId][2] = x
-            
-        elif 'Max' in pref:
-            self.prevSliderVals[didx, sclidx, self.tslIdx,1] = x
-            if type(winSettingsLog) != type(None):
-                myInst = winSettingsLog['win2name'][self.winidx]
-                tidx = mainwindow.Tsliders[0].value() -2
-                pidx = self.t2p[tidx]
-                #allThisTidx = np.where(self.st2obs == pidx)[0]
-                allThisTidx = self.p2t[pidx]
-                for aId in allThisTidx:
-                    winSettingsLog[myInst][aId][3] = x'''
-                
+                        
         l.setText(pref + str(x))
         self.plotBackground()
 
@@ -1742,9 +1756,18 @@ class FigWindow(QWidget):
                 if event.key() ==  QtCore.Qt.Key_L:
                     mainwindow.LBclicked(doItAll=True, singleSat=self.winidx)
                 elif event.key() == QtCore.Qt.Key_S:
-                        mainwindow.SBclicked(doItAll=True, singleSat=self.winidx)
+                    mainwindow.SBclicked(doItAll=True, singleSat=self.winidx)
                 elif event.key() in [QtCore.Qt.Key_B, QtCore.Qt.Key_R]:
-                        mainwindow.updateDiffMode(event.key(), doItAll=True, justSat=[self.winidx])
+                    mainwindow.updateDiffMode(event.key(), doItAll=True, justSat=[self.winidx])
+                elif event.key() in [33, 64, 35]:
+                    if event.key() == 33: #shift 1
+                        key = QtCore.Qt.Key_1
+                    elif event.key() == 64: #shift 2
+                        key = QtCore.Qt.Key_2
+                    elif event.key() == 35: #shift 3
+                        key = QtCore.Qt.Key_3
+                    mainwindow.updateScaleMode(key, doItAll=True, justSat=[self.winidx])
+                    
         elif event.key() == QtCore.Qt.Key_L:
             if 'mainwindow' in globals():
                 mainwindow.LBclicked(singleSat=self.winidx)
@@ -1766,15 +1789,19 @@ class FigWindow(QWidget):
                 mainwindow.updateDiffMode(event.key(), justSat=[self.winidx])
                                         
         #|--- Scaling mode ---|
-        elif event.key()== QtCore.Qt.Key_1:
+        elif event.key() in [QtCore.Qt.Key_1, QtCore.Qt.Key_2, QtCore.Qt.Key_3]:
             if 'mainwindow' in globals():
-                mainwindow.Bcbox.setCurrentIndex(0)
-        elif event.key()== QtCore.Qt.Key_2:
-            if 'mainwindow' in globals():
-                mainwindow.Bcbox.setCurrentIndex(1)
-        elif event.key()== QtCore.Qt.Key_3:
-            if 'mainwindow' in globals():
-                mainwindow.Bcbox.setCurrentIndex(2)
+                mainwindow.updateScaleMode(event.key(), doItAll=False, justSat=[self.winidx])
+        
+        #elif event.key()== QtCore.Qt.Key_1:
+        #    if 'mainwindow' in globals():
+        #        mainwindow.Bcbox.setCurrentIndex(0)
+        #elif event.key()== QtCore.Qt.Key_2:
+        #    if 'mainwindow' in globals():
+        #        mainwindow.Bcbox.setCurrentIndex(1)
+        #elif event.key()== QtCore.Qt.Key_3:
+        #    if 'mainwindow' in globals():
+        #        mainwindow.Bcbox.setCurrentIndex(2)
         #|--- Mass ---|
         elif event.key() == QtCore.Qt.Key_M:
             self.MBclicked()
@@ -1784,7 +1811,7 @@ class FigWindow(QWidget):
                 for i in range(mainwindow.nTabs):
                     mainwindow.HBclicked(i)
                 
-    def back_changed(self,text):
+    def back_changed(self,text, doItAll=False):
         """
         Event for background combo box changes
         
@@ -1798,11 +1825,15 @@ class FigWindow(QWidget):
         
         """
         # Switch to the new mode
-        self.sclidx = text   
-        minV, maxV = curSet[self.instTag][2][self.tslIdx], curSet[self.instTag][3][self.tslIdx]
-        self.MinSlider.setValue(minV)  
-        self.MaxSlider.setValue(maxV)  
-        self.plotBackground()
+        #self.sclidx = text  
+        curSet[self.instTag][1][self.tslIdx] = text
+        #print (doItAll)
+        if 'mainwindow' in globals():
+            if not mainwindow.holdIt:
+                minV, maxV = curSet[self.instTag][2][self.tslIdx], curSet[self.instTag][3][self.tslIdx]
+                self.MinSlider.setValue(minV)  
+                self.MaxSlider.setValue(maxV)  
+                self.plotBackground() # this good in here? seems fine but was originally outside holdIt
                    
     def EBclicked(self):
         """
@@ -2074,10 +2105,12 @@ class FigWindow(QWidget):
         if type(curSet) != type(None):
             didx = curSet[self.instTag][0][self.tslIdx]
             sclidx = curSet[self.instTag][1][self.tslIdx]
+            print ('in pB', sclidx)
             slMin = curSet[self.instTag][2][self.tslIdx]#self.MinSlider.value()
             slMax = curSet[self.instTag][3][self.tslIdx]#self.MaxSlider.value()
             
         else:
+            print ('in e;se')
             didx = 0
             sclidx = 0
             slMin = self.MinSlider.value()
@@ -3113,7 +3146,8 @@ def buildMegaVars(rD, tlabs, tmaps, satNames):
         for didx in [0, 1]:
             setLog[aInst][didx] = [[], [], []]
             for sclidx in [0,1,2]:
-                setLog[aInst][didx][sclidx] = [minVs[sclidx]*tOnes, maxVs[sclidx]*tOnes]
+                setLog[aInst][didx][sclidx] = np.copy([minVs[sclidx]*tOnes, maxVs[sclidx]*tOnes])
+                #print (aInst, didx, sclidx, len(setLog[aInst][didx][sclidx][0]), len(setLog[aInst][didx][sclidx][1]))
     
     
     #|---------------------------------------------|
@@ -3121,7 +3155,7 @@ def buildMegaVars(rD, tlabs, tmaps, satNames):
     #|---------------------------------------------|
     curSet = {}    
     for aInst in instNames:
-        curSet[aInst] = [np.zeros(nsli, dtype=int), np.zeros(nsli, dtype=int), setLog[aInst][0][0][0], setLog[aInst][0][0][1]]
+        curSet[aInst] = [np.zeros(nsli, dtype=int), np.zeros(nsli, dtype=int), np.copy(setLog[aInst][0][0][0]), np.copy(setLog[aInst][0][0][1])]
         
  
     #|---------------------------------|
@@ -3137,7 +3171,6 @@ def buildMegaVars(rD, tlabs, tmaps, satNames):
             for i in range(nsli):
                 myDiffs = np.abs(plotDeltas - sliDeltas[i])
                 myMatch = np.where(myDiffs == np.min(myDiffs))[0][0]
-                #reloadPSettings[aInst].append(rD['PlotVals'][aInst][myTimes[myMatch]].astype(int))
                 for ii in range(4):
                     curSet[aInst][ii][i] = int(rD['PlotVals'][aInst][myTimes[myMatch]][ii])
                 curSet[aInst][1][i] -= 1 
@@ -3163,21 +3196,7 @@ def buildMegaVars(rD, tlabs, tmaps, satNames):
             for j in range(len(paramLog[aWF])):
                 myP = paramLog[aWF][j][myMatch]
                 mainwindow.widges[i][0][j].setValue(myP)  
-    
-    # Same thing for plot windows auto update?
-    for apw in pws:
-        myInst = apw.instTag
-        myDif = curSet[myInst][0][myMatch]
-        myscl = curSet[myInst][1][myMatch]
-        myMin = curSet[myInst][2][myMatch]
-        myMax = curSet[myInst][3][myMatch]
-        
-        mainwindow.radButs[0][myDif].setChecked(True)
-        mainwindow.radButs[0][np.abs(myDif-1)].setChecked(False)
-        apw.cbox.setCurrentIndex(myscl)        
-        apw.MinSlider.setValue(myMin)
-        apw.MaxSlider.setValue(myMax)
- 
+     
     return paramLog, setLog, curSet
         
 # |------------------------------------------------------------|
@@ -3516,7 +3535,24 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, reloadDict=None, logF
     #|---- Set values from reload -----|
     #|---------------------------------|
     paramLog, setLog, curSet = buildMegaVars(reloadDict, tlabs, idxMaps, WBinfo['Insts'])
-    #print (curSet)
-    #print(curSet.keys())
+    # Set windows out here so curSet defined
+    for apw in pws:
+        myInst = apw.instTag
+        myDif = curSet[myInst][0][apw.tslIdx]
+        myscl = curSet[myInst][1][apw.tslIdx]
+        myMin = curSet[myInst][2][apw.tslIdx]
+        myMax = curSet[myInst][3][apw.tslIdx]
+        
+        mainwindow.radButs[0][myDif].setChecked(True)
+        mainwindow.radButs[0][np.abs(myDif-1)].setChecked(False)
+        mainwindow.holdIt = True
+        apw.cbox.setCurrentIndex(myscl)   
+        mainwindow.holdIt = False
+        # set it slightly wrong to start to make sure labels get flagged
+        apw.MinSlider.setValue(myMin+1)
+        apw.MinSlider.setValue(myMin)
+        apw.MaxSlider.setValue(myMax-1)
+        apw.MaxSlider.setValue(myMax)
+
     sys.exit(app.exec_())
     
