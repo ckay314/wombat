@@ -4,6 +4,8 @@ Set of functions and classes used to build and run the WOMBAT GUI
 The main function is releaseTheWombat, which is likely the only function
 one would need to call in an external program
 
+obsFiles, nWFs=1, overviewPlot=False, reloadDict=None, logFile=None, tRes=20, doFigLabs=True
+
 Inputs:
     obsFiles: nested lists of maps and headers that releaseTheWombat uses to
               set up the background images in the form [inst1, inst2, ...] 
@@ -15,11 +17,52 @@ Inputs:
               *** note we will pass two sets of EUV maps that are most often the same 
                   since we default to not taking a difference but this makes it easier
                   to run consistent code across all instruments
+
+Optional Inputs:
+    nWFs:         number of wireframes. Currently set an upper limit of 5 to keep
+                  GUI from becoming overloaded
+                  defaults to 1
+
+    overviewPlot: flag to include the polar/top-down overview panel showing the relative
+                  locations of the Sun, Earth, satellites, and wireframes
+                  defaults to False
+      
+    reloadDict:   option to pass a reloadDictionary (from processReload in
+                  wombatWrapper.py) to relaunch the GUI from a previous state
+                  defaults to None (aka no reload)
+
+    logFile:      name of the log file used to load a recon. Will be put into the
+                  text box in the param window
+                  defaults to None
+    
+    tRes:         time resolution (in mins) to use for the main slider. The pickled data may
+                  be in higher or lower resolution but this will be mapped to the slider
+                  values (potentially downselecting if data is higher res)
+                  defaults to 20 mins    
+
+    doFigLabs:    flag to include labels when saving figs (instrument name + time) 
+                  defaults to True
+
 Outputs:
-    No outputs unless the save button is clicked. If clicked, it will save fits files
-    for the backgrounds (processed as RD/BD) in wbFits/reloads and in wbOutputs it
-    will save wombatSummaryFile.txt which can be used to reload the current setup and
-    a png file for each observation panel and one for the overview panel (if present)
+    No outputs automatically generated. If the save button is hit then figures will be saved
+    within wbOutputs/ as wombat_SAT+INST_YYYY-MM-DD-THHMMSS.png 
+
+    If the log button is hit lines will be appended to the log file. The
+    default log file (if none was provided) is wbOutputs/WomBlog.txt and each line contains:
+        1.    time of fit  
+        2.    instrument
+        3.    time of observation
+        4.    WF type + panel number (e.g. GCS1). Adding panel number allows multiple of same type
+        5-13. WF parameter values. If a type has <9 parameters the extras are filled with None
+        14.   the WOMBAT pickle
+        15.   the index of the obs time in this pickle
+        16.   the background difference mode (0 running diff, 1 base diff)
+        17.   the scaling mode (1 linear, 2 log, 3 sqrt)
+        18.   the min brightness setting (0-256)
+        19.   the max brightness setting (0-256)
+    
+    The amount of figures saved/lines logged depends on whether one clicks a save/log button or the 
+    active window when one hits the s/l short cut keys
 
 External Calls:
     everything from wombatWF, wombatLoadCTs, wombatMass
@@ -40,6 +83,9 @@ from astropy.io import fits
 from astropy import units as u
 
 
+# |------------------------------------|
+# |------- Import Wombat Friends ------|
+# |------------------------------------|
 import wombatWF as wf
 import wombatMass as wM
 from wombatLoadCTs import *
@@ -73,9 +119,9 @@ class ParamWindow(QMainWindow):
     Optional Input:
         tlabs: labels for the time slider (instead of printing an index)
                defaults to none
-     
+        
     """
-    def __init__(self, nTabs, tlabs=None, tmap=None):
+    def __init__(self, nTabs, tlabs=None):
         """
         Intial setup for the param window class.
     
@@ -98,13 +144,12 @@ class ParamWindow(QMainWindow):
         self.nTabs = nTabs
         
         # Check how many times we have using the name strings
-        # Or make the times slider for 2+ times
+        # If multi time set up the slider
         if type(tlabs) != type(None):    
             self.nTsli = len(tlabs) - 1 # slider goes 0 to val so subtract 1
             self.tlabs = tlabs
             self.Tlabels = []
             self.Tsliders = []
-            #self.tmap = tmap #!!!! Needed?
         # Hide the time slider if we only have one time
         else:
             self.nTsli = 0 # random number to make it happy
@@ -216,11 +261,7 @@ class ParamWindow(QMainWindow):
         cbox = self.wfComboBox(i)
         self.cbs.append(cbox)
         layout.addWidget(cbox,2,4,1,7,alignment=QtCore.Qt.AlignCenter)
-        
-        # |------ Parameter Section Label ------|
-        #label = QLabel('Parameters')
-        #layout.addWidget(label, 3,0, 1, 5,alignment=QtCore.Qt.AlignCenter)
-        
+                
         # |----- Log Fit Button ----|
         logBut = QPushButton('Log WF Fit')
         logBut.released.connect(self.LBclicked)
@@ -259,7 +300,6 @@ class ParamWindow(QMainWindow):
         layout.addWidget(radBut2, 41,8,1,5,alignment=QtCore.Qt.AlignCenter)
         radBut1.clicked.connect(lambda:self.btnstate(radBut1, isMain=True))
         radBut2.clicked.connect(lambda:self.btnstate(radBut1, isMain=True))
-        #radBut2.toggled.connect(lambda:self.btnstate(radBut2))
         self.radButs.append([radBut1, radBut2])
 
         # |----- Background Drop Down Box ----|
@@ -274,7 +314,6 @@ class ParamWindow(QMainWindow):
         #label = QLabel('')
         #layout.addWidget(label, 42,0,2,11,alignment=QtCore.Qt.AlignCenter)
         
-
         # |----- Save Button ----|
         saveBut = QPushButton('Save')
         saveBut.released.connect(self.SBclicked)
@@ -360,7 +399,7 @@ class ParamWindow(QMainWindow):
         
             widges: an array of widgets for all the parameters, organized as
                     [[TextBox1, TextBox2, ...], [Slider1, Slider2, ...]]
-                    yes it is widges not widgets 
+                    yes the var name is widges not widgets 
      
         """
         # |---------------------------------------|
@@ -508,12 +547,29 @@ class ParamWindow(QMainWindow):
             esc    = close everything
             left   = move time slider to earlier time
             right  = move time slider to later time
-            b      = switch to base difference
-            r      = switch to running difference
-            s      = save 
-            l      = log wf params
+            b      = switch this time to base difference
+            r      = switch this time to running difference
+            s      = save figs for this time 
+            l      = log current time wf/background params
             m      = calculate mass
             h      = show/hide wfs
+            1      = switch this time to linear scaling
+            2      = switch this time to log scaling
+            3      = switch this time to sqrt scaling
+            
+            # Shift actions (shift + key) - do it for everyone
+            B      = switch all times to base difference
+            R      = switch all times to running difference
+            S      = save figures for all times (this will be slowish)
+            L      = log all times (using the paramLog/curSet)
+            1      = switch all times to linear scaling
+            2      = switch all times to log scaling
+            3      = switch all times to sqrt scaling
+            7 (&)  = propagate WF params back in time
+            8 (*)  = propagate WF params forward in time
+            9 (()  = propagate min/max values back in time
+            0 ())  = propagate min/max values forward in time
+        
      
         """
         #|--- Pull Params/Plot ---|
@@ -533,35 +589,33 @@ class ParamWindow(QMainWindow):
             self.close()    
         elif event.key() == QtCore.Qt.Key_Escape:
             sys.exit()
-        #|--- Time Slider ---| Apparently these are useless
-        # Apparently these are useless on param window?
-        # the arrows auto connect to slider, though not sure
-        # if needed on other windows 
+        #|--- Time Slider ---| 
+        # Can't hit this from mainwindow since t slider already
+        # owns left/right keys but will hit since ovw just throws
+        # its event to this function
         elif event.key()== QtCore.Qt.Key_Right:
-            print ("r")
-            #Tval = self.Tsliders[0].value()
-            #self.Tsliders[0].setValue(Tval+1)
-            #self.tsli_release() 
+            Tval = self.Tsliders[0].value()
+            self.Tsliders[0].setValue(Tval+1)
+            self.tsli_release() 
         elif event.key()== QtCore.Qt.Key_Left:
-            print('l')
-            #Tval = self.Tsliders[0].value()
-            #self.Tsliders[0].setValue(Tval-1) 
-            #self.tsli_release()          
-        #|--- Difference mode ---|
-        #elif event.key() in [QtCore.Qt.Key_B, QtCore.Qt.Key_R]:
-        #    self.updateDiffMode(event.key())
-
+            Tval = self.Tsliders[0].value()
+            self.Tsliders[0].setValue(Tval-1) 
+            self.tsli_release()          
         #|--- Mass ---|
         elif event.key() == QtCore.Qt.Key_M:
             self.MBclicked()       
         #|--- Upper case for save/log/diff/scl ---|
         elif event.modifiers() & QtCore.Qt.KeyboardModifier.ShiftModifier:   
+            #|--- LOG ALL!!! ---|
             if event.key() ==  QtCore.Qt.Key_L:
                 self.LBclicked(doItAll=True)
+            #|--- SAVE ALL!!! ---|
             elif event.key() == QtCore.Qt.Key_S:
                 self.SBclicked(doItAll=True)
+            #|--- Diff mode ---|
             elif event.key() in [QtCore.Qt.Key_B, QtCore.Qt.Key_R]:
                 self.updateDiffMode(event.key(), doItAll=True)
+            #|--- Scaling mode ---|
             elif event.key() in [33, 64, 35]:
                 if event.key() == 33: #shift 1
                     key = QtCore.Qt.Key_1
@@ -570,12 +624,12 @@ class ParamWindow(QMainWindow):
                 elif event.key() == 35: #shift 3
                     key = QtCore.Qt.Key_3
                 self.updateScaleMode(key, doItAll=True)
+            #|--- Propagate settings forward/back ---|
             elif event.key() in [38, 42, 40, 41]: # shift 7, 8, 9, 0
                 self.propagateVals(event.key())
         #|--- Scaling mode ---|
         elif event.key() in [QtCore.Qt.Key_1, QtCore.Qt.Key_2, QtCore.Qt.Key_3]:
             self.updateScaleMode(event.key(), doItAll=False)
-
         #|--- Difference mode ---|
         elif event.key() in [QtCore.Qt.Key_B, QtCore.Qt.Key_R]:
             self.updateDiffMode(event.key())    
@@ -591,6 +645,12 @@ class ParamWindow(QMainWindow):
                 self.HBclicked(i)
                 
     def updateScaleMode(self, key, doItAll=False, justSat=None):
+        """
+        Helper function to take a scale mode event and adjust
+        the main window combo box and replot the background as
+        needed. Mostly passes to self.back_changed
+        """
+        
         if key == QtCore.Qt.Key_1:
             val = 0
         elif key == QtCore.Qt.Key_2:
@@ -599,9 +659,13 @@ class ParamWindow(QMainWindow):
             val = 2
         self.Bcbox.setCurrentIndex(val)
         self.back_changed(val, doItAll=doItAll, justSat=justSat)
-        
-    
+            
     def updateDiffMode(self, key, doItAll=False, justSat=None):
+        """
+        Helper function to take a diff mode event and adjust
+        the main window combo box and replot the background as
+        needed. It does update the log files as needed
+        """
         # Check if doing all instruments or single one
         if type(justSat) == type(None):
             justSat = range(nSats)
@@ -617,8 +681,7 @@ class ParamWindow(QMainWindow):
         # Can't just set offidx to the oppo bc sometimes people press the
         # same button twice and that will erase min/max vals. 
         # CK is some people
-        
-        
+               
         # Switch radio button if doing all
         if doItAll:
             offidx = np.abs(setidx-1) # ok just for the toggle
@@ -651,12 +714,18 @@ class ParamWindow(QMainWindow):
             aPW.plotBackground()                
         
     def propagateVals(self, key, justSat=None):
-        # Shift + 7 copy all params backward
-        # Shift + 7 copy all params forward
-        # Shift + 8 copy min backward
-        # Shift + 9 copy max forward
+        """
+        Helper function to propagate wireframe or settings 
+        values back or forward in time based on key press event
         
+        Shift + 7 copy all params backward
+        Shift + 7 copy all params forward
+        Shift + 8 copy min backward
+        Shift + 9 copy max forward
+        
+        """        
         # Figure out if going forward or back
+        # get the corresponding idx
         tidx = self.Tsliders[0].value() - 2
         if key in [38, 40]: # back
             allThisTidx = range(tidx)
@@ -686,10 +755,7 @@ class ParamWindow(QMainWindow):
                 # Change it
                 curSet[aPW.instTag][2][allThisTidx] = curSet[aPW.instTag][2][tidx]
                 curSet[aPW.instTag][3][allThisTidx] = curSet[aPW.instTag][3][tidx]
-                
-            
-        
-            
+                                    
     def updateSaveName(self, i):
         self.saveName = self.textBoxes[i].text()
         for iii in range(nwfs):
@@ -786,13 +852,6 @@ class ParamWindow(QMainWindow):
             for ii in range(len(myWF.params)):
                 paramLog[myWF.WFtype+myTab][ii][toSwitch] = newPs[ii]
                 
-                
-            #for anIdx in toSwitch:
-            #    wfParamLog[myWF.WFtype+myTab][anIdx] = np.copy(newPs)
-                   
-        # The above triggers s2b since the slider changes so
-        # reset it to what we actual wanted instead of slider rounded val
-        #b.setValue(float(temp))
         # Update the wirefram
         if not self.holdIt:
             self.updateWFpoints(myWF, widges)
@@ -946,7 +1005,7 @@ class ParamWindow(QMainWindow):
         """
         Event for background combo box changes. The plot window combo box
         event handles most of the heavy lifting. This just passed the change
-        along to each of the windows
+        along to each of the windows that do the majority of the work.
         
         Inputs:
             text: the text box (integer) value
@@ -970,22 +1029,24 @@ class ParamWindow(QMainWindow):
             self.holdIt = False
             # Do background update with doItAll set as needed
             aPW.back_changed(text, doItAll=doItAll)   
-
     
     def dragOn(self):
         self.Tsli_dragging = True
     
     def update_tidx(self, tval, myId=None):
         """
-        Event for time slider changes. It changes the time index for the 
-        window and just calls the basic plot function 
+        Event for time slider changes. It changes the time index and updates 
+        the wireframe parameters/main window sliders and the background based
+        on any previous values used in the new time step. It also saves the 
+        previous values into the logs
+        
+        The background observations will update as the time slider is dragged
+        but the WF points are only replotted upon release.
         
         Inputs:
             tval: the time slider integer value
         
-        Actions:
-            Changes the background time step for each plot window
-        
+       
         """
         # Cannot for the life of me figure out why having tval = 1
         # makes the parameter sliders appear at 0 (values and WFs ok tho)
@@ -994,14 +1055,15 @@ class ParamWindow(QMainWindow):
         for ff in range(self.nTabs):
             if self.Tsliders[ff].value() != tval:
                 self.Tsliders[ff].setValue(tval) 
+
         # Only do the full update process once
         if self.tab_widget.currentIndex() == myId:
             tidx = tval - 2 # this is what everyone who is not a slider should use   
             ff = 0  
-            #print (tidx, wfParamLog[wfs[ff].WFtype+str(ff+1)][tidx])   
             for aPW in pws:
                 aPW.tslIdx = tidx
                 aPW.pickIdx = aPW.t2p[tidx]
+                # Check if we have existing aesthetics
                 if type(curSet) != type(None):
                     myInst = aPW.instTag
                     myDif = curSet[myInst][0][tidx]
@@ -1024,7 +1086,8 @@ class ParamWindow(QMainWindow):
             if ovw:
                 ovw.updateFoV()
             
-            # Update WF if not dragging
+            # If not dragging the time slider (which will hit here)
+            # update the wf points if the parameters have changed
             if not self.Tsli_dragging:
                 isDiff = False
                 if paramsBuilt:
@@ -1061,16 +1124,14 @@ class ParamWindow(QMainWindow):
                                         for i in range(len(wfs[ff].params)):                       
                                             wfs[ff].params[i] = np.copy(paramLog[theKey][i][tidx]) # no pointer
                                         wfs[ff].getPoints()
-                                        #print ('update')
                                         self.holdIt = True
                                         for j in range(len(wfs[ff].params)):
-                                        #   print (wfs[ff].params[j], wfParamLog[theKey][tidx][j])
                                             self.widges[ff][0][j].setValue(paramLog[theKey][j][tidx])
                                         self.holdIt = False
                                         self.updateWFpoints(wfs[ff], self.widges[ff])
                                         isDiff = True
                                     
-                                                                                    
+                # Replot the wfs if we need to                                                                    
                 if isDiff:
                     for ipw in range(nSats):
                         pws[ipw].plotWFs()
@@ -1195,7 +1256,7 @@ class ParamWindow(QMainWindow):
         if nameIt == '':
             nameIt = 'WomBlog'
         logFile = open('wbOutputs/'+nameIt+'.txt', 'a')
-
+        print (logFile)
         # Check if doing one or all fits
         if type(singleSat) != type(None):
             toDo = [singleSat]
@@ -1216,10 +1277,10 @@ class ParamWindow(QMainWindow):
                     pidx2do.append(ii)
                     tidx2do.append(myLogId)
             else:
-                pidx2do = [aPW.tidx]
+                pidx2do = [aPW.pickIdx]
                 #myLogId = np.where(aPW.st2obs == aPW.tidx)[0][0]
-                myLogId = aPW.p2t[ii][0]
-                tidx2do = [myLogId]
+                #myLogId = aPW.p2t[pidx2do][0]
+                tidx2do = [aPW.tslIdx]
             
             for k in range(nwfs):
                 aWF = wfs[k]
@@ -1235,10 +1296,10 @@ class ParamWindow(QMainWindow):
                         outStr = nowTime.strftime("%Y-%m-%dT%H:%M:%S")
                         outStr += ' ' + tag + ' ' + obsT + ' ' + aWF.WFtype.replace(' ', '') +' '
                         # Dump all the params and fill with Nones as needed
-                        myPs = wfParamLog[aWF.WFtype+str(k+1)][tidx]
+                        myPs = paramLog[aWF.WFtype+str(k+1)]
                         for ii in range(9):
                             if ii < (len(myPs)):
-                                outStr += str(myPs[ii]) + ' '
+                                outStr += str(myPs[ii][tidx]) + ' '
                             else:
                                 outStr += 'None '
                             
@@ -1246,9 +1307,11 @@ class ParamWindow(QMainWindow):
                         outStr += bkgpkl + ' ' + str(pidx)    
                     
                         # Add the background info
-                        outStr += ' ' + str(aPW.didx) + ' ' + str(aPW.sclidx+1)     
-                        svals = aPW.slidervals[aPW.didx, aPW.sclidx] # diff, scale time, min/max 
-                        outStr += ' ' + str(svals[0]) + ' '+ str(svals[1])
+                        didx, sclidx = curSet[aPW.instTag][0][tidx], curSet[aPW.instTag][1][tidx]
+                        smin, smax = curSet[aPW.instTag][2][tidx], curSet[aPW.instTag][3][tidx]
+                        outStr += ' ' + str(didx) + ' ' + str(sclidx+1)     
+                        #svals = aPW.slidervals[aPW.didx, aPW.sclidx] # diff, scale time, min/max 
+                        outStr += ' ' + str(smin) + ' '+ str(smax)
                         print (outStr)
                         logFile.write( outStr+ '\n')
                 else:
@@ -1297,13 +1360,13 @@ class ParamWindow(QMainWindow):
         else:
             self.makeFigs(toDo) 
            
-            
     def makeFigs(self, toDo, silent=False):
         #|--------- Save plot windows --------|         
         for j in toDo:
             aPW = pws[j]
-            pidx = aPW.tidx
-            figName = 'wombat_'+ self.saveName + '_' +  aPW.satStuff[0][pidx]['MYTAG'].replace(' ','_') + '_' + aPW.satStuff[0][pidx]['DATEOBS'].replace(':','')  +'.png'
+            
+            pidx = aPW.pickIdx
+            figName = 'wombat'+ self.saveName + '_' +  aPW.satStuff[0][pidx]['MYTAG'].replace(' ','_') + '_' + aPW.satStuff[0][pidx]['DATEOBS'].replace(':','')  +'.png'
             
             figGrab = aPW.pWindow.grab()
             
@@ -1379,8 +1442,6 @@ class ParamWindow(QMainWindow):
             aPW.MaxSlider.setValue(curSet[aPW.instTag][3][aPW.tslIdx])
             aPW.plotBackground()
             
-                    
-    
     #|------------------------------| 
     #|----------- Others -----------|
     #|------------------------------| 
@@ -1763,20 +1824,39 @@ class FigWindow(QWidget):
 
     def keyPressEvent(self, event):
         """
-        Event for key press events. 
+        Event for key press events. Many of these (***) will
+        flag to do such for the current plot window if
+        it is the active window
         
         Actions (based on key):
             return = replot (pulls out of param text box)
-            q      = close a window
+            q      = close a window ***
             esc    = close everything
             left   = move time slider to earlier time
             right  = move time slider to later time
-            b      = switch to base difference
-            r      = switch to running difference
-            s      = save
-            l      = log WF parameters
+            b      = switch this time to base difference ***
+            r      = switch this time to running difference ***
+            s      = save figs for this time ***
+            l      = log current time wf/background params ***
             m      = calculate mass
-     
+            h      = show/hide wfs
+            1      = switch this time to linear scaling ***
+            2      = switch this time to log scaling ***
+            3      = switch this time to sqrt scaling ***
+            
+            # Shift actions (shift + key) - do it for everyone
+            B      = switch all times to base difference ***
+            R      = switch all times to running difference ***
+            S      = save figures for all times (this will be slowish) ***
+            L      = log all times (using the paramLog/curSet) ***
+            1      = switch all times to linear scaling ***
+            2      = switch all times to log scaling ***
+            3      = switch all times to sqrt scaling ***
+            7 (&)  = propagate WF params back in time
+            8 (*)  = propagate WF params forward in time
+            9 (()  = propagate min/max values back in time ***
+            0 ())  = propagate min/max values forward in time ***
+        
         """
         #|--- Pull Params/Plot ---|
         if event.key() == QtCore.Qt.Key_Return:
@@ -1835,16 +1915,6 @@ class FigWindow(QWidget):
         elif event.key() in [QtCore.Qt.Key_1, QtCore.Qt.Key_2, QtCore.Qt.Key_3]:
             if 'mainwindow' in globals():
                 mainwindow.updateScaleMode(event.key(), doItAll=False, justSat=[self.winidx])
-        
-        #elif event.key()== QtCore.Qt.Key_1:
-        #    if 'mainwindow' in globals():
-        #        mainwindow.Bcbox.setCurrentIndex(0)
-        #elif event.key()== QtCore.Qt.Key_2:
-        #    if 'mainwindow' in globals():
-        #        mainwindow.Bcbox.setCurrentIndex(1)
-        #elif event.key()== QtCore.Qt.Key_3:
-        #    if 'mainwindow' in globals():
-        #        mainwindow.Bcbox.setCurrentIndex(2)
         #|--- Mass ---|
         elif event.key() == QtCore.Qt.Key_M:
             self.MBclicked()
@@ -2473,82 +2543,34 @@ class OverviewWindow(QWidget):
             esc    = close everything
             left   = move time slider to earlier time
             right  = move time slider to later time
-            b      = switch to base difference
-            r      = switch to running difference
-            s      = save
-            l      = log wireframe parameters
+            b      = switch this time to base difference
+            r      = switch this time to running difference
+            s      = save figs for this time 
+            l      = log current time wf/background params
             m      = calculate mass
+            h      = show/hide wfs
+            1      = switch this time to linear scaling
+            2      = switch this time to log scaling
+            3      = switch this time to sqrt scaling
+            
+            # Shift actions (shift + key) - do it for everyone
+            B      = switch all times to base difference
+            R      = switch all times to running difference
+            S      = save figures for all times (this will be slowish)
+            L      = log all times (using the paramLog/curSet)
+            1      = switch all times to linear scaling
+            2      = switch all times to log scaling
+            3      = switch all times to sqrt scaling
+            7 (&)  = propagate WF params back in time
+            8 (*)  = propagate WF params forward in time
+            9 (()  = propagate min/max values back in time
+            0 ())  = propagate min/max values forward in time
+        
      
         """
-        #|--- Pull Params/Plot ---|
-        if event.key() == QtCore.Qt.Key_Return:
-            if 'mainwindow' in globals():
-                for iii in range(nwfs):
-                    mainwindow.updateWFpoints(wfs[iii], mainwindow.widges[iii])
-                    focused_widget = mainwindow.focusWidget()
-                    focused_widget.deselect()
-                    tabIndex = mainwindow.tab_widget.currentIndex()
-                    mainwindow.Tsliders[tabIndex].setFocus()
-        #|--- Closing Things ---|
-        elif event.key() == QtCore.Qt.Key_Q: 
-            self.close()
-        elif event.key() == QtCore.Qt.Key_Escape:
-            sys.exit()
-        #|--- Saving/Logging ---|
-        elif event.modifiers() & QtCore.Qt.KeyboardModifier.ShiftModifier:  
-            if 'mainwindow' in globals(): 
-                if event.key() ==  QtCore.Qt.Key_L:
-                    mainwindow.LBclicked(doItAll=True)
-                elif event.key() == QtCore.Qt.Key_S:
-                        mainwindow.SBclicked(doItAll=True)
-                elif event.key() in [QtCore.Qt.Key_B, QtCore.Qt.Key_R]:
-                    mainwindow.updateDiffMode(event.key(), doItAll=True)
-                elif event.key() in [33, 64, 35]:
-                    if event.key() == 33: #shift 1
-                        key = QtCore.Qt.Key_1
-                    elif event.key() == 64: #shift 2
-                        key = QtCore.Qt.Key_2
-                    elif event.key() == 35: #shift 3
-                        key = QtCore.Qt.Key_3
-                    mainwindow.updateScaleMode(key, doItAll=True)
-                elif event.key() in [38, 42, 40, 41]: # shift 7, 8, 9, 0
-                    mainwindow.propagateVals(event.key())
-                
-        elif event.key() == QtCore.Qt.Key_L:
-            if 'mainwindow' in globals():
-                mainwindow.LBclicked()
-        elif event.key() == QtCore.Qt.Key_S:
-            if 'mainwindow' in globals():
-                mainwindow.SBclicked()
-        elif event.key() == QtCore.Qt.Key_L:
-            if 'mainwindow' in globals():
-                mainwindow.LBclicked()
-        #|--- Time Slider ---|
-        elif event.key()== QtCore.Qt.Key_Right:
-            if 'mainwindow' in globals():
-                Tval = mainwindow.Tsliders[0].value()
-                mainwindow.tsli_release()      
-        elif event.key()== QtCore.Qt.Key_Left:
-            if 'mainwindow' in globals():
-                Tval = mainwindow.Tsliders[0].value()
-                mainwindow.tsli_release()                
-        #|--- Difference mode ---|
-        elif event.key() in [QtCore.Qt.Key_B, QtCore.Qt.Key_R]:
-            if 'mainwindow' in globals():
-                mainwindow.updateDiffMode(event.key())
-        #|--- Scaling mode ---|
-        elif event.key() in [QtCore.Qt.Key_1, QtCore.Qt.Key_2, QtCore.Qt.Key_3]:
-            if 'mainwindow' in globals():
-                mainwindow.updateScaleMode(event.key(), doItAll=False)
-        #|--- Mass ---|
-        elif event.key() == QtCore.Qt.Key_M:
-            if 'mainwindow' in globals():
-                mainwindow.MBclicked()
-        #|--- Show/Hide ---|
-        elif event.key() == QtCore.Qt.Key_H:
-            if 'mainwindow' in globals():
-                for i in range(mainwindow.nTabs):
-                    mainwindow.HBclicked(i)
+        if 'mainwindow' in globals():
+            mainwindow.keyPressEvent(event)
+
            
 
 
@@ -3415,25 +3437,74 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, reloadDict=None, logF
                       be in higher or lower resolution but this will be mapped to the slider
                       values (potentially downselecting if data is higher res)
                       defaults to 20 mins
+    
+        doFigLabs:    flag to include labels when saving figs (instrument name + time) 
+                      defaults to True
+        
 
     Outputs:
-        No outputs unless the save button is clicked. If clicked, it will save fits files
-        for the backgrounds (processed as RD/BD) in wbFits/reloads and in wbOutputs it
-        will save wombatSummaryFile.txt which can be used to reload the current setup and
-        a png file for each observation panel and one for the overview panel (if present)
+        No outputs automatically generated. If the save button is hit then figures will be saved
+        within wbOutputs/ as wombat_SAT+INST_YYYY-MM-DD-THHMMSS.png 
+
+        If the log button is hit lines will be appended to the log file. The
+        default log file (if none was provided) is wbOutputs/WomBlog.txt and each line contains:
+            1.    time of fit  
+            2.    instrument
+            3.    time of observation
+            4.    WF type + panel number (e.g. GCS1). Adding panel number allows multiple of same type
+            5-13. WF parameter values. If a type has <9 parameters the extras are filled with None
+            14.   the WOMBAT pickle
+            15.   the index of the obs time in this pickle
+            16.   the background difference mode (0 running diff, 1 base diff)
+            17.   the scaling mode (1 linear, 2 log, 3 sqrt)
+            18.   the min brightness setting (0-256)
+            19.   the max brightness setting (0-256)
+        
+        The amount of figures saved/lines logged depends on whether one clicks a save/log button or the 
+        active window when one hits the s/l short cut keys
+    
+
+    The state of the system is tracked through three key logs that are global variables
+        paramLog: The wireframe parameters. This is a dictionary with keys for every possible
+                  combination of wftype and wf index number (e.g. 'GCS2'), which allows for
+                  duplicates of a type. The syntax is paramLog[type#][parameter_index][time_index]
+                  where the parameter_index matches the order of the labels in the GUI (top to bottom)
+                  and the time index corresponds to the universal time index (not pickle index). If a
+                  type# has not be used or reloaded then the values will be set to None. As a user fits
+                  the wf the values are stored for each type/time and can be reloaded if one switches 
+                  away from one type/time then comes back to it
+        
+        setLog:   A log of previously used aesthetics of the background. This is a dictionary with keys 
+                  corresponding to the instrument tag of each plot window which is used to track the most
+                  recently used values for the min/max sliders for each combo of difference mode, scaling
+                  mode, and time. The syntax is setLog[instTag][diffIndex][scaleIndx][min/max][time_idx] where 
+                  diffIndex is 0 for running and 1 for base, scale is 0, 1, 2 for linear, log, sqrt, and
+                  min/max is 0 for min and 1 for max. This is populated with the default values at the start 
+                  and logs changes to be reloaded if this diff/scale/time is revisited
+    
+    
+        curSet:   The current settings of the aesthetics. This is a dictionary with keys corresponding to the 
+                  plot window instrument tag. The syntax is curSet[instTag][set_idx][time_idx] where set_idx
+                  0 gives the difference mode, 1 gives the scaling mode, 2 gives the min slider value, 4 gives
+                  the max slider value, and time_idx is universal time. This is the current state of the 
+                  system and allows to cycle through different diff types and scalings across different times.
+    
 
 
-    ***Avoided creating globals in any of the other functions but its much easier
-    to maintain a limited number created here to make passing things easier***
+    WOMBAT avoids creating globals in any of the other functions but its much easier
+    to maintain a limited number created here to make passing things easier
         mainWindow: the parameter window
         pws:        array of plot windows
         nSats:      number of sats/instruments = number of plot windows
         wfs:        array of wireframes in theoryland coords
         nwfs:       number of wireframes
-        bmodes:     array of integer background scaling modes, defaults to linear = 0
+        ovw:
+        bkgpkl:
         occultDict: dictionary of (rough) inner/outer boundaries of each inst FOV
         WFname2id:  wireframe name to their index number in the WF combo boc
-  
+        paramsBuilt: 
+        figLabels:
+        
     """
     #|-----------------------------| 
     #|---- Dictionary Globals -----|
@@ -3449,12 +3520,10 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, reloadDict=None, logF
     #|-----------------------------| 
     #|---- Other Global Setup -----|
     #|-----------------------------|
-    global mainwindow, pws, nSats, wfs, nwfs, bmodes, ovw, bkgpkl 
+    global mainwindow, pws, nSats, wfs, nwfs, ovw, bkgpkl 
     global paramsBuilt, figLabels
     global paramLog, setLog, curSet
     paramsBuilt = False # keep from trying to build WF until param widgets done
-    wfParamLog = None
-    winSettingsLog = None
     figLabels = doFigLabs
     paramLog, setLog, curSet = None, None, None
     
@@ -3583,12 +3652,12 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, reloadDict=None, logF
     #|----------------------------------| 
     #|---- Launch Parameter Window -----|
     #|----------------------------------|
-    mainwindow = ParamWindow(nwfs, tlabs=tlabs, tmap=idxMaps)
+    mainwindow = ParamWindow(nwfs, tlabs=tlabs)
     # check if we had a name for the output box
     if type(logFile) != type(None):
         for i in range(nwfs):
             mainwindow.textBoxes[i].setText(logFile)
-        
+        mainwindow.saveName = logFile
     # Set time slider to highlight bc reload will
     # shift focus onto text box
     mainwindow.Tsliders[0].setFocus()
