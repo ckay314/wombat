@@ -921,14 +921,13 @@ class ParamWindow(QMainWindow):
         for iii in justSat:
             aPW = pws[iii]
             
-            print ('Current scl', curSet[aPW.instTag][1][aPW.tslIdx])
-            
             # Set just the inst slider without plotting yet
             self.holdIt = True
             aPW.cbox.setCurrentIndex(text)       
             self.holdIt = False
+            # Do background update with doItAll set as needed
             aPW.back_changed(text, doItAll=doItAll)   
-            print ('Upd scl', curSet[aPW.instTag][1][aPW.tslIdx])
+
     
     def dragOn(self):
         self.Tsli_dragging = True
@@ -1826,10 +1825,31 @@ class FigWindow(QWidget):
         """
         # Switch to the new mode
         #self.sclidx = text  
-        curSet[self.instTag][1][self.tslIdx] = text
         #print (doItAll)
         if 'mainwindow' in globals():
             if not mainwindow.holdIt:
+                
+                if doItAll:
+                    allThisTidx = range(len(self.t2p))
+                else:
+                    tidx = self.tslIdx
+                    # Switch all tidx for the pidx of this inst
+                    pidx = self.t2p[tidx]
+                    allThisTidx = self.p2t[pidx]
+                    
+                    
+                myDiff = curSet[self.instTag][0][self.tslIdx]
+                prevScl  = curSet[self.instTag][1][self.tslIdx]
+                # Log the current min/max for this diff/scl
+                setLog[self.instTag][myDiff][prevScl][0][allThisTidx] = np.copy(curSet[self.instTag][2][allThisTidx])
+                setLog[self.instTag][myDiff][prevScl][1][allThisTidx] = np.copy(curSet[self.instTag][3][allThisTidx])
+                
+                # Set new scale
+                curSet[self.instTag][1][allThisTidx] = text
+                # Pull existing min/max
+                curSet[self.instTag][2][allThisTidx] = np.copy(setLog[self.instTag][myDiff][text][0][allThisTidx])
+                curSet[self.instTag][3][allThisTidx] = np.copy(setLog[self.instTag][myDiff][text][1][allThisTidx])
+                               
                 minV, maxV = curSet[self.instTag][2][self.tslIdx], curSet[self.instTag][3][self.tslIdx]
                 self.MinSlider.setValue(minV)  
                 self.MaxSlider.setValue(maxV)  
@@ -2105,19 +2125,15 @@ class FigWindow(QWidget):
         if type(curSet) != type(None):
             didx = curSet[self.instTag][0][self.tslIdx]
             sclidx = curSet[self.instTag][1][self.tslIdx]
-            print ('in pB', sclidx)
             slMin = curSet[self.instTag][2][self.tslIdx]#self.MinSlider.value()
             slMax = curSet[self.instTag][3][self.tslIdx]#self.MaxSlider.value()
             
         else:
-            print ('in e;se')
             didx = 0
             sclidx = 0
             slMin = self.MinSlider.value()
             slMax = self.MaxSlider.value()
         myIm = self.myScls2[didx][self.pickIdx][sclidx]
-        #|---- Grab min/max from slider ----|     
-        print (didx, sclidx, slMin, slMax, self.tslIdx, self.pickIdx)
         
         #|---- Update image ----|     
         self.image.updateImage(image=myIm, levels=(slMin, slMax))
