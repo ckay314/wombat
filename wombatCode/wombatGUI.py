@@ -516,7 +516,6 @@ class ParamWindow(QMainWindow):
             h      = show/hide wfs
      
         """
-        #print (event.key())
         #|--- Pull Params/Plot ---|
         if event.key() == QtCore.Qt.Key_Return:
             for iii in range(nwfs):
@@ -571,6 +570,8 @@ class ParamWindow(QMainWindow):
                 elif event.key() == 35: #shift 3
                     key = QtCore.Qt.Key_3
                 self.updateScaleMode(key, doItAll=True)
+            elif event.key() in [38, 42, 40, 41]: # shift 7, 8, 9, 0
+                self.propagateVals(event.key())
         #|--- Scaling mode ---|
         elif event.key() in [QtCore.Qt.Key_1, QtCore.Qt.Key_2, QtCore.Qt.Key_3]:
             self.updateScaleMode(event.key(), doItAll=False)
@@ -613,18 +614,21 @@ class ParamWindow(QMainWindow):
             setidx = 1
         elif key == QtCore.Qt.Key_R:
             setidx = 0
-        offidx = np.abs(setidx-1) # the other one
+        # Can't just set offidx to the oppo bc sometimes people press the
+        # same button twice and that will erase min/max vals. 
+        # CK is some people
+        
         
         # Switch radio button if doing all
         if doItAll:
+            offidx = np.abs(setidx-1) # ok just for the toggle
             for ff in range(self.nTabs):
                 self.radButs[ff][offidx].setChecked(False)
                 self.radButs[ff][setidx].setChecked(True)
         
         # |--- Loop through whatever inst we have ---|        
         for iii in justSat:
-            aPW = pws[iii]
-            # 
+            aPW = pws[iii] 
             if doItAll:
                 allThisTidx = range(len(aPW.t2p))
             else:
@@ -635,18 +639,57 @@ class ParamWindow(QMainWindow):
             
             # Get current values 
             myscl = curSet[aPW.instTag][1][aPW.tslIdx]
+            offidx = curSet[aPW.instTag][0][aPW.tslIdx] # could be same as setidx
             setLog[aPW.instTag][offidx][myscl][0][allThisTidx] = np.copy(curSet[aPW.instTag][2][allThisTidx])
             setLog[aPW.instTag][offidx][myscl][1][allThisTidx] = np.copy(curSet[aPW.instTag][3][allThisTidx])
             curSet[aPW.instTag][0][allThisTidx] = setidx
             curSet[aPW.instTag][2][allThisTidx] = np.copy(setLog[aPW.instTag][setidx][myscl][0][allThisTidx])
-            curSet[aPW.instTag][3][allThisTidx] = np.copy(setLog[aPW.instTag][setidx][myscl][1][allThisTidx])
-                
+            curSet[aPW.instTag][3][allThisTidx] = np.copy(setLog[aPW.instTag][setidx][myscl][1][allThisTidx])                
             
             aPW.MinSlider.setValue(curSet[aPW.instTag][2][aPW.tslIdx])  
             aPW.MaxSlider.setValue(curSet[aPW.instTag][3][aPW.tslIdx])
             aPW.plotBackground()                
         
+    def propagateVals(self, key, justSat=None):
+        # Shift + 7 copy all params backward
+        # Shift + 7 copy all params forward
+        # Shift + 8 copy min backward
+        # Shift + 9 copy max forward
         
+        # Figure out if going forward or back
+        tidx = self.Tsliders[0].value() - 2
+        if key in [38, 40]: # back
+            allThisTidx = range(tidx)
+        else:
+            allThisTidx = range(tidx,self.nTsli+1)
+        
+        # |--- Propagate wf parameters ---|
+        if key in [38, 42]:
+            # Get current tab
+            myTab = str(self.tab_widget.currentIndex() +1)
+            myWF = wfs[self.tab_widget.currentIndex()]
+            # Loop through params
+            for ii in range(len(myWF.params)):
+                paramLog[myWF.WFtype+myTab][ii][allThisTidx] = paramLog[myWF.WFtype+myTab][ii][tidx]
+            
+            
+        # |--- Propagate plot min/max ---|
+        elif key in [40, 41]:
+            if type(justSat) == type(None):
+                justSat = range(nSats)
+                allSats = True
+            else:
+                allSats = False
+            
+            for iii in justSat:
+                aPW = pws[iii] 
+                # Change it
+                curSet[aPW.instTag][2][allThisTidx] = curSet[aPW.instTag][2][tidx]
+                curSet[aPW.instTag][3][allThisTidx] = curSet[aPW.instTag][3][tidx]
+                
+            
+        
+            
     def updateSaveName(self, i):
         self.saveName = self.textBoxes[i].text()
         for iii in range(nwfs):
@@ -1043,7 +1086,6 @@ class ParamWindow(QMainWindow):
                     prevT = pws[0].tslIdx
                     tidx = tval - 2
                     # Check if param log is empty for this WF
-                    
                     # Grab range to switch
                     toSwitch = range(200)
                     for aPW in pws:
@@ -1294,7 +1336,8 @@ class ParamWindow(QMainWindow):
         """
         # Check if wireframes are turned on
         for aPW in pws:
-            if not (aPW.satStuff[aPW.didx][0]['OBSTYPE'] == 'EUV'):
+            didx = curSet[aPW.instTag][0][self.Tsliders[0].value() - 2]
+            if not (aPW.satStuff[didx][0]['OBSTYPE'] == 'EUV'):
                 for j in range(len(aPW.scatters)):
                     aScat = aPW.scatters[j]
                     xs, ys = aScat.getData()
@@ -1376,7 +1419,6 @@ class ParamWindow(QMainWindow):
         # Got to check if all the points are set or this
         # will blow up on the first run through before panel is built
         if paramsBuilt:
-            print (aWF.WFtype, 'making wf poitns')
             for i in range(len(widges[0])):
                 if widges[0][i].text() != '':
                     aWF.params[i] = float(widges[0][i].text().replace(',','.'))
@@ -1766,6 +1808,8 @@ class FigWindow(QWidget):
                     elif event.key() == 35: #shift 3
                         key = QtCore.Qt.Key_3
                     mainwindow.updateScaleMode(key, doItAll=True, justSat=[self.winidx])
+                elif event.key() in [38, 42, 40, 41]: # shift 7, 8, 9, 0
+                    mainwindow.propagateVals(event.key(), justSat=[self.winidx])
                     
         elif event.key() == QtCore.Qt.Key_L:
             if 'mainwindow' in globals():
@@ -1916,33 +1960,36 @@ class FigWindow(QWidget):
         view_pos = self.pWindow.plotItem.vb.mapSceneToView(scene_pos)
         pix = [view_pos.x(), view_pos.y()]
         
+        pidx = self.t2p[self.tslIdx]
+        didx = curSet[self.instTag][0][pidx]
+            
         #|---- Print pix ----|
-        prefA = self.satStuff[self.didx][self.tidx]['MYTAG'].replace('_',' ') + ' pix:'
+        prefA = self.satStuff[didx][pidx]['MYTAG'].replace('_',' ') + ' pix:'
         print (prefA.rjust(25), str(int(pix[0])).rjust(8), str(int(pix[1])).rjust(8))
         
         #|---- Convert to ra/dec ----| 
-        skyres = self.OGims[self.tidx].pixel_to_world(pix[0]*u.pixel, pix[1]*u.pixel)
+        skyres = self.OGims[pidx].pixel_to_world(pix[0]*u.pixel, pix[1]*u.pixel)
         Tx, Ty = skyres.Tx.to_value(), skyres.Ty.to_value()
         print ('Tx, Ty (arcsec):'.rjust(25), str(int(Tx)).rjust(8), str(int(Ty)).rjust(8))
         
         # |---- Convert to proj Rsun/PA  ----| 
         Rarc = np.sqrt(Tx**2 + Ty**2)
-        Rpix = Rarc / self.satStuff[self.didx][self.tidx]['SCALE']
+        Rpix = Rarc / self.satStuff[didx][pidx]['SCALE']
         # Adjust unites for HI
-        if self.satStuff[self.didx][self.tidx]['OBSTYPE'] == 'HI':
+        if self.satStuff[didx][pidx]['OBSTYPE'] == 'HI':
             Rpix = Rpix / 3600
-        RRSun = Rpix /  self.satStuff[self.didx][self.tidx]['ONERSUN']
+        RRSun = Rpix /  self.satStuff[didx][pidx]['ONERSUN']
         # PA define w/ N as 0 and E (left) as 90
         PA = (np.arctan2(-Tx,Ty) * 180 / np.pi) % 360.
         print ('Proj R (Rs), PA (deg):'.rjust(25), '{:8.2f}'.format(RRSun), '{:8.1f}'.format(PA))
         # |---- Get mass per pixel  ----| 
-        if type(self.mIms[self.tidx]) != type(None):    
+        if type(self.mIms[pidx]) != type(None):    
             px = int(pix[0])
             py = int(pix[1])
-            if self.satStuff[self.didx][0]['OBSTYPE'] == 'COR':
-                print('Mass in pixel (1e8 g):'.rjust(25), '{:8.1f}'.format(self.mIms[self.tidx][py,px]/1e8))
-            elif self.satStuff[self.didx][0]['OBSTYPE'] == 'HI':
-                print('Mass in pixel (1e8 g):'.rjust(25), '{:8.1f}'.format(self.mIms[self.tidx][py,px]/1e8))
+            if self.satStuff[didx][0]['OBSTYPE'] == 'COR':
+                print('Mass in pixel (1e8 g):'.rjust(25), '{:8.1f}'.format(self.mIms[pidx][py,px]/1e8))
+            elif self.satStuff[didx][0]['OBSTYPE'] == 'HI':
+                print('Mass in pixel (1e8 g):'.rjust(25), '{:8.1f}'.format(self.mIms[pidx][py,px]/1e8))
 
         print ('')
 
@@ -2147,7 +2194,7 @@ class FigWindow(QWidget):
             for i in range(nwfs):
                 if type(self.WFmasks[i]) != type(None):
                     bigMask += self.WFmasks[i]
-                    seps = np.abs(wfs[i].params[1]-self.satStuff[didx][self.tidx]['POSLON'])
+                    seps = np.abs(wfs[i].params[1]-self.satStuff[didx][self.pickIdx]['POSLON'])
                     seps[np.where(seps > 90)] = 180 - seps[np.where(seps > 90)]
                     mySep = np.min(np.abs(seps))
                     if mySep > 80:
@@ -2454,6 +2501,19 @@ class OverviewWindow(QWidget):
                     mainwindow.LBclicked(doItAll=True)
                 elif event.key() == QtCore.Qt.Key_S:
                         mainwindow.SBclicked(doItAll=True)
+                elif event.key() in [QtCore.Qt.Key_B, QtCore.Qt.Key_R]:
+                    mainwindow.updateDiffMode(event.key(), doItAll=True)
+                elif event.key() in [33, 64, 35]:
+                    if event.key() == 33: #shift 1
+                        key = QtCore.Qt.Key_1
+                    elif event.key() == 64: #shift 2
+                        key = QtCore.Qt.Key_2
+                    elif event.key() == 35: #shift 3
+                        key = QtCore.Qt.Key_3
+                    mainwindow.updateScaleMode(key, doItAll=True)
+                elif event.key() in [38, 42, 40, 41]: # shift 7, 8, 9, 0
+                    mainwindow.propagateVals(event.key())
+                
         elif event.key() == QtCore.Qt.Key_L:
             if 'mainwindow' in globals():
                 mainwindow.LBclicked()
@@ -2473,26 +2533,13 @@ class OverviewWindow(QWidget):
                 Tval = mainwindow.Tsliders[0].value()
                 mainwindow.tsli_release()                
         #|--- Difference mode ---|
-        elif event.key()== QtCore.Qt.Key_B:
+        elif event.key() in [QtCore.Qt.Key_B, QtCore.Qt.Key_R]:
             if 'mainwindow' in globals():
-                for ff in range(mainwindow.nTabs):
-                    mainwindow.radButs[ff][0].setChecked(False)
-                    mainwindow.radButs[ff][1].setChecked(True)
-        elif event.key()== QtCore.Qt.Key_R:
-            if 'mainwindow' in globals():
-                for ff in range(mainwindow.nTabs):
-                    mainwindow.radButs[ff][1].setChecked(False)
-                    mainwindow.radButs[ff][0].setChecked(True)
+                mainwindow.updateDiffMode(event.key())
         #|--- Scaling mode ---|
-        elif event.key()== QtCore.Qt.Key_1:
+        elif event.key() in [QtCore.Qt.Key_1, QtCore.Qt.Key_2, QtCore.Qt.Key_3]:
             if 'mainwindow' in globals():
-                mainwindow.Bcbox.setCurrentIndex(0)
-        elif event.key()== QtCore.Qt.Key_2:
-            if 'mainwindow' in globals():
-                mainwindow.Bcbox.setCurrentIndex(1)
-        elif event.key()== QtCore.Qt.Key_3:
-            if 'mainwindow' in globals():
-                mainwindow.Bcbox.setCurrentIndex(2) 
+                mainwindow.updateScaleMode(event.key(), doItAll=False)
         #|--- Mass ---|
         elif event.key() == QtCore.Qt.Key_M:
             if 'mainwindow' in globals():
@@ -3320,7 +3367,7 @@ def sortTimeIndices(satStuff, tRes=20):
         
         # Invert this for pickle to time slider
         p2t = {}
-        for i in range(np.max(t2p)):
+        for i in range(np.max(t2p)+1):
             p2t[i] = np.where(t2p == i)[0]
         p2ts.append(p2t)
         
