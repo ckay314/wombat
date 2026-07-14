@@ -1137,8 +1137,13 @@ class ParamWindow(QMainWindow):
                         pws[ipw].plotWFs()
                         
     def tsli_release(self):
-        # Check for diff WF params in paramLog
+        """
+        Action for release of the T slider. Essentially the 
+        same behavior as single step on slider but called on release
+        not during drag
+        """
         if type(paramLog) != type(None):
+            # Turn off dragging flag
             self.Tsli_dragging = False
             for ff in range(self.nTabs):  
                 if type(wfs[ff].WFtype) != type(None):
@@ -1252,11 +1257,12 @@ class ParamWindow(QMainWindow):
                 
         
         """
+        # Get file name from window object
         nameIt = self.saveName
         if nameIt == '':
             nameIt = 'WomBlog'
         logFile = open('wbOutputs/'+nameIt+'.txt', 'a')
-        print (logFile)
+
         # Check if doing one or all fits
         if type(singleSat) != type(None):
             toDo = [singleSat]
@@ -1264,12 +1270,16 @@ class ParamWindow(QMainWindow):
             toDo = range(nSats)
         
                 
-        # Time one is doing the fit
-        nowTime = datetime.datetime.now()  
+        # Grab the current real world time
+        nowTime = datetime.datetime.now() 
+        
+        # Loop through sats we want to log 
         for j in toDo:
             aPW = pws[j]
             tidx2do = [] # uniform time index (for param log)
             pidx2do = [] # plot window (for sat stuff)
+            
+            # Grab idx to log
             if doItAll:
                 for ii in range(len(aPW.satStuff[0])):
                     #myLogId = np.where(aPW.st2obs == ii)[0][0]
@@ -1278,20 +1288,19 @@ class ParamWindow(QMainWindow):
                     tidx2do.append(myLogId)
             else:
                 pidx2do = [aPW.pickIdx]
-                #myLogId = np.where(aPW.st2obs == aPW.tidx)[0][0]
-                #myLogId = aPW.p2t[pidx2do][0]
                 tidx2do = [aPW.tslIdx]
             
+            # |--- Loop through wfs ---|
             for k in range(nwfs):
                 aWF = wfs[k]
                 if type(aWF.WFtype) != type(None):
-                    #tidx = aPW.tidx
                     for iii in range(len(tidx2do)):
                         pidx = pidx2do[iii]
                         tidx = tidx2do[iii]
                         tag = aPW.satStuff[0][0]['KEY']
                         obsT = aPW.satStuff[0][pidx]['DATEOBS']
-                    
+                        
+                        # |--- Make an output line ---|
                         # Observer and time of obs
                         outStr = nowTime.strftime("%Y-%m-%dT%H:%M:%S")
                         outStr += ' ' + tag + ' ' + obsT + ' ' + aWF.WFtype.replace(' ', '') +' '
@@ -1323,10 +1332,17 @@ class ParamWindow(QMainWindow):
         Event for clicking the save button. If called by the parameter
         window it will save the wf parameters/reload file and images 
         for each of the plot panels. If called by the plot panel it will
-        only doing one figure
+        only doing one figure. 
+        
+        This is a little bit of a hack where the function sorts out which
+        tslider indices need to be saved and just sets the GUI to each one
+        then calls a separate function that converts the windows to pngs
         
         Optional Inputs:
             singleSat: the index of a single plot window
+
+            doItAll: a flag to save all the current WF fits for all times 
+                     and all instruments. defaults to False
                 
         Actions:
             Saves a png for each plot window (only at current time index)
@@ -1337,11 +1353,13 @@ class ParamWindow(QMainWindow):
         #|------------------------------------| 
         #|---------- Save Figures ------------|
         #|------------------------------------|
+        # Sort out sats
         if type(singleSat) != type(None):
             toDo = [singleSat]
         else:
             toDo = range(nSats)
         
+        # Sort out times
         if doItAll:
             alltidx = []    
             for j in toDo:
@@ -1359,42 +1377,16 @@ class ParamWindow(QMainWindow):
                 counter += 1
         else:
             self.makeFigs(toDo) 
-           
-    def makeFigs(self, toDo, silent=False):
-        #|--------- Save plot windows --------|         
-        for j in toDo:
-            aPW = pws[j]
-            
-            pidx = aPW.pickIdx
-            figName = 'wombat'+ self.saveName + '_' +  aPW.satStuff[0][pidx]['MYTAG'].replace(' ','_') + '_' + aPW.satStuff[0][pidx]['DATEOBS'].replace(':','')  +'.png'
-            
-            figGrab = aPW.pWindow.grab()
-            
-            if figLabels:
-                painter = QPainter(figGrab)
-                painter.setPen(pg.mkPen('w', width=1.75)) 
-                #painter.setFont(QFont("Arial", 20, QFont.Weight.Bold))
-                painter.drawText(5, 395, aPW.satStuff[0][pidx]['MYTAG'].replace('_',' ')) # X, Y coordinates
-                painter.drawText(285, 395, aPW.satStuff[0][pidx]['DATEOBS']) # X, Y coordinates
-                painter.end()
-                QApplication.processEvents()
-            
-            figGrab.save('wbOutputs/'+figName)
-            if not silent:
-                print ('Saving figure in wbOutputs/'+figName )
-            
-        #|------- Save overview window -------|   
-        if ovw:
-            figName = 'wombat_'+ self.saveName + '_overview_' + pws[0].satStuff[0][0]['DATEOBS'].replace(':','') + '.png'
-            figGrab = ovw.pWindow.grab()
-            figGrab.save('wbOutputs/'+figName)
-            if not silent:
-                print ('Saving figure in wbOutputs/'+figName )
-            
-        
+                               
     def MBclicked(self):
         """
-        Event for clicking the mass button
+        Event for clicking the mass button. Print the mass
+        for each WF in each instrument panel to the terminal.
+        
+        It uses pts2mask from the wf class to generate a mask
+        surrounding the projected points, which plotBackground
+        uses to sum the appropriate region of the corresponding
+        mass file for that observation.
                 
         """
         # Check if wireframes are turned on
@@ -1414,11 +1406,15 @@ class ParamWindow(QMainWindow):
                 aPW.plotBackground()
             else:
                 print ('No mass calc for EUV images')
-                
-    
+                    
     def btnstate(self,b, isMain=False):
-        # this only gets hit from actually toggling the
-        # button, not from things that cause it to chage
+        """
+        Action for hitting the difference mode radio button.
+        Requires actually clicking the button, not activated 
+        by other changes to it.
+        
+        """
+        # Swap the radio button
         if b.isChecked():
             setidx = 0
             oidx = 1
@@ -1426,6 +1422,7 @@ class ParamWindow(QMainWindow):
             setidx = 1
             oidx = 0
 
+        # Update the plot windows and log
         for aPW in pws:            
             myInst = instNames[aPW.winidx]
             
@@ -1489,8 +1486,66 @@ class ParamWindow(QMainWindow):
                 pws[ipw].plotWFs(justN=aWF.WFidx-1)
             if ovw:
                 ovw.updateArrow(aWF.WFidx-1,color=aWF.WFcolor)
-    
+                
+    def makeFigs(self, toDo, silent=False):
+        """
+        Function to save pngs of the current plot windows, both
+        the observation panels and the overview panel. It uses
+        the global variable figLabels to determine whether to 
+        write the instrument and time on top of the observations.
+        The results are saved as wombat_TAG_SAT_INST_YYYY-MM-DDTHHMMSS.png
         
+        Inputs:
+            toDo:   a list of plot window indices
+        
+        Optional Inputs:
+            silent: flag to not print updates to screen
+        
+        """
+        #|--------- Save plot windows --------|         
+        for j in toDo:
+            aPW = pws[j]
+            
+            # Get the file name
+            pidx = aPW.pickIdx
+            if self.saveName == '':
+                pref = 'wombat'
+            else:
+                pref = 'wombat_'
+            figName = pref+ self.saveName + '_' +  aPW.satStuff[0][pidx]['MYTAG'].replace(' ','_') + '_' + aPW.satStuff[0][pidx]['DATEOBS'].replace(':','')  +'.png'
+            
+            # Grab the window image
+            figGrab = aPW.pWindow.grab()
+            
+            # Make sure figLabels is set (should be, but doesn't
+            # hurt to check)
+            if figLabels not in globals():
+                figLabels = True
+            
+            # Add labels    
+            if figLabels:
+                painter = QPainter(figGrab)
+                painter.setPen(pg.mkPen('w', width=1.75)) 
+                #painter.setFont(QFont("Arial", 20, QFont.Weight.Bold))
+                painter.drawText(5, 395, aPW.satStuff[0][pidx]['MYTAG'].replace('_',' ')) # X, Y coordinates
+                painter.drawText(285, 395, aPW.satStuff[0][pidx]['DATEOBS']) # X, Y coordinates
+                painter.end()
+                QApplication.processEvents()
+            
+            # Save it
+            figGrab.save('wbOutputs/'+figName)
+            if not silent:
+                print ('Saving figure in wbOutputs/'+figName )
+            
+        #|------- Save overview window -------|   
+        if ovw:
+            figName = 'wombat_'+ self.saveName + '_overview_' + pws[0].satStuff[0][0]['DATEOBS'].replace(':','') + '.png'
+            figGrab = ovw.pWindow.grab()
+            figGrab.save('wbOutputs/'+figName)
+            if not silent:
+                print ('Saving figure in wbOutputs/'+figName )
+    
+            
 # |------------------------------------------------------------|
 # |------------------- Figure Window Class --------------------|
 # |------------------------------------------------------------|
@@ -1519,22 +1574,20 @@ class FigWindow(QWidget):
         myNum:    an index number for this plot window, useful when creating
                   multiple windows, but unnecessary for single window
                   defaults to 0
-    
-        labelPW:  flag to show labels of the spacecraft/instrument name and 
-                  time stamp at the bottom of the figure windows
-                  defaults to True
-    
-        tmap:     an array that maps the slider time index to the observation index.
-                  The obs aren't necessarily uniformly spaced but the t slider is
-                  so a map may look like [0, 1, 1, 2, 3, 4, 4] where 10 slider indices
-                  map to 5 observational indices. Also helps adjust for different
-                  time resolution for different instruments.      
+        
+        tmap:     an array with [t2p and p2t] where t2p is an array mapping from 
+                  t slider to pickle idx and p2t is a dictionary for the reverse
+                  the t2p maps are arrays (e.g. [0, 1, 1, 2, 3, 4, 4])
+                  where the array index is t and the value is p
+                  the p2t maps are dicts (e.g. {0:[0], 1:[1,2], ...})
+                  where the key is the p index and the array is all the
+                  matching t idxs
          
         screenXY: size of the computer display in pixels [x,y]. used to help place windows
     
      
     """
-    def __init__(self, myObs, myScls, satStuff, massIms, myNum=0, tmap=[0], screenXY=None, mouseEnabled=False):
+    def __init__(self, myObs, myScls, satStuff, massIms, myNum=0, tmap=[[0],{0:0}], screenXY=None, mouseEnabled=False):
         """
         Intial setup for the figure window class.
     
@@ -1555,11 +1608,13 @@ class FigWindow(QWidget):
                       multiple windows, but unnecessary for single window
                       defaults to 0
         
-            tmap:     an array that maps the slider time index to the observation index.
-                      The obs aren't necessarily uniformly spaced but the t slider is
-                      so a map may look like [0, 1, 1, 2, 3, 4, 4] where 10 slider indices
-                      map to 5 observational indices. Also helps adjust for different
-                      time resolution for different instruments.
+            tmap:     an array with [t2p and p2t] where t2p is an array mapping from 
+                      t slider to pickle idx and p2t is a dictionary for the reverse
+                      the t2p maps are arrays (e.g. [0, 1, 1, 2, 3, 4, 4])
+                      where the array index is t and the value is p
+                      the p2t maps are dicts (e.g. {0:[0], 1:[1,2], ...})
+                      where the key is the p index and the array is all the
+                      matching t idxs
         
             screenXY: resolution of the computer monitor. used to place windows nicer
         
@@ -1574,7 +1629,6 @@ class FigWindow(QWidget):
         
         #|---- Setup variables ----|
         self.winidx = myNum # index number for multi mode
-        #self.labelIt = labelPW # show labels in plot    
         self.satStuff = satStuff 
         self.satName = satStuff[0][0]['OBS'] +' '+ satStuff[0][0]['INST']
         self.instTag = satStuff[0][0]['KEY']
@@ -1586,7 +1640,6 @@ class FigWindow(QWidget):
         self.tslIdx = 0 # index within the time slider
         self.t2p = tmap[0] # slider time to pickle index
         self.p2t = tmap[1] # pickle index to slider time
-        self.prevSliderVals = np.zeros([2,3,len(tmap),2], dtype=int) # diff, scale, time , min/max
         self.nowMass = False # show the region used to calc mass
         self.WFmasks = [np.zeros(myObs[0][0].data.shape, dtype=int) for i in range(nwfs)]
         
@@ -1637,6 +1690,7 @@ class FigWindow(QWidget):
         if not mouseEnabled:
             self.pWindow.getPlotItem().getViewBox().setMouseEnabled(x=False, y=False)
         layoutP.addWidget(self.pWindow,0,0,11,11,alignment=QtCore.Qt.AlignCenter)
+
         #|---- Make an image item ----|
         self.image = pg.ImageItem(axisOrder='row-major')
 
@@ -1644,7 +1698,6 @@ class FigWindow(QWidget):
         self.MCimage = pg.ImageItem(axisOrder='row-major')
         
         #|---- Check for color table ----|
-        # (from wombatLoadCTs)
         hasCT = check4CT(satStuff[0][0])
         if type(hasCT) != type(None):
              self.image.setLookupTable(hasCT)
@@ -1679,14 +1732,7 @@ class FigWindow(QWidget):
         #|---- Time label ----|
         self.time_label = QLabel('I AM A TIME')
         layoutP.addWidget(self.time_label, 12,7,1,4,alignment=QtCore.Qt.AlignRight)
-        
-                
-        #|---- Fill slider defaults ----|
-        for i in range(3):
-            for j in range(len(tmap)):
-                self.prevSliderVals[:,i,j,0] = satStuff[0][0]['SLIVALS'][0][i]
-                self.prevSliderVals[:,i,j,1] = satStuff[0][0]['SLIVALS'][1][i]
-        
+                      
         #|---- Min brightness label/slider ----|
         minL = QLabel('Min Value:     ')
         layoutP.addWidget(minL, 13,0,1,9)
@@ -1741,7 +1787,7 @@ class FigWindow(QWidget):
         self.setLayout(layoutP)
         
         #|---- Show the background ----|
-        # not actually needed, mw will call
+        # call so we can set the range/lims
         self.plotBackground()
         rw, cl = self.image.image.shape[:2]
         self.pWindow.setRange(xRange=[0,cl], yRange=[0,rw], padding=0)
@@ -1749,11 +1795,6 @@ class FigWindow(QWidget):
         self.pWindow.getViewBox().suggestPadding = lambda *_: 0.0
         self.pWindow.getPlotItem().getViewBox().setAspectLocked(True)
         
-        #print (self.pWindow.boundingRect())
-        
-        #self.pWindow.getPlotItem().getViewBox().setAspectLocked(True)
-        
-        #print (self.pWindow.boundingRect())
         
     #|------------------------------| 
     #|----------- Layout -----------|
@@ -1784,7 +1825,8 @@ class FigWindow(QWidget):
     #|------------------------------| 
     def s2l(self, x=None, l=None, pref=None):
         """
-        Event for scaling slider changes.
+        Event for scaling slider changes. Changes the text label
+        and updates curSet for the new min/max
         
         Inputs:
             x:      the integer slider value
@@ -1796,14 +1838,7 @@ class FigWindow(QWidget):
             Sets the label to pref + x
             Replots background using update min/max values
      
-        """
-        '''if type(curSet) != type(None):
-            didx = curSet[self.instTag][0][self.tslIdx]
-            sclidx = curSet[self.instTag][1][self.tslIdx]
-        else:
-            didx = 0
-            sclidx = 0'''
-        
+        """        
         # Make sure we change all tidx that match this pidx 
         if type(curSet) != type(None):
                       
@@ -1890,10 +1925,11 @@ class FigWindow(QWidget):
                     mainwindow.updateScaleMode(key, doItAll=True, justSat=[self.winidx])
                 elif event.key() in [38, 42, 40, 41]: # shift 7, 8, 9, 0
                     mainwindow.propagateVals(event.key(), justSat=[self.winidx])
-                    
+        #|--- Log ---|            
         elif event.key() == QtCore.Qt.Key_L:
             if 'mainwindow' in globals():
                 mainwindow.LBclicked(singleSat=self.winidx)
+        #|--- Save ---|            
         elif event.key() == QtCore.Qt.Key_S:
             if 'mainwindow' in globals():
                 mainwindow.SBclicked(singleSat=self.winidx)
@@ -1909,8 +1945,7 @@ class FigWindow(QWidget):
         #|--- Difference mode ---|
         elif event.key() in [QtCore.Qt.Key_B, QtCore.Qt.Key_R]:
             if 'mainwindow' in globals():
-                mainwindow.updateDiffMode(event.key(), justSat=[self.winidx])
-                                        
+                mainwindow.updateDiffMode(event.key(), justSat=[self.winidx])                                        
         #|--- Scaling mode ---|
         elif event.key() in [QtCore.Qt.Key_1, QtCore.Qt.Key_2, QtCore.Qt.Key_3]:
             if 'mainwindow' in globals():
@@ -1938,11 +1973,9 @@ class FigWindow(QWidget):
         
         """
         # Switch to the new mode
-        #self.sclidx = text  
-        #print (doItAll)
         if 'mainwindow' in globals():
             if not mainwindow.holdIt:
-                
+                # Sort out which time steps               
                 if doItAll:
                     allThisTidx = range(len(self.t2p))
                 else:
@@ -1951,19 +1984,20 @@ class FigWindow(QWidget):
                     pidx = self.t2p[tidx]
                     allThisTidx = self.p2t[pidx]
                     
-                    
+                # |--- Update log with pre-switch vals ---|    
                 myDiff = curSet[self.instTag][0][self.tslIdx]
                 prevScl  = curSet[self.instTag][1][self.tslIdx]
                 # Log the current min/max for this diff/scl
                 setLog[self.instTag][myDiff][prevScl][0][allThisTidx] = np.copy(curSet[self.instTag][2][allThisTidx])
                 setLog[self.instTag][myDiff][prevScl][1][allThisTidx] = np.copy(curSet[self.instTag][3][allThisTidx])
                 
-                # Set new scale
+                # |--- Set new diff, check existing min/max ---|    
                 curSet[self.instTag][1][allThisTidx] = text
                 # Pull existing min/max
                 curSet[self.instTag][2][allThisTidx] = np.copy(setLog[self.instTag][myDiff][text][0][allThisTidx])
                 curSet[self.instTag][3][allThisTidx] = np.copy(setLog[self.instTag][myDiff][text][1][allThisTidx])
-                               
+                
+                # |--- Update sliders ---|    
                 minV, maxV = curSet[self.instTag][2][self.tslIdx], curSet[self.instTag][3][self.tslIdx]
                 self.MinSlider.setValue(minV)  
                 self.MaxSlider.setValue(maxV)  
@@ -2021,8 +2055,9 @@ class FigWindow(QWidget):
         Actions:
             Prints the following to the terminal:
                 SatName InstName pix: pixel_x pixel_y
-                     Tx, Ty (arcsec): Tx, Ty
-               Proj R (Rs), PA (deg): ProjR, PA
+                     Tx, Ty (arcsec):   Tx, Ty
+               Proj R (Rs), PA (deg):   ProjR, PA
+               Mass in pixel (1e8 g):   Mass
         
         """
         #|---- Get the event loc in pix ----|
@@ -2052,6 +2087,7 @@ class FigWindow(QWidget):
         # PA define w/ N as 0 and E (left) as 90
         PA = (np.arctan2(-Tx,Ty) * 180 / np.pi) % 360.
         print ('Proj R (Rs), PA (deg):'.rjust(25), '{:8.2f}'.format(RRSun), '{:8.1f}'.format(PA))
+        
         # |---- Get mass per pixel  ----| 
         if type(self.mIms[pidx]) != type(None):    
             px = int(pix[0])
@@ -2100,6 +2136,7 @@ class FigWindow(QWidget):
                 else:
                     didx, sclidx = 0, 0
                 pidx = self.pickIdx
+                
                 #|----------------------|
                 #|---- Get sat info ----|
                 #|----------------------|
@@ -2219,6 +2256,7 @@ class FigWindow(QWidget):
                         allxs.append(myPt[0][0])      
                         allys.append(myPt[0][1])       
                         #pos.append({'pos': [myPt[0][0], myPt[0][1]], 'pen':{'color':myColor, 'width':penwid}, 'brush':pg.mkBrush(myColor)})
+ 
                 #|---- Build the points ----|
                 allxs = np.array(allxs)   
                 allys = np.array(allys)   
@@ -2242,8 +2280,8 @@ class FigWindow(QWidget):
         if type(curSet) != type(None):
             didx = curSet[self.instTag][0][self.tslIdx]
             sclidx = curSet[self.instTag][1][self.tslIdx]
-            slMin = curSet[self.instTag][2][self.tslIdx]#self.MinSlider.value()
-            slMax = curSet[self.instTag][3][self.tslIdx]#self.MaxSlider.value()
+            slMin = curSet[self.instTag][2][self.tslIdx]
+            slMax = curSet[self.instTag][3][self.tslIdx]
             
         else:
             didx = 0
@@ -2254,11 +2292,8 @@ class FigWindow(QWidget):
         
         #|---- Update image ----|     
         self.image.updateImage(image=myIm, levels=(slMin, slMax))
-        #self.image.updateImage(image=self.mIms[self.tidx], levels=(-5e9, 5e9))
+        
         #|---- Show mass contour ----|   
-        # Use fake data for now 
-        #fakeIm = np.zeros(myIm.shape)
-        #fakeIm[250:350] = 1
         if self.nowMass: 
             bigMask = np.zeros(self.mIms[self.pickIdx].shape, dtype=float)
             for i in range(nwfs):
@@ -2270,16 +2305,14 @@ class FigWindow(QWidget):
                     if mySep > 80:
                         print ('!!!--- Warning PoS separation large, capping at 80 deg ---!!!')
                         mySep = 80                                            
-                    # Prob need to convert the h to projected...
-                    rpos, Bpos = wM.elTheory([wfs[i].params[0]], 0)
-                    rsep, Bsep = wM.elTheory([wfs[i].params[0]], mySep)
+                    # Need to convert the h to projected for elTheory
+                    rpos, Bpos = wM.elTheory([wfs[i].params[0]]*np.cos(mySep*np.pi/180.), 0)
+                    rsep, Bsep = wM.elTheory([wfs[i].params[0]]*np.cos(mySep*np.pi/180.), mySep)
                     sclfct = Bsep / Bpos
                     print ((self.satName + ' PoS WF' + str(i+1) + ' mass (g): ').rjust(50) + "{:.3e}".format(np.sum(self.WFmasks[i]* self.mIms[self.pickIdx])))
                     print ((self.satName + ' deProj WF' + str(i+1) + ' mass (g): ').rjust(50) + "{:.3e}".format(np.sum(self.WFmasks[i]* self.mIms[self.pickIdx]/sclfct)), ' (scale factor ', "{:.1f}".format(1/sclfct[0]), ')')
                 print ('')
-            self.MCimage.updateImage(image= bigMask, opacity=0.5, levels=(0,nwfs-0.5))
-
-            
+            self.MCimage.updateImage(image= bigMask, opacity=0.5, levels=(0,nwfs-0.5))            
         else:
             self.MCimage.updateImage(image= self.WFmasks[0], opacity=0.0, levels=(0,1))
         
@@ -2315,6 +2348,10 @@ class OverviewWindow(QWidget):
     
     Inputs:
         satStuff: an array of all the satStuff dictionaries for all sats
+    
+    Optional Inputs:
+        screenXY: size of the computer display in pixels [x,y]. 
+                  used to help place windows
      
     """
     def __init__(self, satStuff, screenXY=None):
@@ -2333,7 +2370,7 @@ class OverviewWindow(QWidget):
         
         #|---- Set up/name window ----|
         if type(screenXY) != type(None):
-            # The positioning is being odd, might be testing with multiple
+            # The positioning is being odd, might be bc testing with multiple
             # monitors, semi giving up on nice pos for now
             self.setGeometry( int(0.8*screenXY[0]),screenXY[1] , 400, 400) 
         self.setFixedSize(400, 400) 
@@ -2372,6 +2409,8 @@ class OverviewWindow(QWidget):
         self.curves = []
         self.fbis = []
         L1counter = 0
+        
+        # |--- Loop through the satellites ---|
         for i in range(nSats):
             #|---- Get a proj sat loc ----|
             pidx = pws[i].pickIdx
@@ -2462,7 +2501,8 @@ class OverviewWindow(QWidget):
     
     def updateArrow(self, i, color='w'):
         """
-        Function for updating wf longitude arrow.
+        Function for updating wf longitude arrow or the
+        full wf set of scatter points
         
         Inputs:
             i:      the WF index
@@ -2475,6 +2515,8 @@ class OverviewWindow(QWidget):
         mywf = wfs[i]
         lon  = mywf.params[1]
         h    = mywf.params[0]
+        
+        #|--- Show arrow if close to Sun ---|
         if h < 10:
             #|---- Get arrow head loc ----|
             rlon = lon * np.pi /180.
@@ -2489,14 +2531,15 @@ class OverviewWindow(QWidget):
             tail_len = self.arrows[i].opts['tailLen']
             self.arrows[i].setPos(xh, yh)
             self.wfScats[i].setData([], [])
+        
+        #|--- Otherwise full wf projection ---|
         else:            
             xs = -wfs[i].points[::2,0] / 215.
             ys = wfs[i].points[::2,1] / 215.
             self.wfScats[i].setData(ys, xs)
             self.wfScats[i].setBrush(color)
-            # Turn off arrow (potentially)
+            # Turn off arrow
             self.arrows[i].setStyle(angle=0, headWidth=0, headLen=0, tailLen=0, tailWidth=0., pxMode=False)
-            #tail_len = self.arrows[i].opts['tailLen']
             self.arrows[i].setPos(0, 0)
     
     def updateFoV(self):
@@ -2519,9 +2562,11 @@ class OverviewWindow(QWidget):
             y = - myR * np.cos(myLon)
             x = myR * np.sin(myLon)
             
+            #|--- Set satellite location ---|
             pos = [{'pos': [x,y]}]
             self.scatters[i].setData(pos)
             
+            #|--- Set the field of view curves ---|
             myPoint = self.satStuff[i][0][pws[i].pickIdx]['POINTING'][1]
             xPt = myPoint[1] 
             yPt = -myPoint[0]
@@ -2530,12 +2575,11 @@ class OverviewWindow(QWidget):
             xPt = myPoint[1] 
             yPt = -myPoint[0]
             self.curves[i][1].setData([x, xPt], [y, yPt])
-            
-        
-        
+                    
     def keyPressEvent(self, event):
         """
-        Event for key press events. 
+        Event for key press events. This just tosses the event
+        to the main window key press function.
         
         Actions (based on key):
             return = replot (pulls out of param text box)
@@ -2565,176 +2609,12 @@ class OverviewWindow(QWidget):
             8 (*)  = propagate WF params forward in time
             9 (()  = propagate min/max values back in time
             0 ())  = propagate min/max values forward in time
-        
      
         """
         if 'mainwindow' in globals():
             mainwindow.keyPressEvent(event)
 
            
-
-
-# |------------------------------------------------------------|
-# |---------------- Scale the Background Imgs -----------------|
-# |------------------------------------------------------------|
-def makeNiceMMs(obsIn, satStuffs):
-    """
-    Function to convert input maps into scaled arrays with values
-    between 0-255 that are ready to show as is in the plot windows.
-    We process this all ahead of time so the GUI flips through 
-    existing data without needing new calculations
-
-    Inputs:
-        obsIn:     The observations from a single instrument in the form
-                   [[map1, map2, ...], [hdr1, hdr2, ...]]
-    
-        satStuffs: the header like structure created by getSatStuff.
-           
-    Outputs:
-        allScls:   an array of three times series the data scaled using diffent
-                   methods (linear, logarithmic, square root). This data is in 
-                   array form, not maps.
-                   e.g. [[lin1, log1, sqrt1], [lin2, log2, sqrt2], ...]
-    
-        satStuffs: the header like structure created by getSatStuff 
-                   but with a few additional entries
-    
-    """
-    #|-------------------------------------| 
-    #|---- Configuration Dictionaries -----|
-    #|-------------------------------------|
-    # Dictionaries that establish the scaling of things
-    # Pull the desired values for each instrument
-    
-    # mins/maxs on percentiles by instrument [[lower], [upper]] with [lin, log, sqrt]
-    pMMs = {'AIA':[[0.001,10,1], [99,99,99]], 'SECCHI_EUVI':[[0.001,10,1], [99,99,99]], 'LASCO_C2':[[15,1,15], [97,99,97]], 'LASCO_C3':[[40,1,10], [99,99,90]], 'SECCHI_COR1':[[30,1,10], [99,99,90]], 'SECCHI_COR2':[[20,1,10], [92,99,93]], 'SECCHI_HI1':[[1,40,1], [99.9,80,99.9]], 'SECCHI_HI2':[[1,40,1],[99.9,80,99.9]], 'WISPR_HI1':[[1,40,1], [99.9,80,99.9]], 'WISPR_HI2':[[1,40,1], [99.9,80,99.9]], 'SoloHI':[[1,40,1], [99.5,80,99.5]] }
-    
-    # Where the background sliders start (between 0 and 255)
-    sliVals = {'AIA':[[0,0,0], [191,191,191]], 'SECCHI_EUVI':[[0,32,0], [191,191,191]], 'LASCO_C2':[[0,0,21],[191,191,191]], 'LASCO_C3':[[37,0,37],[191,191,191]], 'SECCHI_COR1':[[63,0,21],[191,191,191]], 'SECCHI_COR2':[[63,0,21],[191,191,191]], 'SECCHI_HI1':[[63,0,21],[128,191,191]], 'SECCHI_HI2':[[63,0,21],[128,191,191]],  'WISPR_HI1':[[0,0,21],[128,191,191]], 'WISPR_HI2':[[0,0,21],[128,191,191]], 'SoloHI':[[0,0,21],[128,191,191]]}
-    
-   
-    # Pull the configuration based on instrument
-    myInst = satStuffs[0]['INST']
-    myMM = pMMs[myInst]
-    mySliVals = sliVals[myInst]
-    
-    #|--- Loop through both RD and BD ---|
-    bothScls = []
-    bothSatStuffs = []   
-     
-    for k in range(2):
-        #|-------------------------------------| 
-        #|------- Pull/Clean Map data ---------|
-        #|-------------------------------------|
-        #|---- Make empty holder ----|
-        sz = obsIn[k][0].data.shape
-        allObs = np.zeros([len(satStuffs), sz[1], sz[0]])
-        #|---- Fill from map data ----|
-        for i in range(len(satStuffs)):
-            allObs[i,:,:] = np.transpose(obsIn[k][i].data)
-        
-        #|---- Get overall median ----|
-        imNonNaN = allObs[~np.isnan(allObs)]   
-        medval  = np.median(np.abs(imNonNaN))
-    
-        #|---- Check if diff image ----|
-        # Get the median negative value to comp to the median abs
-        # value. If neg med big enough assume that is diff image
-        negmed  = np.abs(np.median(imNonNaN[np.where(imNonNaN < 0)]))
-        diffImg = False
-        if (negmed / medval) > 0.25: # guessing at cutoff of 25%, might tune
-            diffImg = True
-    
-        #|---- Clean out NaNs ----|
-        if not diffImg:
-            allObs[np.isnan(allObs)] = 0
-        else:
-            allObs[np.isnan(allObs)] = -9999
-    
-        #|---- Clean out Infs ----| 
-        if not diffImg:
-            allObs[np.isinf(np.abs(allObs))] = 0
-            imNonNaN[np.isinf(np.abs(imNonNaN))] = 0
-        else:
-            allObs[np.isinf(np.abs(allObs))] = -9999
-            imNonNaN[np.isinf(np.abs(imNonNaN))] = -9999
-    
-        #|-------------------------------------| 
-        #|--------- Process the data ----------|
-        #|-------------------------------------|    
-        #|---- Scaled image holder ----|   
-        allScls = []    
-    
-        #|---- Process linear imgs ----|   
-        # Get vals at min/max percentile from the config dictionary
-        linMin, linMax = np.percentile(imNonNaN, myMM[0][0]), np.percentile(imNonNaN, myMM[1][0])   
-        # If a diff image reset min to neg val based on max   
-        if diffImg:
-            linMin = - 0.5*linMax
-        # Calc range and scale to 0 - 255
-        rng = linMax- linMin
-        linIm = (allObs - linMin) * 255 / rng
-
-        #|---- Process log imgs ----|   
-        # Normalize to keep things in nice ranges
-        tempIm = allObs / medval
-        tempNonNan = imNonNaN / medval
-        # Get min val based on config dict
-        minVal = np.percentile(np.abs(tempNonNan),myMM[0][1])
-        # Separate into positive and negative values
-        pidx = np.where(tempIm > minVal)
-        nidx = np.where(tempIm < -minVal)
-        # Make new img
-        logIm = np.zeros(tempIm.shape)
-        # Set where abs val < min to 1
-        logIm[np.where(np.abs(tempIm) < minVal)] = 1
-        # Positive is just log + 1
-        logIm[pidx] = np.log(tempIm[pidx] - minVal + 1)  
-        # Negative is -log(abs) + 1
-        logIm[nidx] = -np.log(-tempIm[nidx] - minVal + 1)  
-        # Get max val from config dict and rescale
-        percX = np.percentile(logIm, myMM[1][1])
-        logIm = 191 * logIm / percX
-    
-        #|---- Process sqrt imgs ----|   
-        # Normalize to keep things in nice ranges
-        tempIm = allObs / medval
-        # Get min val based on config dict
-        minVal = np.percentile(tempNonNan,myMM[0][2])
-        # Set min val to zero
-        tempIm = tempIm - minVal 
-        # Set all neg to zero
-        tempIm[np.where(tempIm < 0)] = 0
-        # Sqrt now that everyone is positive
-        sqrtIm = np.sqrt(tempIm)
-        # Get max val from config dict and rescale
-        percX = np.percentile(sqrtIm, myMM[1][2])
-        sqrtIm = 191 * sqrtIm / percX
-    
-    
-        #|-------------------------------------| 
-        #|--------- Package Results -----------|
-        #|-------------------------------------|
-        for i in range(len(satStuffs)):
-            #|---- Add the slider init values to satStuff ----|
-            satStuffs[i]['SLIVALS'] = mySliVals
-    
-            #|---- Package this time step ----|
-            sclIms = [linIm[i], logIm[i],  sqrtIm[i]]
-        
-            #|---- Add a mask (if needed) ----|
-            if 'MASK' in satStuffs[i]:
-                midx = np.where(satStuffs[i]['MASK'] == 1)
-                for k in range(3):
-                    # black out all occulted
-                    sclIms[k][midx] = -100. # might need to change if adjust plot ranges
-                
-            #|---- Append masked/scaled images to out list ----|
-            allScls.append(sclIms)
-        bothScls.append(allScls)
-        bothSatStuffs.append(satStuffs)
-    return bothScls, bothSatStuffs
-
 # |------------------------------------------------------------|
 # |----------------- Setup up satStuff dicts ------------------|
 # |------------------------------------------------------------|
@@ -3133,13 +3013,40 @@ def buildMegaVars(rD, tlabs, tmaps, satNames):
     Function to reload the GUI from a save file 
     
     Inputs:
-       rD:  a reload dictionary read in from a save file in processReload
-            or from reloadLogLine
-            (in wombatWrapper.py)
+       rD:  a reload dictionary from log lines processed by
+            wombatWrappper. Will be an empty structure that passes
+            through fine if starting from scratch instead of reload
     
     Effects:
-            Set wireframe and background parameters to the values they 
-            had when the save file was generated
+            Sets up the three main variables used to represent the
+            current state of the plot settings and wf parameters and
+            track the previous plot settings for different background
+            diff/scl settings. These variables are
+    
+            paramLog: The wireframe parameters. This is a dictionary with keys for every possible
+                      combination of wftype and wf index number (e.g. 'GCS2'), which allows for
+                      duplicates of a type. The syntax is paramLog[type#][parameter_index][time_index]
+                      where the parameter_index matches the order of the labels in the GUI (top to bottom)
+                      and the time index corresponds to the universal time index (not pickle index). If a
+                      type# has not be used or reloaded then the values will be set to None. As a user fits
+                      the wf the values are stored for each type/time and can be reloaded if one switches 
+                      away from one type/time then comes back to it
+        
+            setLog:   A log of previously used aesthetics of the background. This is a dictionary with keys 
+                      corresponding to the instrument tag of each plot window which is used to track the most
+                      recently used values for the min/max sliders for each combo of difference mode, scaling
+                      mode, and time. The syntax is setLog[instTag][diffIndex][scaleIndx][min/max][time_idx] where 
+                      diffIndex is 0 for running and 1 for base, scale is 0, 1, 2 for linear, log, sqrt, and
+                      min/max is 0 for min and 1 for max. This is populated with the default values at the start 
+                      and logs changes to be reloaded if this diff/scale/time is revisited
+    
+    
+            curSet:   The current settings of the aesthetics. This is a dictionary with keys corresponding to the 
+                      plot window instrument tag. The syntax is curSet[instTag][set_idx][time_idx] where set_idx
+                      0 gives the difference mode, 1 gives the scaling mode, 2 gives the min slider value, 4 gives
+                      the max slider value, and time_idx is universal time. This is the current state of the 
+                      system and allows to cycle through different diff types and scalings across different times.
+            
         
     """
     
@@ -3203,8 +3110,7 @@ def buildMegaVars(rD, tlabs, tmaps, satNames):
                 myMatch = np.where(myDiffs == np.min(myDiffs))[0][0]
                 #reloadParams[aName].append(rD['Params'][aName][myTimes[myMatch]])
                 for ii in range(nParams):
-                    paramLog[aName][ii][i] = rD['Params'][aName][myTimes[myMatch]][ii]
-        
+                    paramLog[aName][ii][i] = rD['Params'][aName][myTimes[myMatch]][ii]        
 
     #|----------------------------------|
     #|---- Set up setLog at defaults ---|
@@ -3231,9 +3137,7 @@ def buildMegaVars(rD, tlabs, tmaps, satNames):
         for didx in [0, 1]:
             setLog[aInst][didx] = [[], [], []]
             for sclidx in [0,1,2]:
-                setLog[aInst][didx][sclidx] = np.copy([minVs[sclidx]*tOnes, maxVs[sclidx]*tOnes])
-                #print (aInst, didx, sclidx, len(setLog[aInst][didx][sclidx][0]), len(setLog[aInst][didx][sclidx][1]))
-    
+                setLog[aInst][didx][sclidx] = np.copy([minVs[sclidx]*tOnes, maxVs[sclidx]*tOnes])    
     
     #|---------------------------------------------|
     #|---- Set up curSet with rD/lin as default ---|
@@ -3241,8 +3145,7 @@ def buildMegaVars(rD, tlabs, tmaps, satNames):
     curSet = {}    
     for aInst in instNames:
         curSet[aInst] = [np.zeros(nsli, dtype=int), np.zeros(nsli, dtype=int), np.copy(setLog[aInst][0][0][0]), np.copy(setLog[aInst][0][0][1])]
-        
- 
+         
     #|---------------------------------|
     #|---- Replace with reload vals ---|
     #|---------------------------------|    
@@ -3270,14 +3173,12 @@ def buildMegaVars(rD, tlabs, tmaps, satNames):
         firstDiff = (np.min(allt0s) - sliDts[0]).total_seconds()
         firstdelts = np.abs(sliDeltas-firstDiff)
         myMatch = np.where(firstdelts == np.min(firstdelts))[0][0]
-        #mainwindow.Tsliders[0].setValue(myMatch+2)    
         mainwindow.update_tidx(myMatch+2, myId=0)
         # Set each parameter panel (time and params) 
         for i in range(nwfs):
             aWF = wfs[i]
             WFid = WFname2id[aWF[:-1]]
             mainwindow.cbs[i].setCurrentIndex(WFid)
-            # Is this necessary? t set should prob hit it... !!!!
             for j in range(len(paramLog[aWF])):
                 myP = paramLog[aWF][j][myMatch]
                 mainwindow.widges[i][0][j].setValue(myP)  
@@ -3322,6 +3223,8 @@ def sortTimeIndices(satStuff, tRes=20):
     # Min/max time for each instrument
     allMins  = []
     allMaxs  = []
+    
+    #|--- Loop through sats ---|
     for j in range(len(satStuff)):
         aSat = satStuff[j]
         myTimes = []
@@ -3331,7 +3234,8 @@ def sortTimeIndices(satStuff, tRes=20):
         # Check if sorted
         if not all(a <= b for a, b in pairwise(myTimes)):
             sys.exit('Exiting from sortTimeIndices, files should be provided in time order')
-        
+            
+        # Track earliest/latest times
         allMins.append(myTimes[0])
         allMaxs.append(myTimes[-1])
         allTimes.append(np.array(myTimes))
@@ -3523,15 +3427,16 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, reloadDict=None, logF
     global mainwindow, pws, nSats, wfs, nwfs, ovw, bkgpkl 
     global paramsBuilt, figLabels
     global paramLog, setLog, curSet
-    paramsBuilt = False # keep from trying to build WF until param widgets done
+    paramsBuilt = False # keep from trying to build WF until param widgets are built
     figLabels = doFigLabs
     paramLog, setLog, curSet = None, None, None
     
     #|----------------------------------------| 
     #|--- Pull apart background data input ---|
     #|----------------------------------------|
-    # OG build had most of this calculated below but now we do beforehand
-    # so take it and slot things into the existing architecture
+    # Assign things passed into variable names
+    # A bit hacky to use architecture that existed
+    # before the pickle party
     WBinfo = obsFiles['WBinfo']
     proIms0 = obsFiles['proIms0']
     proIms = obsFiles['proImMaps']
@@ -3545,9 +3450,9 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, reloadDict=None, logF
     global instNames
     instNames = WBinfo['Insts']
     
-    #|-----------------------------| 
-    #|---- Remap keys to ints -----|
-    #|-----------------------------|
+    #|------------------------------| 
+    #|---- Remap keys to insts -----|
+    #|------------------------------|
     # Check multi time at same time
     multiTime = False
     i2inst = {}
@@ -3666,8 +3571,11 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, reloadDict=None, logF
     #|---------------------------------| 
     #|---- Set values from reload -----|
     #|---------------------------------|
+    # This will pull from a real realod Dict or just set up
+    # things at the default values if passed an empty one
     paramLog, setLog, curSet = buildMegaVars(reloadDict, tlabs, idxMaps, WBinfo['Insts'])
-    # Set windows out here so curSet defined
+    
+    # Adjust plot window parameters based on reload
     for apw in pws:
         myInst = apw.instTag
         myDif = curSet[myInst][0][apw.tslIdx]
