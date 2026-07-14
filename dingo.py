@@ -2778,23 +2778,11 @@ def processArgs(args):
                 print (astr)
             sys.exit()
                 
-    # Will work with no + (= single id)
-    '''splitstr = idstr.split('+')
-    ids = []
-    for aStr in splitstr:
-        try:
-            ids.append(int(aStr))
-        except:
-            print ('Error in converting id string to individual ids. Error at', aStr)
-            print('Full command line syntax is')
-            for astr in errorStrings:
-                print (astr)
-            sys.exit()'''
             
     # Check that things match as needed
     pairTimes = None
     pairIds   = None
-    if nplus > 0:
+    if len(ids) > 1:
         txtIds = np.array(ids) - 1 # indexing from 0 in python
         miniLog = logFile[txtIds,:]
         
@@ -2821,9 +2809,9 @@ def processArgs(args):
             singleWF  = False
             inWFs = ['GCS', 'Torus', 'GCS*', 'Tube']
             outWFs = ['Sphere', 'HalfSphere', 'Ellipse', 'HalfEllipse']
-            if (uniqShapes[0] in inWFs) and (uniqShapes[1] in outWFs):
+            if (uniqShapes[0][:-1] in inWFs) and (uniqShapes[1][:-1] in outWFs):
                 inWF, outWF = uniqShapes[0], uniqShapes[1]
-            elif (uniqShapes[1] in inWFs) and (uniqShapes[0] in outWFs):
+            elif (uniqShapes[1][:-1] in inWFs) and (uniqShapes[0][:-1] in outWFs):
                 inWF, outWF = uniqShapes[1], uniqShapes[0]
             else:
                 print ('Cannot combine selected WF types. Currently have ', uniqShapes)
@@ -2858,7 +2846,7 @@ def processArgs(args):
         line = logFile[ids[0]-1,:]
         miniLog = np.array(line).reshape([1,-1])
         uniqTs = np.unique(miniLog[:, 2])
-        uniqShapes = np.unique(miniLog[:, 3])
+        uniqShapes = np.unique(miniLog[:, 3]) 
         nTimes = 1
 
     #|-------------------------------|
@@ -3308,7 +3296,8 @@ def dingoWrapper(args, pullMass=False, silent=False):
             lineO = miniLog[pairIds[i][1],:]
             aboutMe.append(lineI[2]+ ' ' + lineI[1] + ' ' + lineI[3] + ' ' + lineO[3])
         # Make the wfs
-        aWFi = wf.wireframe(lineI[3].replace('Half', 'Half '), doBack=True)
+        # Need to take off window tag from type
+        aWFi = wf.wireframe(lineI[3][:-1].replace('Half', 'Half '), doBack=True)
         ps = []
         for i in range(9):
             if lineI[i+4] != 'None':
@@ -3317,7 +3306,7 @@ def dingoWrapper(args, pullMass=False, silent=False):
         aWFi.getPoints()
         wfsI.append(aWFi)
         if not singleWF:
-            aWFo = wf.wireframe(lineO[3].replace('Half', 'Half '), doBack=True)
+            aWFo = wf.wireframe(lineO[3][:-1].replace('Half', 'Half '), doBack=True)
             ps = []
             for i in range(9):
                 if lineO[i+4] != 'None':

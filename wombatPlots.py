@@ -687,7 +687,7 @@ def printPoints(wombatRes, wfTypes, outName=None, morePts=2):
     for awf in toDo:
         times = toDo[awf]['times']
         for i in range(len(times)):
-            mywf = wf.wireframe(awf.replace('Half', 'Half ')) 
+            mywf = wf.wireframe(awf[:-1].replace('Half', 'Half ')) 
             mywf.params = toDo[awf]['params'][i]
             
             # Rescale grid points (if needed)
@@ -730,11 +730,11 @@ def makeVmap(wombatRes, wfTypes, outName=None, morePts=2):
     
         
     # Make the wireframes
-    wf1 = wf.wireframe(awf.replace('Half', 'Half '))  
+    wf1 = wf.wireframe(awf[:-1].replace('Half', 'Half '))  
     wf1.params = myParams[0] 
     wf1.gPoints = [i * morePts for i in wf1.gPoints]
     wf1.getPoints() 
-    wf2 = wf.wireframe(awf.replace('Half', 'Half '))  
+    wf2 = wf.wireframe(awf[:-1].replace('Half', 'Half '))  
     wf2.params = myParams[1] 
     wf2.gPoints = [i * morePts for i in wf2.gPoints]
     wf2.getPoints() 
@@ -1069,6 +1069,7 @@ def processBonusArgs(args, mode):
                 outName = val
 
     return dragHeights, errorbars, incDrag, logIt, minVal, maxVal, massPkl, outName, overlap, predAT, reloadIt, versusH, wfColors
+
 # |-------------------------|
 # |--- Line profile plot ---|
 # |-------------------------|
@@ -1113,7 +1114,7 @@ def profilePlot(mode, wombatRes, wfTypes, logH=False, wfColors=False, enRes=None
     # Only height 
     if '1' in mode:
         nParams = 1
-        tempWF =  wf.wireframe(wfTypes[0].replace('Half', 'Half '))
+        tempWF =  wf.wireframe(wfTypes[0][:-1].replace('Half', 'Half '))
         yLabelsL.append(tempWF.labels[0])
         for wft in wfTypes:
             id2id[wft] = [0]
@@ -1125,7 +1126,7 @@ def profilePlot(mode, wombatRes, wfTypes, logH=False, wfColors=False, enRes=None
         # Loop to see what combo of AWs we have
         myAWs = []
         for wft in wfTypes:
-            tempWF = wf.wireframe(wft.replace('Half', 'Half '))
+            tempWF = wf.wireframe(wft[:-1].replace('Half', 'Half '))
             if 'AW (deg)' in tempWF.labels:
                 lColor = pltColors[wft]
                 myAWs.append('AW (deg)')
@@ -1150,7 +1151,7 @@ def profilePlot(mode, wombatRes, wfTypes, logH=False, wfColors=False, enRes=None
             yLabelsL.append('AW (deg)')
             lColors[1] = 'k'
             for wft in wfTypes:
-                tempWF = wf.wireframe(wft.replace('Half', 'Half '))
+                tempWF = wf.wireframe(wft[:-1].replace('Half', 'Half '))
                 if 'AW (deg)' in tempWF.labels:
                     idx = np.where(tempWF.labels == 'AW (deg)')[0]
                     id2id[wft][idx[0]] = 1
@@ -1162,7 +1163,7 @@ def profilePlot(mode, wombatRes, wfTypes, logH=False, wfColors=False, enRes=None
             yLabelsL.append('AW_EO (deg)')
             
             for wft in wfTypes:
-                tempWF = wf.wireframe(wft.replace('Half', 'Half '))
+                tempWF = wf.wireframe(wft[:-1].replace('Half', 'Half '))
                 if 'AW_FO (deg)' in tempWF.labels:
                     idx = np.where(tempWF.labels == 'AW_FO (deg)')[0]
                     id2id[wft][idx[0]] = 1
@@ -1187,7 +1188,7 @@ def profilePlot(mode, wombatRes, wfTypes, logH=False, wfColors=False, enRes=None
             yLabelsR.append('AW_FO (deg)')
             yLabelsR.append('AW_EO (deg)')
             for wft in wfTypes:
-                tempWF = wf.wireframe(wft.replace('Half', 'Half '))
+                tempWF = wf.wireframe(wft[:-1].replace('Half', 'Half '))
                 if 'AW (deg)' in tempWF.labels:
                     idx = np.where(tempWF.labels == 'AW (deg)')[0]
                     id2id[wft][idx[0]] = 1
@@ -1215,7 +1216,7 @@ def profilePlot(mode, wombatRes, wfTypes, logH=False, wfColors=False, enRes=None
             if wf.npDict[wft.replace('Half', 'Half ')] > nParams:
                 nParams = wf.npDict[wft.replace('Half', 'Half ')]
                 maxType = wft
-            tempWF = wf.wireframe(wft.replace('Half', 'Half '))
+            tempWF = wf.wireframe(wft[:-1].replace('Half', 'Half '))
             ylabs[wft] = tempWF.labels
         id2id[maxType] = np.arange(0,nParams)
         yLabelsL = np.array(ylabs[maxType])
@@ -1542,7 +1543,7 @@ def profilePlot(mode, wombatRes, wfTypes, logH=False, wfColors=False, enRes=None
     else:
         if logH:
             ax[-1].xaxis.set_major_formatter(ScalarFormatter())
-
+    
     if outName == 'showit':
         plt.show()
     else:
@@ -1595,13 +1596,13 @@ def wombatPlotWrapper(args):
     enRes = None   
     if ('en' in mode):
         enRes = getEnergetics(args, wombatRes, wfTypes, kinRes, reloadIt=massPkl, overlap=overlap)
-        #enRes = getEnergetics(args, wombatRes, wfTypes, kinRes)
-
         
     #|--------------------------|
     #|--- Run line plot mode ---|     
     #|--------------------------|
     if mode in ['ht1', 'ht2','ht3', 'kin1', 'kin2', 'kin3', 'en1', 'en2', 'en3']:
+        if type(outName) == type(None):
+            outName = 'showit'
         profilePlot(mode, wombatRes, wfTypes, logH=logIt, wfColors=wfColors, kinRes=kinRes, enRes=enRes, errorbars=errorbars, versusH=versusH, incDrag=incDrag, outName=outName)
     
     #|--------------------------|
