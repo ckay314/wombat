@@ -1,6 +1,8 @@
 """
 Module to process observations for the wombat GUI 
 
+python3 wombatProcessObs.py time1 time2 insts (optional parameters)
+
 The main wrapper assumes that files are stored in the structure set up
 by wombatPullObs and will search for files in a given time range
 and pass those to the appropriate processing scripts. The process functions

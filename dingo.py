@@ -1,6 +1,9 @@
 """
 Density Inferred from Nice Grid Object (DINGO) Module
 
+python3 dingo.py wbOutputs/logFile.txt ids mode (optional params)
+
+
 Set of functions to take a wombat pickle and recon log file and line(s)
 of interest, convert the mass/pixel map into densities, and compute 
 results in zero to three dimensions.
@@ -82,7 +85,7 @@ the arguments are
 
         densratio_#: the ratio between the inner and outer wireframe densities (n1/n2).
                      the densities vary from pixel to pixel but the ratio between the 
-                     two remains the same in any overlapping regions
+                     two remains the same in any overlapping regions. can be a decimal
                      (defaults to 1.)
 
         vcme_#: the average interplanetary velocity of the CME. this allows conversion
@@ -94,6 +97,9 @@ the arguments are
               mass maps. Running full resolution is fine for modes 0-2 but it will break
               3d scatter plots.
               (defaults to 8 for 3D mode, 1 for everything else)
+
+        newbase_#: a new time to switch to the base time for the mass calculation. the
+                   # should be replaced by a time stamp that parse_time can process
 
 
 Alternatively, one can just pass a dingo_config text file. This is a simple text file 
@@ -121,6 +127,7 @@ import datetime
 import math
 from sunpy.coordinates import frames
 from sunpy.coordinates import get_horizons_coord
+from sunpy.time import parse_time
 import matplotlib.gridspec as gridspec
 import scipy.ndimage as ndimage
 from scipy.interpolate import RegularGridInterpolator
@@ -161,6 +168,44 @@ picType = '.png' # png or pdf, gets overwritten if set in input
 # |--- Functions to convert mass image to density ---|
 # |--------------------------------------------------|
 # |--------------------------------------------------|
+
+# |-------------------------|
+# |--- Rebase the masses ---|
+# |-------------------------|
+def rebaseIt(bkgData, obs, rebase):
+    """
+    Function to reassign a new base time for the mass images.
+    
+    The mass is calc from excess brightness (B_t - B_t0) / sclfactor
+    where sclfactor is calc'ed by eltheory at time t. Since linear
+    combo can set at new t0' by just subtracting the mass im at 
+    the new base time
+        mass2 = (im2 - im0)/ scl(t2)
+        mass1 = (im1 - im0) / scl(t1)
+        mass2' ~= mass2 - mass1 = (im2 - im1) / scl(t2)
+    to start, ignoring the fact that scl(t2) and scl(t1) are not
+    quite the same. to improve later
+    
+    """
+    # |--- Get rebase index ---|
+    # Find the closest time to the time provided
+    newIdx = 0
+    minDiff = 9e9
+    for i in range(len((bkgData['proImMaps'][obs][0]))):
+        myT = bkgData['proImMaps'][obs][0][i].date.datetime 
+        myDiff = np.abs((myT - rebase).total_seconds())
+        if myDiff < minDiff:
+            newIdx = i
+            minDiff = myDiff
+            
+    # |--- Reset masses ---|
+    newBase = np.copy(bkgData['massIms'][obs][newIdx])
+    newMasses = []
+    for i in range(len(bkgData['massIms'][obs])):
+        newMasses.append(bkgData['massIms'][obs][i] - newBase)
+        
+    return newMasses
+
 
 # |---------------------------|
 # |--- Get background grid ---|
@@ -1121,7 +1166,7 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
         if len(bigProj[0]) > 0:
             deprojScale[0][bigProj] = 0.1
             if (not silent) or (myPerc > 10):
-                print (myPerc)
+                #print (myPerc)
                 print ('!!!------ Warning ------!!!')
                 print ('Wireframe shape includes points far from plane of sky')
                 print (str(len(bigProj[0])) + ' pixels ('+'{:3.1f}'.format(myPerc)+'%) have deprojection factor of 10x or greater' )
@@ -2924,7 +2969,7 @@ def processBonusArgs(allBonus, mode):
     
         densratio: the ratio of the density between wf1 and wf2, which is treated as a 
                    constant value over all lines of sight. calculated as wf1/wf2 and 
-                   ignored if only a single wf is passed
+                   ignored if only a single wf is passed. can be a decimal
                    (defaults to 1)
     
         vcme: the average propagation velocity of the CME, used to determine the transit
@@ -2947,6 +2992,9 @@ def processBonusArgs(allBonus, mode):
         projoff: flag to deproject the masses accounting for the wf width perp to the
                 PoS via Billings instead of treating all pts as at Thomson sphere
     
+        newbase_#: a new time to switch to the base time for the mass calculation. the
+                   # should be replaced by a time stamp that parse_time can process
+    
     '''
     # Set the defaults
     expf1 = 1
@@ -2962,6 +3010,7 @@ def processBonusArgs(allBonus, mode):
     deproj  = True
     target = None
     saveName = None
+    rebase  = False
     
     #|------------------------|
     #|--- Check for target ---|     
@@ -3037,6 +3086,11 @@ def processBonusArgs(allBonus, mode):
                 densratio = float(aTag.lower().replace('densratio_',''))
             except:
                 sys.exit('Error in converting '+aTag+' to densratio float')
+        elif 'ovl_' in aTag.lower():
+            try: 
+                densratio = float(aTag.lower().replace('ovl_',''))
+            except:
+                sys.exit('Error in converting '+aTag+' to densratio float')
         elif 'vcme_' in aTag.lower():
             try: 
                 vcme = float(aTag.lower().replace('vcme_',''))
@@ -3049,6 +3103,13 @@ def processBonusArgs(allBonus, mode):
                 ds = int(aTag.lower().replace('ds_',''))
             except:
                 sys.exit('Error in converting '+aTag+' to ds int')
+        elif 'newbase_' in aTag.lower():
+            strtime = aTag.lower().replace('newbase_', '').replace('t','T')
+            try:
+                rebase = parse_time(strtime).datetime
+            except:
+                sys.exit('Error processing newbase time into time via parse_time ' + strtime)
+                
         elif aTag.lower() == 'doinner':
             dI = True
         elif aTag.lower() == 'projoff':
@@ -3086,7 +3147,7 @@ def processBonusArgs(allBonus, mode):
         sys.exit()
             
             
-    return target, saveName, expf1, expf2, densratio, vcme, ds, dI, logPlot, deproj
+    return target, saveName, expf1, expf2, densratio, vcme, ds, dI, logPlot, deproj, rebase
     
 
 
@@ -3168,7 +3229,7 @@ def dingoWrapper(args, pullMass=False, silent=False):
 
         densratio_#: the ratio between the inner and outer wireframe densities (n1/n2).
                      the densities vary from pixel to pixel but the ratio between the 
-                     two remains the same in any overlapping regions
+                     two remains the same in any overlapping regions. can be a decimal
                      (defaults to 1.)
 
         vcme_#: the average interplanetary velocity of the CME. this allows conversion
@@ -3180,6 +3241,10 @@ def dingoWrapper(args, pullMass=False, silent=False):
               mass maps. Running full resolution is fine for modes 0-2 but it will break
               3d scatter plots.
               (defaults to 8 for 3D mode, 1 for everything else)
+    
+        newbase_#: a new time to switch to the base time for the mass calculation. the
+                   # should be replaced by a time stamp that parse_time can process
+    
     
     Non-Command Line Optional Args:
         pullMass:   Flag to return the calculated masses as massOuts, aboutMe where
@@ -3249,10 +3314,11 @@ def dingoWrapper(args, pullMass=False, silent=False):
     logPlot = False
     deproj  = True
     saveName = None
+    rebase = False
       
     if len(args) >= 4:
         allBonus = args[3:]
-        target, saveName, expf1, expf2, densratio, vcme, ds, dI, logPlot, deproj = processBonusArgs(allBonus, mode)
+        target, saveName, expf1, expf2, densratio, vcme, ds, dI, logPlot, deproj, rebase = processBonusArgs(allBonus, mode)
                         
                
     #|--------------------------|
@@ -3314,7 +3380,22 @@ def dingoWrapper(args, pullMass=False, silent=False):
             aWFo.params = ps
             aWFo.getPoints()
             wfsO.append(aWFo)
-
+            
+    #|-----------------------------|
+    #|--- Rebase it (if needed) ---|        
+    #|-----------------------------|
+    if rebase:
+        allMassMaps = rebaseIt(bkgData, obs, rebase)
+        massMaps = []
+        # Extract the right times again
+        for i in range(nTimes):
+            if singleWF:
+                tidx = int(miniLog[i,14])
+            else:
+                # Inner and outer at same tidx
+                tidx = int(miniLog[pairIds[i][0],14])
+            massMaps.append(allMassMaps[tidx])
+    
 
     #|--------------|
     #|--------------|

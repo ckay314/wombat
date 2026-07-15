@@ -1,3 +1,99 @@
+"""
+Set of functions for making standardized plots from WOMBAT log lines and
+a wrapper to call them from the command line. The script will use DINGO
+to calculate masses as needed, which can take some time. It does include
+the option to save the DINGO results in a pkl so they can be reloaded
+after the first calcuation to allow for quick manipulation of plot 
+aesthetics.
+
+
+The command line syntax is
+
+    python3 wombatPlots.py logFile lineIDs mode [optional parameters]
+
+where 
+
+    logFile:  points to a log file created by WOMBAT
+
+    lineIDs:  can be a single integer (e.g. 4)
+              a range of integers (e.g. 4-10)
+              or a series of integers connected by + (e.g. 4+8+12)
+
+    mode:    select from one of the following plot mode tags
+
+             Line plot variants:
+                ht# - just height (# is parameter config)
+                kin# - height, velocity, accceleration
+                en# - height, vel, acc, mass, kinetic energy
+
+                # sets which wireframe params are also show
+                1 - just height
+                2 - height + angular width(s)
+                3  - all wf params
+
+                e.g. kin2 would show height, AW, vel, and acc
+            
+             pts - print the Cartesian Stonyhust location all of the wf 
+                   points to a file
+
+             vmap - determine the velocity from two timesteps for the same wf
+                    (using their diff heights and delta t). Makes a 3d scatter
+                    plot with each wf point colored by its velocity and prints
+                    the cartesian locations and total velocity to a file
+
+and the optional arguments fall into the following types
+Direct flags (written as is):
+        eb:         flag to include error bars/uncertainties in figures
+                    (defaults to False)
+
+        drag:       flag to fit the drag equation to the reconstructions
+                    (defaults to False)
+
+        vsh:        flag to plot versus height instead of versus time
+                    (defaults to False)
+        
+        log:        flag to plot x-axis heights on a log scale
+                    (defaults to False)
+        
+        
+        wfcolors:   flag to use the same colors as the wombat GUI instead of the
+                    standard plot colors that are more suited for line plots on a
+                    white backgrounds
+                    (defaults to False)
+
+        png/pdf:    flag to save figures as png or pdf
+                    (defaults to png)
+
+        1au/L1:     flag to get a predicted arrival time at either L1 or 1 AU
+                    (defaults to doing neither)
+
+
+Keys with numbers (# replaced by float or time)
+        densratio_#: the ratio between the inner and outer wireframe densities (n1/n2).
+                     the densities vary from pixel to pixel but the ratio between the 
+                     two remains the same in any overlapping regions. can be a decimal
+                     (defaults to 1.)
+
+        dh1_#/dh2_#: the min/max heights to set the range over which the drag calculation
+                     looks for an optimal starting height (in Rs)
+                     (defaults to 5 Rs/21.5 Rs)
+
+        newbase_#:  a new time to switch to the base time for the mass calculation. the
+                    # should be replaced by a time stamp that parse_time can process
+        
+
+    Other:
+        pickleName - the name of a pickle with the saved results of previous DINGO
+                     calculation. These are automatically saved by getEnergetics in
+                     wbPlotPickles/ using saveName or defaulting to bigMassRes.pkl
+                     It automatically searches this directory so it should just be
+                     the file name.
+
+        saveName - if an arugment is passed that does not fit any of the other tag types
+                   then it is assumed to be a save name for any output images/files
+"""
+
+
 import numpy as np
 import matplotlib.pyplot as plt
 import pickle
@@ -23,46 +119,37 @@ import wombatWF as wf
 
 import pickle
 
-
-''' 
-syntax python wPs.py type logFile ids [ min#, max#, outName, pictype]
-
-types:
-    Line profiles 
-    HT - height - time (basic evol of WF params)
-    Kin - height time but adding in vel/acc
-    En  - add in mass + energetics
-    
-    Figures
-    linimg
-    logimg
-    sqimg
-    
-'''
+#|----------------------|
+#|--- Set up globals ---|
+#|----------------------|
+global errorStrings, labSwap,labErrs, labelMatch, inst2sat, labErrs, hErrs
 
 #|--- Standard input error message ---|
-global errorStrings, labSwap,labErrs, labelMatch, inst2sat, labErrs, hErrs
 errorStrings = [' ', '  python3 wombatPlots.py logFile id(s) type otherParams', '          where:', '          - logFile is a wombat log file', '          - ids is an integer or int+int or int-int', '          - type sets the plot type from [ht, kin, en, linimg, logimg, sqimg]', '          - otherParams includes min#, max#, outName, logIt, GUIcolors, and picType']
 
-# Dictionary to swap from the GUI names that dont like latex to
-# nicer things for this plot
-deg = '($^{\\circ}$)'
-labSwap = {'Height (Rs)':'Height (R$_S$)', 'Lon (deg)':'Lon'+deg , 'Lat (deg)': 'Lat'+deg, 'Tilt (deg)':'Tilt'+deg, 'AW (deg)':'AW'+deg, 'kappa':'$\\kappa$', 'AW_FO (deg)':'AW$_{FO}$'+deg, 'AW_EO (deg)':'AW$_{EO}$'+deg, 'deltaAx':'$\\delta_{Ax}$', 'deltaCS':'$\\delta_{CS}$', 'ecc1':'$\\epsilon_1$', 'ecc2':'$\\epsilon_2$', 'Roll (deg)':'Roll'+deg, 'Yaw (deg)':'Yaw'+deg, 'Pitch (deg)':'Pitch'+deg, 'Lx (Rs)':'L$_x$ (R$_S$)', 'Ly (Rs)':'L$_y$ (R$_S$)', 'Lz (Rs)':'L$_z$ (R$_S$)', 'HeightO (Rs)':'Height$_O$ (R$_S$)', 'LonO (deg)':'Lon$_O$'+deg, 'LatO (deg)':'Lat$_O$'+deg}
 
-# Set up general errors for each param
-# Assume heights depend on which inst
+# |--- Reconstruction errors ---|
+# Set up generic height values based on inst type
+# Other parameters are const
 hErrs = {'EUV':0.05, 'COR':0.1, 'HI':0.5}
 labErrs = {'Height (Rs)':hErrs, 'Lon (deg)':10, 'Lat (deg)': 5, 'Tilt (deg)':15, 'AW (deg)':5, 'kappa':0.05, 'AW_FO (deg)':5, 'AW_EO (deg)':5, 'deltaAx':0.1, 'deltaCS':0.1, 'ecc1':0.1, 'ecc2':0.1, 'Roll (deg)':15, 'Yaw (deg)':15, 'Pitch (deg)':15, 'Lx (Rs)':hErrs, 'Ly (Rs)':hErrs, 'Lz (Rs)':hErrs, 'HeightO (Rs)':0.1, 'LonO (deg)':5, 'LatO (deg)':5}
 
 
+# |--- GUI labels to plot labels ---|
+# GUI doesn't like latex but plots do
+deg = '($^{\\circ}$)'
+labSwap = {'Height (Rs)':'Height (R$_S$)', 'Lon (deg)':'Lon'+deg , 'Lat (deg)': 'Lat'+deg, 'Tilt (deg)':'Tilt'+deg, 'AW (deg)':'AW'+deg, 'kappa':'$\\kappa$', 'AW_FO (deg)':'AW$_{FO}$'+deg, 'AW_EO (deg)':'AW$_{EO}$'+deg, 'deltaAx':'$\\delta_{Ax}$', 'deltaCS':'$\\delta_{CS}$', 'ecc1':'$\\epsilon_1$', 'ecc2':'$\\epsilon_2$', 'Roll (deg)':'Roll'+deg, 'Yaw (deg)':'Yaw'+deg, 'Pitch (deg)':'Pitch'+deg, 'Lx (Rs)':'L$_x$ (R$_S$)', 'Ly (Rs)':'L$_y$ (R$_S$)', 'Lz (Rs)':'L$_z$ (R$_S$)', 'HeightO (Rs)':'Height$_O$ (R$_S$)', 'LonO (deg)':'Lon$_O$'+deg, 'LatO (deg)':'Lat$_O$'+deg}
+
+
+# |--- Dictionary for label pairing ---|
 # Who to pair things with, GCS* is longest, followed by Slab
 # Only match nice pairs, otherwise let it dump them in wherever
 labelMatch = {'Tilt (deg)':['Roll (deg)'], 'AW (deg)': ['AW_FO (deg)', 'Lx (Rs)'], 'AW_FO (deg)':['AW (deg)', 'Lx (Rs)'],  'AW_EO (deg)':['AW (deg)', 'Ly (Rs)'], 'kappa':['ecc1', 'deltaAx',  'Yaw (deg)'], 'ecc1':['kappa', 'deltaAx', 'Yaw (deg)'],  'ecc2': ['deltaCS', 'Pitch (deg)'], 'deltaAx':['kappa', 'ecc1', 'Yaw (deg)'], 'deltaCS':['ecc2', 'Pitch (deg)']}
 
-# Dict to sort instruments by sat 
+# |--- Dictionary of instruments by sat ---|
 inst2sat = {'AIA94':'SDO', 'AIA131':'SDO', 'AIA171':'SDO','AIA193':'SDO','AIA211':'SDO','AIA304':'SDO','AIA335':'SDO','AIA1600':'SDO','AIA1700':'SDO', 'C2':'SOHO', 'C3':'SOHO', 'COR1':'STEREO', 'COR2':'STEREO', 'COR1A':'STEREOA', 'COR2A':'STEREOA', 'COR1B':'STEREOB', 'COR2B':'STEREOB', 'EUVI171':'STEREO', 'EUVI195':'STEREO', 'EUVI284':'STEREO', 'EUVI304':'STEREO', 'EUVI171A':'STEREOA', 'EUVI195A':'STEREOA', 'EUVI284A':'STEREOA', 'EUVI304A':'STEREOA', 'EUVI171B':'STEREOB', 'EUVI195B':'STEREOB', 'EUVI284B':'STEREOB', 'EUVI304B':'STEREOB', 'HI1':'STEREO', 'HI2':'STEREO', 'HI1A':'STEREOA', 'HI2A':'STEREOA', 'HI1B':'STEREOB', 'HI2B':'STEREOB', 'HI1A_SR':'STEREOA', 'HI1B_SR':'STEREOB', 'HI2A_SR':'STEREOA', 'HI2B_SR':'STEREOB', 'SOLOHI':'SOLO', 'SOLOHI1':'SOLO', 'SOLOHI2':'SOLO', 'SOLOHI3':'SOLO', 'SOLOHI4':'SOLO', 'WISPR':'PSP', 'WISPRI':'PSP', 'WISPRO':'PSP', 'WISPR_LW':'PSP', 'WISPRI_LW':'PSP', 'WISPRO_LW':'PSP', 'WISPR_L3':'PSP', 'WISPRI_L3':'PSP', 'WISPRO_L3':'PSP'}
 
-# Dict to convertt instrument to type 
+# |--- Dictionary for inst type ---|
 inst2type = {'AIA94':'EUV', 'AIA131':'EUV', 'AIA171':'EUV','AIA193':'EUV','AIA211':'EUV','AIA304':'EUV','AIA335':'EUV','AIA1600':'EUV','AIA1700':'EUV', 'C2':'COR', 'C3':'COR', 'COR1':'COR', 'COR2':'COR', 'COR1A':'COR', 'COR2A':'COR', 'COR1B':'COR', 'COR2B':'COR', 'EUVI171':'EUV', 'EUVI195':'EUV', 'EUVI284':'EUV', 'EUVI304':'EUV', 'EUVI171A':'EUV', 'EUVI195A':'EUV', 'EUVI284A':'EUV', 'EUVI304A':'EUV', 'EUVI171B':'EUV', 'EUVI195B':'EUV', 'EUVI284B':'EUV', 'EUVI304B':'EUV', 'HI1':'HI', 'HI2':'HI', 'HI1A':'HI', 'HI2A':'HI', 'HI1B':'HI', 'HI2B':'HI', 'HI1A_SR':'HI', 'HI1B_SR':'HI', 'HI2A_SR':'HI', 'HI2B_SR':'HI', 'SOLOHI':'HI', 'SOLOHI1':'HI', 'SOLOHI2':'HI', 'SOLOHI3':'HI', 'SOLOHI4':'HI', 'WISPR':'HI', 'WISPRI':'HI', 'WISPRO':'HI', 'WISPR_LW':'HI', 'WISPRI_LW':'HI', 'WISPRO_LW':'HI', 'WISPR_L3':'HI', 'WISPRI_L3':'HI', 'WISPRO_L3':'HI'}
 
 
@@ -72,11 +159,14 @@ vdragScalers = [600e5, 350e5, 1e-12]
 global picType
 picType = '.png' # png or pdf, gets overwritten if set in input 
 
-
+# |-----------------------------------------|
+# |--- Normalized rag func (for fitting) ---|
+# |-----------------------------------------|
 def vdrag(t_in, vCME0_in, vSW_in, C_in): 
     # Inputs are normalized to near 1 to make the 
     # curve_fit happy, convert back to physical units 
     # using vdragScalers (cm, cm, 1/cm)
+    # e.g. vCME0_in of 1 is actually 600 km/s
     C = C_in * vdragScalers[2]
     t = t_in 
     vCME0 = vCME0_in * vdragScalers[0]
@@ -88,6 +178,65 @@ def vdrag(t_in, vCME0_in, vSW_in, C_in):
 # |--- Get kinematics from results ---|
 # |-----------------------------------|
 def getKinematics(wombatRes, wfTypes, dragHeights=[5,21.5], incDrag=False, predAT=None):
+    """
+    Function to derive the kinematics (velocity and acceleration) from a set
+    of wombat results. It will also fit a basic drag equation to the reconstructions
+    and can predict the arrival time at L1 or 1 AU if flagged to do so.
+    
+    Inputs:
+        wombatRes: a dictionary filled by info pulled from miniLog in the format
+                    wombatRes[instName][wfType] = {}
+                    keys - ids, params, times, pickles -> arrays of all the
+                           values for each time matching that inst/type
+    
+        wfTypes:   an array of the wf types to use
+    
+    Optional Inputs:
+        dragHeights: the min/max heights to set the range over which the drag calculation
+                     looks for an optimal starting height (in Rs)
+                     (defaults to 5 Rs/21.5 Rs)
+    
+        incDrag:     a flag to fit the drag equation to the results
+                     (defaults to False)
+    
+        predAT:      a flag to get a predicted arrival time at either L1 or 1 AU
+                    (defaults to doing neither)
+    
+    Outputs: 
+             the kinematic results are packaged into a dictionary outResK and returned. The 
+             keys/entries are below. Each item is a dictionary with keys for each wf type
+                times:    datetimes (direct from wombatRes)
+    
+                dt:       time difference in seconds from the earliest time for any wf
+    
+                heights:  the heights (direct from wombatRes) 
+                          (in cm)
+    
+                vels:     the two-point derivatives calculated from the height/times 
+                          this array is one shorter than heights/times and should be
+                          compared to the midpoint values of the full h/t array
+                          (in cm/s)
+
+                accs:     the two-point derivatives calculated from vels/times
+                          this array is two shorter than heights/times and should be
+                          compared to idx [1:-1] of the full h/t array
+                          (in cm/s^2)
+
+                errs:     arrays for the uncertainty in [heights, vels, accs] over time
+                          (units are [cm, cm/s, cm/s^2])
+    
+                splitIds: dictionary of the index where the drag mode starts
+                          (only included if incDrag is flagged)
+    
+                dragFits: dictionary with [[[vCME, vSW, Cdrag], [h0, t0]], [errors]] where
+                          the first array is the drag equation parameters + starting height/time from
+                          the fit and the second array is the corresponding errors. The first three are
+                          in normalized units and need to be scaled back to physical units using the scaler
+                          and h is in cm and t is a time with the error in s
+                          (only included if incDrag is flagged)
+    
+    
+    """
     # |---------------------|
     # |--- Preprocessing ---|
     # |---------------------|
@@ -98,7 +247,7 @@ def getKinematics(wombatRes, wfTypes, dragHeights=[5,21.5], incDrag=False, predA
     times = {}
     dts   = {}
     heights = {}
-    newtVs  = {} # newtonian derivs
+    newtVs  = {} # newtonian derivs (x2 - x1) / (t2 - t1)
     newtAs  = {} # newtonian derivs
     uncHs   = {}
     uncVs   = {}
@@ -151,6 +300,7 @@ def getKinematics(wombatRes, wfTypes, dragHeights=[5,21.5], incDrag=False, predA
     # |-----------------|
     # |--- Calc v/a  ---|
     # |-----------------|
+    # |--- Figure out the earliest time ---|
     earlyT = datetime.datetime(3000,1,1)
     lateT  = datetime.datetime(1000,1,1)
     for awf in wfTypes:
@@ -158,23 +308,27 @@ def getKinematics(wombatRes, wfTypes, dragHeights=[5,21.5], incDrag=False, predA
             earlyT = times[awf][0]
         if times[awf][-1] > lateT:
             lateT = times[awf][-1]
+            
+    #|--- Loop through wf types ---|        
     for awf in wfTypes:
         print ('Calculating two-point derivatives for', awf)
         #hSmooth = gaussian_filter1d(heights[awf], sigma=1) 
-        hSmooth = heights[awf]
+        hSmooth = heights[awf] # Not smoothing anymore but leaving structure
         myuncH  = uncHs[awf]
         for i in range(len(times[awf])):
             dts[awf].append((times[awf][i]-earlyT).total_seconds())
+            # Get v
             if i != 0:
                 newtVs[awf].append((hSmooth[i]-hSmooth[i-1])/(times[awf][i]-times[awf][i-1]).total_seconds())
                 uncVs[awf].append(np.sqrt(myuncH[i]**2 + myuncH[i-1]**2)/(times[awf][i]-times[awf][i-1]).total_seconds()) # cm/s
                 #print ((np.sqrt(myuncH[i]**2 + myuncH[i-1]**2))/7e10, (times[awf][i]-times[awf][i-1]).total_seconds()/60, uncVs[awf][-1]/1e5)
-                
+            # Get a    
             if i > 1:
                 j = i -1
                 newtAs[awf].append((newtVs[awf][j] - newtVs[awf][j-1])/(dts[awf][j] - dts[awf][j-1]))
                 uncAs[awf].append(np.sqrt(uncVs[awf][j]**2 + uncVs[awf][j-1]**2)/(dts[awf][i]-dts[awf][i-1])) # cm/s
-                
+        
+        # Package as arrays       
         dts[awf] = np.array(dts[awf])
         newtVs[awf] = np.array(newtVs[awf])
         newtAs[awf] = np.array(newtAs[awf]) # matches dts[awf][1:-1]
@@ -197,6 +351,7 @@ def getKinematics(wombatRes, wfTypes, dragHeights=[5,21.5], incDrag=False, predA
         splitIds =  {}
         dragFits = {}
         for awf in wfTypes:
+            # Get the mid heights/times that match the vs
             midH = 0.5*(heights[awf][1:] + heights[awf][:-1])
             midT = 0.5*(dts[awf][1:] + dts[awf][:-1])
             vSmooth = gaussian_filter1d(newtVs[awf], sigma=1)       
@@ -207,6 +362,7 @@ def getKinematics(wombatRes, wfTypes, dragHeights=[5,21.5], incDrag=False, predA
             bestVal = 9e20 # arbitrary large
             bestId  = -1
             bestPs = None
+            # Try all heights, keep the best one
             if len(aboveDH) > 3:
                 for i in range(len(aboveDH)-3):
                     if midH[aboveDH[i]] <= dragHeights[1]:
@@ -266,6 +422,8 @@ def getKinematics(wombatRes, wfTypes, dragHeights=[5,21.5], incDrag=False, predA
             sys.exit('Arrival time point ' + predAT + ' not understood, exiting.')
         
         didDrag = []
+        
+        # Use drag fit results
         if incDrag:
             print('Calculating drag model arrival time at ' + predAT)
             for awf in wfTypes:
@@ -390,7 +548,73 @@ def getKinematics(wombatRes, wfTypes, dragHeights=[5,21.5], incDrag=False, predA
 # |-----------------------------------|
 # |--- Get energetics from results ---|
 # |-----------------------------------|
-def getEnergetics(args, wombatRes, wfTypes, kinRes, reloadIt=None, overlap=1):
+def getEnergetics(args, wombatRes, wfTypes, kinRes, reloadIt=None, overlap=1, rebase=False):
+    """
+    Function to derive the energetics (mass and kinetic energy) from a set
+    of wombat results. It sends the inputs to DINGO to calculated masses then
+    combines these with the velocities to create energies. The mass times are at obs
+    times but velocities are at midpoint/half step times so we interpolate the v from 
+    the half step to the expected value at the mass/integer time. There is a little bit of
+    run time for the DINGO calculation so it will save the DINGO results in a pkl so
+    that it can be called again to adjust plot aesthetics without redoing the full calc
+    
+    Inputs:
+        args:      the full set of arguments from the command line (everything after 
+                   the .py). These are passed to DINGO since it uses the same keywords
+                   and its easier to fake a command line call than pass specific variables
+    
+        wombatRes: a dictionary filled by info pulled from miniLog in the format
+                    wombatRes[instName][wfType] = {}
+                    keys - ids, params, times, pickles -> arrays of all the
+                           values for each time matching that inst/type
+    
+        wfTypes:   an array of the wf types to use
+    
+        kinRes:    the results from getKinematics. a dictionary with keys times, dts, 
+                   heights, vels, acs, errs, splitIds, dragFits
+    
+    Optional Inputs:
+        reloadIt:   a pickle to reload previous results instead of calling DINGO
+                    (defaults to None/not reloading)
+        
+        overlap:    the ratio between the inner and outer wireframe densities (n1/n2).
+                    the densities vary from pixel to pixel but the ratio between the 
+                    two remains the same in any overlapping regions. can be a decimal
+                    (defaults to 1.)
+        
+        rebase:     a string flaging to use a new base time for the mass calculation. this
+                    mimics a dingo command line argument so it has the form 
+                    densratio_DATESTRING. DINGO will use the closest time as the new base
+                    and recalculate the masses.
+        
+    Outputs: 
+             the energetic results are packaged into a dictionary outRes and returned. The 
+             keys/entries are below. Each item is a dictionary with keys for each wf type
+                masses:   the mass in the projected wf region for each time
+                          (in g)
+
+                times:    datetimes (direct from wombatRes)
+    
+                dt:       time difference in seconds from the earliest time for any wf
+    
+                heights:  the heights (direct from wombatRes) 
+                          (in cm)
+    
+
+                vels:     the velocities at the times matching the masses 
+                          (in cm/s)
+
+    
+                KEs:      the kinetic energy calculated as 1/2 mass * vel^2
+                          (units are ergs)
+
+                errs:     arrays for the uncertainty as [mass_lower, mass_upper, KE_lower
+                          KE_upper] where each is an array over all times. The general mass
+                          error is set at a factor of 2 so it is not symmetric in +/-
+                          (units are [cm, cm/s, cm/s^2])
+    
+    """
+    
         
     # |--------------------------------|
     # |--- Use Dingo to calc masses ---|
@@ -401,14 +625,15 @@ def getEnergetics(args, wombatRes, wfTypes, kinRes, reloadIt=None, overlap=1):
     if not os.path.exists(bmrDir):
         os.mkdir(bmrDir)
         print ('Created output folder', bmrDir)
-        
+    
+    # Check if have name and it exists    
     saveName = 'bigMassRes.pkl'
     if type(reloadIt) != type(None):
         if not os.path.isfile(bmrDir+reloadIt):
             saveName = str(np.copy(reloadIt))
             reloadIt = None
             
-    # Make it if doesnt exists    
+    # Make the bigMassRes if doesnt exists    
     if type(reloadIt) == type(None):
         bigMassRes = {} # index by shape then inst
         for awf in wfTypes:
@@ -420,12 +645,13 @@ def getEnergetics(args, wombatRes, wfTypes, kinRes, reloadIt=None, overlap=1):
                     bigMassRes[awf][aInst]['masses'] = []
                     bigMassRes[awf][aInst]['heights'] = []
 
-        # Have to sort into chunks for each pickle for 
-        # the dingo mass calc. Can do two WFs at same time
-    
+        
+        # Dingo needs things sorted by background pickle. It is 
+        # fine with two wireframes though
     
         # |--- Collect things ---|
         for aInst in wombatRes.keys():
+            # Make sure not EUV
             if ('EUV' not in aInst.upper()) & ('AIA' not in aInst.upper()):
                 print ('Calculating masses for', aInst)
                 # Check if one or two res, can process together
@@ -433,9 +659,9 @@ def getEnergetics(args, wombatRes, wfTypes, kinRes, reloadIt=None, overlap=1):
                     overlap = 0
                     print ('More than two wfs for', aInst, ' cannot process as overlaping so doing individually')
                     
+                # Collect all the ids for each pickle
                 idsbyPickle = {}
                 wfsbyPickle = {}
-                # Collect all the ids for each pickle
                 for awf in wombatRes[aInst].keys():
                     for i in range(len(wombatRes[aInst][awf]['pickles'])):
                         myh = wombatRes[aInst][awf]['params'][wombatRes[aInst][awf]['timesSTR'][i]][0]
@@ -448,21 +674,25 @@ def getEnergetics(args, wombatRes, wfTypes, kinRes, reloadIt=None, overlap=1):
                             bigMassRes[awf][aInst]['heights'] = [myh]
                             wfsbyPickle[wombatRes[aInst][awf]['pickles'][i]] = [awf]
          
-                            
-                # Convert the array of ints to a string for dingo (stringo)
+                # Format the array of integer indices to the string format 
+                # that dingo wants (stringo)
                 for key in idsbyPickle:
                     myids = np.array(idsbyPickle[key])
                     mywfs = np.array(wfsbyPickle[key])
                     nids = len(myids)
                     
+                    # Single Id
                     if nids == 1:
                         strids = [str(myids[0])]
+                    # Multis
                     else:
+                        # Single WF
                         if overlap != 0:
                             strids = ''
                             for i in range(nids-1):
                                 strids = strids + str(myids[i]) + '+'
                             strids = [strids + str(myids[-1])]
+                        # Multi WF
                         else:
                             strids = []
                             nowwfs = np.unique(mywfs)
@@ -473,16 +703,21 @@ def getEnergetics(args, wombatRes, wfTypes, kinRes, reloadIt=None, overlap=1):
                                     strid = strid + str(nowids[i]) + '+'
                                 strid = strid + str(nowids[-1])
                                 strids.append(strid)
-                                        
+                    # Save the string                    
                     idsbyPickle[key] = strids
                     
-                    
-                    # Pass to dingo
+                    #|-----------------|
+                    #|--- Run DINGO ---|
+                    #|-----------------|
                     for strid in strids:
                         dargs = [args[0], strid, '0d']
+                        # Add dens ratio to args
                         if overlap != 0:
                             ovlstr = 'densratio_'+str(overlap)
                             dargs.append(ovlstr)
+                        # Add rebase to args
+                        if rebase:
+                            dargs.append(rebase)
                         # if statement to turn off actual mass calc when testing things    
                         if True:
                             massRes, aboutMe = dingoWrapper(dargs, pullMass=True, silent=True)     
@@ -491,11 +726,13 @@ def getEnergetics(args, wombatRes, wfTypes, kinRes, reloadIt=None, overlap=1):
                                 for j in range(len(massRes[i])):
                                     bigMassRes[mydeets[2+j]][mydeets[1]]['times'].append(mydeets[0])
                                     bigMassRes[mydeets[2+j]][mydeets[1]]['masses'].append(massRes[i][j])
-            
+        # Save it    
         with open(bmrDir+saveName, 'wb') as file:
             pickle.dump(bigMassRes, file)
-            
-        # Make a fake subIdx for everyone
+        
+        # Reload will determine which index we actually want 
+        # from an existing pickle. Sicne we just made this we
+        # want everyone but make a fake subIdx for everyone
         subIdx = {}
         for aInst in wombatRes.keys():
             subIdx[aInst] = {}
@@ -508,6 +745,7 @@ def getEnergetics(args, wombatRes, wfTypes, kinRes, reloadIt=None, overlap=1):
     # |--- Alternatively reload masses ---|
     # |-----------------------------------|        
     else:
+        # Open it
         with open(bmrDir+reloadIt, 'rb') as file:
             bigMassRes = pickle.load(file)
             
@@ -532,23 +770,27 @@ def getEnergetics(args, wombatRes, wfTypes, kinRes, reloadIt=None, overlap=1):
     times = {}
     masses = {}
     mheights = {}
+    # Loop through wf types
     for awf in wfTypes:
         allts = {}
         allMs = {}
         allhs = {}
+        # Look through insts
         for aInst in wombatRes.keys():
             mySat = inst2sat[aInst]
+            # Create if don't already have
             if mySat not in allts.keys():
                 allts[mySat] = []
                 allMs[mySat] = []
                 allhs[mySat] = []
+            # Add all the datas 
             for i in subIdx[aInst][awf]:
-            #for i in range(len(bigMassRes[awf][aInst]['times'])):
                 mytime = datetime.datetime.strptime(bigMassRes[awf][aInst]['times'][i], "%Y-%m-%dT%H:%M:%S")
                 allts[mySat].append(mytime.replace(second=0))
                 allMs[mySat].append(bigMassRes[awf][aInst]['masses'][i]*1e15)
                 allhs[mySat].append(bigMassRes[awf][aInst]['heights'][i])
-
+        
+        # Repackage as sorted array
         for aSat in allts.keys():
             allts[aSat] = np.array(allts[aSat])
             allMs[aSat] = np.array(allMs[aSat])
@@ -606,6 +848,7 @@ def getEnergetics(args, wombatRes, wfTypes, kinRes, reloadIt=None, overlap=1):
             KEuncsL = []
             
             for i in range(len(Mtimes)):
+                # Find a matching time
                 if Mtimes[i] in vtimes:
                     idx = np.where(vtimes == Mtimes[i])[0][0]
                     if idx == 0:
@@ -615,19 +858,20 @@ def getEnergetics(args, wombatRes, wfTypes, kinRes, reloadIt=None, overlap=1):
                         myv = vs[-1]
                         myverr = verrs[-1]
                     else:
+                        # this is assuming uniform time steps, might want to fix
                         myv = 0.5*(vs[idx] + vs[idx-1])
                         myverr = 0.5*(verrs[idx] + verrs[idx-1])
                     
                     matchvs.append(myv)
                     nowKEs.append(0.5*Ms[i] * myv**2)
-                    #print (awf, aSat, Mtimes[i], idx, len(vs), myv/1e5, Ms[i], nowKEs[i], prevhs[i])
                     
-                    # add in errors
+                    # add in errors, 
                     MuncsL.append(0.5*Ms[i])
                     MuncsH.append(2*Ms[i])
                     KEuncsL.append(np.sqrt((MuncsL[-1] * 0.5*myv**2)**2 + (myverr * Ms[i]*myv)**2))
                     KEuncsH.append(np.sqrt((MuncsH[-1] * 0.5*myv**2)**2 + (myverr * Ms[i]*myv)**2))
-                    
+                # Reject other wise, probably should improve this instead of 
+                # just tossing out    
                 else:
                     print ('nomatch')
                     matchvs.append(None)
@@ -660,7 +904,39 @@ def getEnergetics(args, wombatRes, wfTypes, kinRes, reloadIt=None, overlap=1):
 # |--- Print wireframe points ---|
 # |------------------------------|
 def printPoints(wombatRes, wfTypes, outName=None, morePts=2):
-    # Collect things
+    """
+    Function to print the Cartesian Stonyhurst location of the wireframe
+    points to a text file
+    
+    Inputs:
+        wombatRes: a dictionary filled by info pulled from miniLog in the format
+                    wombatRes[instName][wfType] = {}
+                    keys - ids, params, times, pickles -> arrays of all the
+                           values for each time matching that inst/type
+    
+        wfTypes:   an array of the wf types to use
+        
+    Optional Inputs:
+        outName:    a name to use for the save file. It will be saved in the wbOutputs 
+                    folder as outName + '.txt'
+                    (defaults to wombatPoints.txt)
+    
+        morePoints: flag to scale up the number of grid points used in the wireframe. Each
+                    dimension of the wf grid is scaled up by this factor. e.g. a wf with
+                    standard grid dimensions of [10,10,10] and a setting of 2 would become
+                    [20,20,20]
+                    (defaults to 2)
+    
+    Outputs:    Nothing is returned but it generates a text file with the following columns:
+                    WFtype
+                    time of observation
+                    pointID
+                    StonyCart x (Rs)
+                    StonyCart y (Rs)
+                    StonyCart z (Rs)
+    
+    """
+    # Collect things 
     toDo = {}
     for awf in wfTypes:
         toDo[awf] = {}
@@ -699,14 +975,57 @@ def printPoints(wombatRes, wfTypes, outName=None, morePts=2):
     f1.close()
     
 # |------------------------------|
-# |--- Print wireframe points ---|
+# |--- Make velocity map/file ---|
 # |------------------------------|
 def makeVmap(wombatRes, wfTypes, outName=None, morePts=2):
+    """
+    Function to calculate the velocity of the wireframe points between two
+    time steps. These need not be adjacent time steps, the code will function
+    with whatever it is given, but wildly separated times might give interesting
+    results. A map of the speeds (shown as colored scatter points) with be shown
+    or saved and a text file with the positions and speeds will be created.
+    
+    Inputs:
+        wombatRes: a dictionary filled by info pulled from miniLog in the format
+                    wombatRes[instName][wfType] = {}
+                    keys - ids, params, times, pickles -> arrays of all the
+                           values for each time matching that inst/type
+    
+        wfTypes:   an array of the wf types to use
+        
+    Optional Inputs:
+        outName:    a name to use for the save files. It will be saved in the wbOutputs 
+                    folder as outName + '.txt'. If the name is set to showit then it will
+                    pop up the interactive window instead of saving a figure, which gives
+                    one more freedom with the viewing angle
+                    (defaults to wbVels.txt/png)
+    
+        morePoints: flag to scale up the number of grid points used in the wireframe. Each
+                    dimension of the wf grid is scaled up by this factor. e.g. a wf with
+                    standard grid dimensions of [10,10,10] and a setting of 2 would become
+                    [20,20,20]
+                    (defaults to 2)
+    
+    Outputs:    Nothing is returned but it generates a text file with the following columns:
+                    WFtype
+                    time of observation
+                    pointID
+                    StonyCart x (Rs)
+                    StonyCart y (Rs)
+                    StonyCart z (Rs)
+                    speed (km/s)
+    
+                It will also save a png showing a 3d scatter plot with the average position
+                between the two time steps and each point colored by the speed. If the save
+                name is not set this will pop up an interactive window.
+    
+    """
     # Collect things
     toDo = {}
     if len(wfTypes) > 1:
         sys.exit('Can only make v map for single WF at a time')
     
+    # Grab the wf(s) params
     for awf in wfTypes:
         myTimes = []
         myDts   = []
@@ -768,6 +1087,7 @@ def makeVmap(wombatRes, wfTypes, outName=None, morePts=2):
         zs.append(myz)
         vs.append(myv)
         
+        # Make text to save
         if outName != 'showit':
             f1.write(midT + ' '+ awf +' ' + str(j) + ' ' + '{:.3f}'.format(myx) + ' ' + '{:.3f}'.format(myy)+' '+'{:.3f}'.format(myz) +' '+'{:.3f}'.format(myv) +'\n')
     
@@ -972,45 +1292,99 @@ def processArgs(args):
 # |--- Process Bonus Args ---|
 # |--------------------------|
 def processBonusArgs(args, mode):
+    """
+    Helper function to process the bonus/non-critical arguments. Default values
+    are hardcoded at the top and will be used if args does not include an
+    alternate value to replace them
+    
+    The options in args are
+    Direct tags:
+    
+            eb:         flag to include error bars/uncertainties in figures
+                        (defaults to False)
+
+            drag:       flag to fit the drag equation to the reconstructions
+                        (defaults to False)
+
+            vsh:        flag to plot versus height instead of versus time
+                        (defaults to False)
+        
+            log:        flag to plot x-axis heights on a log scale
+                        (defaults to False)
+        
+        
+            wfcolors:   flag to use the same colors as the wombat GUI instead of the
+                        standard plot colors that are more suited for line plots on a
+                        white backgrounds
+                        (defaults to False)
+
+            png/pdf:    flag to save figures as png or pdf
+                        (defaults to png)
+
+            1au/L1:     flag to get a predicted arrival time at either L1 or 1 AU
+                        (defaults to doing neither)
+
+
+    Keys with numbers (# replaced by float or time)
+            densratio_#: the ratio between the inner and outer wireframe densities (n1/n2).
+                         the densities vary from pixel to pixel but the ratio between the 
+                         two remains the same in any overlapping regions. can be a decimal
+                         (defaults to 1.)
+
+            dh1_#/dh2_#: the min/max heights to set the range over which the drag calculation
+                         looks for an optimal starting height (in Rs)
+                         (defaults to 5 Rs/21.5 Rs)
+
+            newbase_#:  a new time to switch to the base time for the mass calculation. the
+                        # should be replaced by a time stamp that parse_time can process
+        
+
+        Other:
+            pickleName - the name of a pickle with the saved results of previous DINGO
+                         calculation. These are automatically saved by getEnergetics in
+                         wbPlotPickles/ using saveName or defaulting to bigMassRes.pkl
+                         It automatically searches this directory so it should just be
+                         the file name.
+
+            saveName - if an arugment is passed that does not fit any of the other tag types
+                       then it is assumed to be a save name for any output images/files
+    
+    Outputs:
+        The function returns dragHeights, errorbars, incDrag, logIt, massPkl, outName, overlap, 
+                             predAT, rebase, reloadIt, versusH, wfColors
+    
+    """
+    
     # Set defaults
     dragHeights = [5,21.5]
     errorbars = False
     incDrag   = False
     logIt     = False
-    minVal    = None
-    maxVal    = None
     massPkl   = None
     outName   = None
     overlap   = 1
     predAT    = None
+    rebase    = False
     reloadIt  = None
     versusH   = False
     wfColors  = False 
     
     for val in args:
         lval = val.lower()
-        # |--- Contour limits ---|        
-        if 'min' in lval:
-            try:
-                minVal = int(lval.replace('min',''))
-            except:
-                print ('Cannot convert', lval, 'into integer minimum value')
-
-        elif 'max' in lval:
-            try:
-                maxVal = int(lval.replace('max',''))
-            except:
-                print ('Cannot convert', lval, 'into integer maximum value')
-                
         # |--- Overlap info for splitting wfs ---|        
-        elif 'ovl' in lval:
+        if 'ovl_' in lval:
             try:
-                overlap = float(lval.replace('ovl',''))
+                overlap = float(lval.replace('ovl_',''))
             except:
                 print ('Cannot convert', lval, 'into overlap value')
-        elif 'overlap' in lval:
+        elif 'overlap_' in lval:
             try:
-                overlap = float(lval.replace('overlap',''))
+                overlap = float(lval.replace('overlap_',''))
+            except:
+                print ('Cannot convert', lval, 'into overlap value')
+        elif 'densratio_' in lval:
+            try:
+                overlap = float(lval.replace('densratio_',''))
             except:
                 print ('Cannot convert', lval, 'into overlap value')
                 
@@ -1049,7 +1423,11 @@ def processBonusArgs(args, mode):
             
         elif lval in ['1au', 'l1']:
             predAT = lval
-        
+            
+        #|--- Rebase ---|
+        elif 'newbase_' in lval:
+            rebase  = lval
+            
         # |--- Check if a pickle to save mass calc ---|
         elif '.pkl' in lval:
             if type(massPkl) != type(None):
@@ -1068,18 +1446,75 @@ def processBonusArgs(args, mode):
             else:
                 outName = val
 
-    return dragHeights, errorbars, incDrag, logIt, minVal, maxVal, massPkl, outName, overlap, predAT, reloadIt, versusH, wfColors
+    return dragHeights, errorbars, incDrag, logIt, massPkl, outName, overlap, predAT, rebase, reloadIt, versusH, wfColors
 
 # |-------------------------|
 # |--- Line profile plot ---|
 # |-------------------------|
 def profilePlot(mode, wombatRes, wfTypes, logH=False, wfColors=False, enRes=None, kinRes=None, versusH=False, errorbars=False, incDrag=False, outName='wombatProfile'):
     ''' 
-    Options:
-        ht1, ht2, ht3 - just height/time, height+wid, all params
-        kin1, kin2, kin3 - same as ht but adds vel + accel
-        en1, en2, en3   - same as kin but add mass + KE
+    Main plotting script for any form of profile/line plots. It will automatically
+    adjust between the different mode options. None of the kinematic/energetic
+    calculations are done here, they should be previously computed and passed through
+    the appropriate optional inputs.
+    
+    Inputs:
+        mode:      a combination of a string tag + integer tag. the options are
+                        ht# - just height (# is parameter config)
+                        kin# - height, velocity, accceleration
+                        en# - height, vel, acc, mass, kinetic energy
+
+                        # sets which wireframe params are also show
+                        1 - just height
+                        2 - height + angular width(s)
+                        3  - all wf params
+    
+                    e.g. kin2 would show height, AW, vel, and acc                  
+    
+        wombatRes: a dictionary filled by info pulled from miniLog in the format
+                    wombatRes[instName][wfType] = {}
+                    keys - ids, params, times, pickles -> arrays of all the
+                           values for each time matching that inst/type
+    
+        wfTypes:   an array of the wf types to use
+        
+    Optional Inputs:
+        logH:       flag to show the height axis on a log scale
+                    (defaults to False)
+    
+        wfColors:   flag to use the same colors as the wombat GUI instead of the
+                    standard plot colors that are more suited for line plots on a
+                    white backgrounds
+                    (defaults to False)
+    
+        enRes:      the energetics calculation result. pass directly from getEnergetics
+                    but not needed if not doing en mode.
+                    (defaults to None)
+    
+        kinRes:     the kinematics calculation result. pass directly from getKinematics
+                    but not needed if not doing kin or en mode.
+                    (defaults to None)
+    
+        versusH:    flag to switch the x-axis to height instead of time. you cannot use
+                    this for ht1 and plot only height versus height
+                    (defaults to False)
+    
+        errorbars:  flag to include error bars/uncertainties in figures
+                    (defaults to False)
+    
+        incDrag:    flag that drag fit was included in getKinematics and to include the
+                    best fit profiles in the figure
+                    (defaults to False)
+    
+        outName:    a name to use for the save file. It will be saved in the wbOutputs 
+                    folder as outName + picType (global var). If the name is set to showit 
+                    then it will pop up a window instead of saving a figure
+                    (defaults to wombatProfile.png)
+        
+    Outputs: No direct outputs but saves a figure according to outName
+    
     '''
+    
     #|---------------------|
     #|--- Set up colors ---|     
     #|---------------------|
@@ -1094,12 +1529,12 @@ def profilePlot(mode, wombatRes, wfTypes, logH=False, wfColors=False, enRes=None
             pltColors[wft] = cols[counter]
             counter += 1
 
-    #|----------------------------|
-    #|--- Set up based on mode ---|     
-    #|----------------------------|
-    # Figure out what we are plotting and sort things
-    # by collecting into a list of ylabels to show on the
-    # left and additional right ylabels (if needed)
+    #|--------------------------------------------|
+    #|--- Set up label structure based on mode ---|     
+    #|--------------------------------------------|
+    # Figure out what we are plotting and where we want to plot it
+    # Labels can go on left or right, once we set this up can just
+    # dump in the data where it wants to go
     
     yLabelsL = []
     id2id    = {} # axis number for each param i2i[param] = ax
@@ -1109,8 +1544,10 @@ def profilePlot(mode, wombatRes, wfTypes, logH=False, wfColors=False, enRes=None
     rColors  = {} 
     lColors   = {}
     lColors[0] = 'k' # everyone has a height
-            
+    
+    # |--------------|        
     # |--- Case 1 ---|
+    # |--------------|        
     # Only height 
     if '1' in mode:
         nParams = 1
@@ -1119,11 +1556,14 @@ def profilePlot(mode, wombatRes, wfTypes, logH=False, wfColors=False, enRes=None
         for wft in wfTypes:
             id2id[wft] = [0]
         
+    # |--------------|        
     # |--- Case 2 ---|
+    # |--------------|        
     # Only height and ang width
     elif '2' in mode:
         nParams = 1
-        # Loop to see what combo of AWs we have
+        # Figure out how many AWs we actually have
+        # Differs across diff WF type
         myAWs = []
         for wft in wfTypes:
             tempWF = wf.wireframe(wft[:-1].replace('Half', 'Half '))
@@ -1143,7 +1583,7 @@ def profilePlot(mode, wombatRes, wfTypes, logH=False, wfColors=False, enRes=None
         for wft in wfTypes:
             id2id[wft][0] = 0
                 
-        # Process based on number of AW tags        
+        #|--- Make labels based on number of AW tags ---|       
         nAWs = len(np.unique(myAWs))
         # 1 aw - simple case (test with wbOutputs/201207.txt 95-109 ht2 )
         if nAWs == 1:
@@ -1203,7 +1643,9 @@ def profilePlot(mode, wombatRes, wfTypes, logH=False, wfColors=False, enRes=None
                     rColors[2] = pltColors[wft]
                 
         
+    # |--------------|        
     # |--- Case 3 ---|
+    # |--------------|        
     # Plot it all!
     else:
         # Figure out who has the most params and
@@ -1320,7 +1762,7 @@ def profilePlot(mode, wombatRes, wfTypes, logH=False, wfColors=False, enRes=None
         
     axR = {}
     
-    #|--- Set up the left labels ---|
+    #|--- Add the left labels ---|
     for i in range(nParams):
         if yLabelsL[i] != '': 
             thisLab = yLabelsL[i]
@@ -1328,7 +1770,7 @@ def profilePlot(mode, wombatRes, wfTypes, logH=False, wfColors=False, enRes=None
                 thisLab = labSwap[thisLab] 
             ax[i].set_ylabel(thisLab, color=lColors[i])
 
-    #|--- Set up the right labels ---|
+    #|--- Add the right labels ---|
     for i in range(len(yLabelsR)):
         # Single right label
         if yLabelsR[i] not in ['nullnullnullnull', 'double', '']:
@@ -1553,6 +1995,100 @@ def profilePlot(mode, wombatRes, wfTypes, logH=False, wfColors=False, enRes=None
     
 
 def wombatPlotWrapper(args):
+    """
+    Main wrapper to call from the command line. The script will use DINGO
+    to calculate masses as needed, which can take some time. It does include
+    the option to save the DINGO results in a pkl so they can be reloaded
+    after the first calcuation to allow for quick manipulation of plot 
+    aesthetics.
+
+
+    The command line syntax is
+
+        python3 wombatPlots.py logFile lineIDs mode [optional parameters]
+
+    where 
+
+        logFile:  points to a log file created by WOMBAT
+
+        lineIDs:  can be a single integer (e.g. 4)
+                  a range of integers (e.g. 4-10)
+                  or a series of integers connected by + (e.g. 4+8+12)
+
+        mode:    select from one of the following plot mode tags
+
+                 Line plot variants:
+                    ht# - just height (# is parameter config)
+                    kin# - height, velocity, accceleration
+                    en# - height, vel, acc, mass, kinetic energy
+
+                    # sets which wireframe params are also show
+                    1 - just height
+                    2 - height + angular width(s)
+                    3  - all wf params
+
+                    e.g. kin2 would show height, AW, vel, and acc
+            
+                 pts - print the Cartesian Stonyhust location all of the wf 
+                       points to a file
+
+                 vmap - determine the velocity from two timesteps for the same wf
+                        (using their diff heights and delta t). Makes a 3d scatter
+                        plot with each wf point colored by its velocity and prints
+                        the cartesian locations and total velocity to a file
+
+    and the optional arguments fall into the following types
+    Direct flags (written as is):
+            eb:         flag to include error bars/uncertainties in figures
+                        (defaults to False)
+
+            drag:       flag to fit the drag equation to the reconstructions
+                        (defaults to False)
+
+            vsh:        flag to plot versus height instead of versus time
+                        (defaults to False)
+        
+            log:        flag to plot x-axis heights on a log scale
+                        (defaults to False)
+        
+        
+            wfcolors:   flag to use the same colors as the wombat GUI instead of the
+                        standard plot colors that are more suited for line plots on a
+                        white backgrounds
+                        (defaults to False)
+
+            png/pdf:    flag to save figures as png or pdf
+                        (defaults to png)
+
+            1au/L1:     flag to get a predicted arrival time at either L1 or 1 AU
+                        (defaults to doing neither)
+
+
+    Keys with numbers (# replaced by float or time)
+            densratio_#: the ratio between the inner and outer wireframe densities (n1/n2).
+                         the densities vary from pixel to pixel but the ratio between the 
+                         two remains the same in any overlapping regions. can be a decimal
+                         (defaults to 1.)
+
+            dh1_#/dh2_#: the min/max heights to set the range over which the drag calculation
+                         looks for an optimal starting height (in Rs)
+                         (defaults to 5 Rs/21.5 Rs)
+
+            newbase_#:  a new time to switch to the base time for the mass calculation. the
+                        # should be replaced by a time stamp that parse_time can process
+        
+
+        Other:
+            pickleName - the name of a pickle with the saved results of previous DINGO
+                         calculation. These are automatically saved by getEnergetics in
+                         wbPlotPickles/ using saveName or defaulting to bigMassRes.pkl
+                         It automatically searches this directory so it should just be
+                         the file name.
+
+            saveName - if an arugment is passed that does not fit any of the other tag types
+                       then it is assumed to be a save name for any output images/files
+    """
+    
     #|----------------------------------|
     #|--- Check the number of inputs ---|     
     #|----------------------------------|
@@ -1580,8 +2116,7 @@ def wombatPlotWrapper(args):
     #|----------------------------------|
     # Set defaults
     allBonus = args[3:]
-    dragHeights, errorbars, incDrag, logIt, minVal, maxVal, massPkl, outName, overlap, predAT, reloadIt, versusH, wfColors  = processBonusArgs(allBonus, mode)
-    
+    dragHeights, errorbars, incDrag, logIt, massPkl, outName, overlap, predAT, rebase, reloadIt, versusH, wfColors  = processBonusArgs(allBonus, mode)
     
     #|--------------------------|
     #|--- Process kinematics ---|     
@@ -1595,7 +2130,7 @@ def wombatPlotWrapper(args):
     #|--------------------------| 
     enRes = None   
     if ('en' in mode):
-        enRes = getEnergetics(args, wombatRes, wfTypes, kinRes, reloadIt=massPkl, overlap=overlap)
+        enRes = getEnergetics(args, wombatRes, wfTypes, kinRes, reloadIt=massPkl, overlap=overlap, rebase=rebase)
         
     #|--------------------------|
     #|--- Run line plot mode ---|     
@@ -1617,11 +2152,6 @@ def wombatPlotWrapper(args):
     if mode in ['vmap']:
         makeVmap(wombatRes, wfTypes, outName=outName)
     
-    #|----------------------------- d|
-    #|--- 2D Maps (redo WOMBAT) ---|     
-    #|-----------------------------|
-    if mode in ['logimg', 'sqimg', 'linim', 'logim', 'sqim']:
-        makeImage(wombatRes, wfTypes, outName=outName, minVal=minVal, maxVal=maxVal)
 
 # |-----------------------|
 # |--- Text line input ---|
