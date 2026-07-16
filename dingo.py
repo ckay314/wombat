@@ -182,8 +182,9 @@ def rebaseIt(bkgData, obs, rebase):
     the new base time
         mass2 = (im2 - im0)/ scl(t2)
         mass1 = (im1 - im0) / scl(t1)
+        mass2' = im2 * scl2/scl1 - im1
+        if change in viewing angle small ->  scl2 ~= scl1
         mass2' ~= mass2 - mass1 = (im2 - im1) / scl(t2)
-    to start, ignoring the fact that scl(t2) and scl(t1) are not
     quite the same. to improve later
     
     """
@@ -198,11 +199,42 @@ def rebaseIt(bkgData, obs, rebase):
             newIdx = i
             minDiff = myDiff
             
-    # |--- Reset masses ---|
+    #|--- Check if masses are one shorter than proIms ---|
+    # Special process ones (LW, SR) will be same lenght
+    # Everyone else is one shorter so proIdx = massIdx + 1
+    # proImMaps as massIms are the same length so newIdx matches mass
+    if len((bkgData['proIms'][obs][0])) == len(bkgData['massIms'][obs]):
+        mass2pro = 0
+    else:
+        mass2pro = 1
+    
+    # |--- Get new base/matching elTheory factor ---|
     newBase = np.copy(bkgData['massIms'][obs][newIdx])
+    newBaseHdr = bkgData['proIms'][obs][1][newIdx+mass2pro]
+    wcs0 = fitshead2wcs(newBaseHdr) 
+    dist = wcs_get_coord(wcs0) 
+    if newBaseHdr['cunit1'] == 'deg':
+        dist = dist * 3600.
+    if 'RSUN' in newBaseHdr:
+        rsun = newBaseHdr['RSUN']
+    elif 'RSUN_ARC' in newBaseHdr:
+        rsun = newBaseHdr['RSUN_ARC']
+    dist = np.sqrt(dist[0,:,:]**2 + dist[1,:,:]**2) / rsun    
+    R0,scl0 = elTheory(dist,0)
+    
+    # |--- Readjust all the masses ---|    
     newMasses = []
     for i in range(len(bkgData['massIms'][obs])):
-        newMasses.append(bkgData['massIms'][obs][i] - newBase)
+        # Get scale for this time
+        myHdr = bkgData['proIms'][obs][1][i+mass2pro]
+        wcs = fitshead2wcs(myHdr) 
+        dist2 = wcs_get_coord(wcs) 
+        if myHdr['cunit1'] == 'deg':
+            dist2 = dist2 * 3600.
+        dist2 = np.sqrt(dist2[0,:,:]**2 + dist2[1,:,:]**2) / rsun    
+        R0,scl = elTheory(dist2,0)
+        
+        newMasses.append(bkgData['massIms'][obs][i] * scl/scl0 - newBase)
         
     return newMasses
 
@@ -788,7 +820,7 @@ def wf2CartFoV(myMap, inPts, pixCent=None):
 # |------------------------------------|
 def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSelect=8, deproj=True, silent=False):
     '''
-    Fuction to take a mass image map, satellite dictionay, and wireframe object and
+    Fuction to take a mass image map, satellite dictionary, and wireframe object and
     determine the width perp to the plane of sky and convert integrated mass to density.
     A single wireframe or two can be passed (to represent a shock and ejecta). A constant
     density is assumed along the line of sight within each WF. The routine returns a set
@@ -3328,7 +3360,7 @@ def dingoWrapper(args, pullMass=False, silent=False):
     line = miniLog[0,:]    
     with open(line[13], 'rb') as file:
         bkgData = pickle.load(file)
-    
+        
     #|--- Get the instrument ---|
     # Same for all lines
     obs  = line[1]

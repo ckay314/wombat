@@ -20,7 +20,9 @@ from euvi_prep import euvi_prep
 from cor_prep import cor_prep, cor_polarize
 from hi_prep import hi_prep
 from astropy.io import fits
-
+import os
+from sunspyce import load_common_kernels, load_psp_kernels
+import spiceypy as spiceypy
 
 #|----------------------------|
 #|--- Supress Info Logging ---|
@@ -72,6 +74,17 @@ def secchi_prep(filesIn, outSize=None, silent=False, polarizeOn=False, prepDir=N
         the IDL version, which could be ported in future work.
 
     """
+    # Check that kernels are loaded before running this
+    # WOMBAT process wrapper will load but possibly not other
+    # direct calls to wispr_prep
+    count = spiceypy.ktotal('ALL')
+    if count == 0:
+        # This is the right path if running from dir one above
+        # wombatCode (and spiceKernels)
+        kernelSpot = os.getcwd() + '/spiceKernels/'
+        load_common_kernels(kernelSpot)
+        load_stereo_kernels(kernelSpot+'stereo/')
+    
     # Port of the basic functionality of IDL version
     # For polarized images need to just pass three at a time
     

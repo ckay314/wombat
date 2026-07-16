@@ -656,11 +656,7 @@ def rdifhi_wrapper(files, side='a', tel='hi_1'):
 
     Input:
         files: the list of files to process
-        
-        im2: the second image (later time)
-    
-        hdr: the header for the second image
-       
+               
     Optional Input:   
         side: whether we're doing STEREO A or B (pick from 'a' or 'b')
               defaults to a

@@ -15,8 +15,11 @@ from sunpy.coordinates import get_horizons_coord
 from sunspyce import get_sunspyce_hpc_point, get_sunspyce_roll, get_sunspyce_coord, get_sunspyce_lonlat, get_sunspyce_p0_angle, get_sunspyce_carr_rot
 from sunpy.coordinates import spice
 import scipy.io
+import os
 from wcs_funs import fitshead2wcs, wcs_get_coord, idlsav2wcs
 
+from sunspyce import load_common_kernels, load_psp_kernels
+import spiceypy as spiceypy
 
 
 #|----------------------------|
@@ -715,6 +718,17 @@ def wispr_prep(filesIn, wcalpath, outSize=None, silent=False, biasOff=False, bia
         headers_out: a list of corresponding headers
 
     """
+    # Check that kernels are loaded before running this
+    # WOMBAT process wrapper will load but possibly not other
+    # direct calls to wispr_prep
+    count = spiceypy.ktotal('ALL')
+    if count == 0:
+        # This is the right path if running from dir one above
+        # wombatCode (and spiceKernels)
+        kernelSpot = os.getcwd() + '/spiceKernels/'
+        load_common_kernels(kernelSpot)
+        load_psp_kernels(kernelSpot+'psp/')
+        
     # Port of basic functionality of IDL version
     
     # Want filesIn as a list, even if single
