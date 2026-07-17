@@ -1303,7 +1303,7 @@ class ParamWindow(QMainWindow):
                         # |--- Make an output line ---|
                         # Observer and time of obs
                         outStr = nowTime.strftime("%Y-%m-%dT%H:%M:%S")
-                        outStr += ' ' + tag + ' ' + obsT + ' ' + aWF.WFtype.replace(' ', '') +' '
+                        outStr += ' ' + tag + ' ' + obsT + ' ' + aWF.WFtype.replace(' ', '') + str(k+1) +' '
                         # Dump all the params and fill with Nones as needed
                         myPs = paramLog[aWF.WFtype+str(k+1)]
                         for ii in range(9):
@@ -1519,11 +1519,13 @@ class ParamWindow(QMainWindow):
             
             # Make sure figLabels is set (should be, but doesn't
             # hurt to check)
-            if figLabels not in globals():
-                figLabels = True
+            if 'figLabels' in globals():
+                showLabs = figLabels
+            else:
+                showLabs = True
             
             # Add labels    
-            if figLabels:
+            if showLabs:
                 painter = QPainter(figGrab)
                 painter.setPen(pg.mkPen('w', width=1.75)) 
                 #painter.setFont(QFont("Arial", 20, QFont.Weight.Bold))
