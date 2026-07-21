@@ -150,7 +150,9 @@ def reloadLogLine(theFile, lineIds):
         try:
             logFile = np.genfromtxt(theFile, dtype=str)
         except:
-            sys.exit('Error opening logFile, check that it is a WOMBAT log file')
+            print('Error opening logFile, check that it is a WOMBAT log file')
+            print('Alternatively, check the columns are correct if you have been editing it')
+            sys.exit('')
             
     #|-------------------------|
     #|--- Check the log ids ---|     
@@ -236,14 +238,13 @@ def reloadLogLine(theFile, lineIds):
             myTime = miniLog[idx,2][:-3]
             myParams = miniLog[idx,4:13]
             myParams = myParams[myParams != 'None'].astype(float)
-            
             if myTime in reloadDict['Params'][aWF].keys():
                 for j in range(len(myParams)):
                     if reloadDict['Params'][aWF][myTime][j] != myParams[j]:
                         print ('Multiple params for '+aWF+ ' at '+myTime)
-                        print (myParams)
-                        print (reloadDict['Params'][aWF][myTime])
-                        sys.exit('Disagreement in parameters for '+aWF+ ' at '+myTime)
+                        print (' Cannot add', myInst, myParams)
+                        print (' Already have', reloadDict['Params'][aWF][myTime])
+                        sys.exit()
             else:
                 reloadDict['Params'][aWF][myTime] = myParams
             

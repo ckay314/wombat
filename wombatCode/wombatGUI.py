@@ -1281,18 +1281,26 @@ class ParamWindow(QMainWindow):
             
             # Grab idx to log
             if doItAll:
+                #print (aPW.p2t)
                 for ii in range(len(aPW.satStuff[0])):
                     #myLogId = np.where(aPW.st2obs == ii)[0][0]
-                    myLogId = aPW.p2t[ii][0]
-                    pidx2do.append(ii)
-                    tidx2do.append(myLogId)
+                    if len(aPW.p2t[ii]) > 0:
+                        # Take middle of the p ranges, should be closest to
+                        # the obs time
+                        #myLogId = int(np.median(aPW.p2t[ii]))
+                        myLogId = aPW.p2tBF[ii]
+                        pidx2do.append(ii)
+                        tidx2do.append(myLogId)
             else:
                 pidx2do = [aPW.pickIdx]
-                tidx2do = [aPW.tslIdx]
+                tidx2do = [aPW.p2tBF[aPW.pickIdx]]
             
             # |--- Loop through wfs ---|
             for k in range(nwfs):
                 aWF = wfs[k]
+                # Track the first params, only print it at the latest time
+                firstLine = None
+                firstParams = None
                 if type(aWF.WFtype) != type(None):
                     for iii in range(len(tidx2do)):
                         pidx = pidx2do[iii]
@@ -1306,11 +1314,13 @@ class ParamWindow(QMainWindow):
                         outStr += ' ' + tag + ' ' + obsT + ' ' + aWF.WFtype.replace(' ', '') + str(k+1) +' '
                         # Dump all the params and fill with Nones as needed
                         myPs = paramLog[aWF.WFtype+str(k+1)]
+                        paramStr = ''
                         for ii in range(9):
                             if ii < (len(myPs)):
-                                outStr += str(myPs[ii][tidx]) + ' '
+                                paramStr += str(myPs[ii][tidx]) + ' '
                             else:
-                                outStr += 'None '
+                                paramStr += 'None '
+                        outStr += paramStr
                             
                         # Add the name of the background pickle and the time index for that data
                         outStr += bkgpkl + ' ' + str(pidx)    
@@ -1321,8 +1331,36 @@ class ParamWindow(QMainWindow):
                         outStr += ' ' + str(didx) + ' ' + str(sclidx+1)     
                         #svals = aPW.slidervals[aPW.didx, aPW.sclidx] # diff, scale time, min/max 
                         outStr += ' ' + str(smin) + ' '+ str(smax)
-                        print (outStr)
-                        logFile.write( outStr+ '\n')
+                        
+                        
+                        #|--- Check on adding lines ---|
+                        addLine = False
+                        # May have times before the first real fit. Only add the latest
+                        # time with the params matching those at t=0
+                        if type(firstLine) == type(None):
+                            firstParams = paramStr
+                            firstLine = outStr
+                        elif firstLine != 'Done':
+                            if paramStr != firstParams:
+                                addLine = True
+                                firstLine = 'Done'
+                                
+                            else:
+                                firstLine = outStr
+                        else:
+                            # Take the first time hit new params if not at the beginning
+                            if paramStr != firstParams:
+                                addLine = True    
+                                
+                        # And ignore it all for single line        
+                        if not doItAll:
+                            addLine = True
+                                
+                        #|--- Print to screen and log ---|                                    
+                        if addLine:
+                            firstParams = paramStr
+                            print(outStr)
+                            logFile.write( outStr+ '\n')
                 else:
                     print('Cannot log WF', k, 'no parameters defined')
         logFile.close()
@@ -1642,6 +1680,7 @@ class FigWindow(QWidget):
         self.tslIdx = 0 # index within the time slider
         self.t2p = tmap[0] # slider time to pickle index
         self.p2t = tmap[1] # pickle index to slider time
+        self.p2tBF = tmap[2] # pickle index to single closest slider time
         self.nowMass = False # show the region used to calc mass
         self.WFmasks = [np.zeros(myObs[0][0].data.shape, dtype=int) for i in range(nwfs)]
         
@@ -3283,6 +3322,7 @@ def sortTimeIndices(satStuff, tRes=20):
     # to the same obs, especially if time cadences dont match well
     t2ps = []
     p2ts = [] 
+    p2tBFs = []
     for j in range(len(satStuff)):
         myTimes = allTimes[j]
         t2p  = np.zeros(nTimes, dtype=int)
@@ -3299,9 +3339,19 @@ def sortTimeIndices(satStuff, tRes=20):
             p2t[i] = np.where(t2p == i)[0]
         p2ts.append(p2t)
         
+        # Find closest tidx match to each pidx
+        p2tBF = {}
+        for i in range(len(myTimes)):
+            theseDiffs = np.abs(myTimes[i] - DTgeneral[p2t[i]])
+            minDiff = np.where(theseDiffs == np.min(theseDiffs))[0]
+            p2tBF[i] = p2t[i][minDiff][0]
+        p2tBFs.append(p2tBF)
+        
     idxMaps = {}
     idxMaps['p2t'] = p2ts
     idxMaps['t2p'] = t2ps
+    idxMaps['p2tBF'] = p2tBFs
+    
     return nTimes, tlabs, idxMaps
 
 # |------------------------------------------------------------|
@@ -3536,11 +3586,11 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, reloadDict=None, logF
     pws = []
     for i in range(nSats):
         if multiTime:
-            myTmap = [idxMaps['t2p'][i], idxMaps['p2t'][i]]
+            myTmap = [idxMaps['t2p'][i], idxMaps['p2t'][i], idxMaps['p2tBF'][i]]
         else:
             sing = {}
             sing[0] = [0]
-            myTmap = [[0], sing] 
+            myTmap = [[0], sing, sing] 
         
         pw = FigWindow(obsFiles[i], sclIms[i], satStuff[i], massIms[i], myNum=i, tmap=myTmap, screenXY=screenXY)
         pw.show()
