@@ -921,7 +921,11 @@ def rdif_hi(im1, im2, hdr, side='a', tel='hi_1', model=None, mfilt=True):
     ccreg1[w1] = 0
     w2 = ~ np.isfinite(ccreg2)
     ccreg2[w2] = 0
-    h, xmax, ymax = test_crosscorr(ccreg1,ccreg2,doGauss=True)
+    try:
+        h, xmax, ymax = test_crosscorr(ccreg1,ccreg2,doGauss=True)
+    except:
+        print('Cannot get cross corr in srem. Asssuming zero shift')
+        xmax, ymax = 0., 0.
         
     x = xmax * scl/scale
     y = ymax * scl/scale

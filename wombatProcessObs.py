@@ -93,13 +93,15 @@ sys.path.append('wombatCode/')
 from secchi_prep import secchi_prep
 from wispr_prep import wispr_prep, wispr_readfits
 from lasco_prep import c2_prep, c3_prep, reduce_level_1
-from solohi_prep import solohi_fits2grid
+from solohi_prep import solohi_fits2grid, solohi_getgrid
 from aia_prep import aia_prep
 from hi_prep import rdifhi_wrapper
 from wcs_funs import fitshead2wcs, wcs_get_pixel, wcs_get_coord
 from wombatPullObs import setupFolderStructure
 from sunspyce import load_common_kernels, load_psp_kernels, load_solo_kernels, load_stereo_kernels
+from scc_funs import rebinIDL
 import wombatMass as wM
+
 
 # |-------------------------------|
 # |------- Setup Time Stuff ------|
@@ -1265,8 +1267,8 @@ def processObs(times, insts, inFolder='pullFolder/', outFolder='wbFits/', outFil
     doLW, doL3 = False, False
     # |--- Check normal version ---|
     if 'WISPR' in insts: doWISPR = ['Inner', 'Outer']
-    elif 'WISPRI' in insts: doWISPR.append('Inner')
-    elif 'WISPRO' in insts: doWISPR.append('Outer')
+    if 'WISPRI' in insts: doWISPR.append('Inner')
+    if 'WISPRO' in insts: doWISPR.append('Outer')
     # |--- Check LW version ---|
     if 'WISPR_LW' in insts: 
         doLW = True
@@ -1291,7 +1293,8 @@ def processObs(times, insts, inFolder='pullFolder/', outFolder='wbFits/', outFil
         doL3 = True
         if 'Outer' not in doWISPR:
             doWISPR.append('Outer')
-            
+    
+    doWISPR = np.unique(doWISPR)      
     # |--- Run processing ---|        
     if len(doWISPR) > 0:
         if doLW:
@@ -1416,9 +1419,14 @@ def thePickler(proIms, fnames, insts0, pickleJar='wbPickles/', name='temp'):
                               Processed meaning standard total brightness calibration but
                               no differencing
                               [[arr0, arr1, arr2, ...], [hdr0, hdr1, hdr2,...]]
+                              For HI SR this won't have the 0 term because it was already 
+                              taken out in preprocessing. The WISPR LW are also the same
+                              len as proIms bc don't do a diff there either
     
                 proImMaps[inst]: the same as proIms but with image maps instead of arrays
                                  [[map0, map1, map2, ...], [hdr0, hdr1, hdr2,...]]
+                                 0 term may not exist for same reasons as proIm
+                                
     
                 massIms[inst]: the time series of mass images (as arrays)
                                [massArr1, massArr2, ...]
@@ -1498,13 +1506,19 @@ def thePickler(proIms, fnames, insts0, pickleJar='wbPickles/', name='temp'):
         # |--------------------------------------|
         # |---- Make running difference maps ----|
         # |--------------------------------------|
-        if bigDill['WBinfo']['isEUV'][key]:
-            tempMaps[key] = arr2maps(bigDill['proIms'][key][0], bigDill['proIms'][key][1], doDiff=False)  
-        elif key in ['WISPRI_LW', 'WISPRO_LW', 'HI1A_SR', 'HI1B_SR', 'HI2A_SR', 'HI2B_SR']:
-            tempMaps[key] = arr2maps(bigDill['proIms'][key][0], bigDill['proIms'][key][1], doDiff=False)  
-        else:
-            tempMaps[key] = arr2maps(bigDill['proIms'][key][0], bigDill['proIms'][key][1])           
+        doDiff = True
+        soloFix = False
+        if bigDill['WBinfo']['isEUV'][key] or (key in ['WISPRI_LW', 'WISPRO_LW', 'HI1A_SR', 'HI1B_SR', 'HI2A_SR', 'HI2B_SR']):
+            doDiff = False
+        if key == 'SoloHI':
+            soloFix = True
         
+        tempMaps[key] = arr2maps(bigDill['proIms'][key][0], bigDill['proIms'][key][1], doDiff=doDiff, soloFix=soloFix)  
+        #elif key in ['WISPRI_LW', 'WISPRO_LW', 'HI1A_SR', 'HI1B_SR', 'HI2A_SR', 'HI2B_SR']:
+        #tempMaps[key] = arr2maps(bigDill['proIms'][key][0], bigDill['proIms'][key][1], doDiff=False)  
+        #else:
+        #tempMaps[key] = arr2maps(bigDill['proIms'][key][0], bigDill['proIms'][key][1])           
+                
         # |---------------------------------------|
         # |---- Process headers into satStuff ----|
         # |---------------------------------------|
@@ -1659,7 +1673,7 @@ def thePickler(proIms, fnames, insts0, pickleJar='wbPickles/', name='temp'):
 # |------------------------------------------------------------|
 # |------------ Convert array+hdrs to diff maps ---------------|
 # |------------------------------------------------------------|
-def arr2maps(dataIn, hdrIn, doDiff=True):
+def arr2maps(dataIn, hdrIn, doDiff=True, soloFix=False):
     """
     Function to convert a list with arrays+headers into an array of maps+headers
     
@@ -1724,11 +1738,13 @@ def arr2maps(dataIn, hdrIn, doDiff=True):
             if (myData.shape == runBase.shape) & (myData.shape == baseBase.shape):
                 # Run diff
                 diffData = myData - runBase
+                diffData[np.isnan(diffData)] = 0
                 #myHdr['diffFile'] = runFile
                 diffMap = sunpy.map.Map(diffData, myHdr)
                 rds.append(diffMap)
                 # Base diff
                 diffData = myData - baseBase
+                diffData[np.isnan(diffData)] = 0
                 #myHdr['diffFile'] = baseFile
                 diffMap = sunpy.map.Map(diffData, myHdr)
                 bds.append(diffMap)
@@ -1737,6 +1753,40 @@ def arr2maps(dataIn, hdrIn, doDiff=True):
 
             else:
                 print('Size mismatch for ' +names[i] + allFH0[i][1][j+1]['DATE-OBS'])
+                
+        # |--- Fix for soloHI cases ---|
+        # Outer quads take turn in obs so when matching to the inner
+        # there will be duplicates over time -> base diffs of 0
+        if soloFix:
+            nbin = 8
+            det_grid = solohi_getgrid(get_det=True)
+            if nbin != 1:
+                det_grid = rebinIDL(det_grid, np.array([int(4144/nbin),  int(4016/nbin)]))
+            id3s = np.where(det_grid == 3)
+            id4s = np.where(det_grid == 4)
+            
+            meds3 = np.zeros(len(rds))    
+            meds4 = np.zeros(len(rds))    
+            for j in range(len(rds)):
+                meds3[j] = np.median(rds[j].data[id3s])
+                meds4[j] = np.median(rds[j].data[id4s])
+                
+            nonZero3 = np.where(meds3 != 0)[0]
+            nonZero4 = np.where(meds4 != 0)[0]
+             
+            for j in range(len(rds)-1):
+                if meds3[j] == 0:
+                    upidx3 = np.min(nonZero3[np.where(nonZero3 > j)])
+                    rds[j].data[id3s] = rds[upidx3].data[id3s]
+                if meds4[j] == 0:
+                    upidx4 = np.min(nonZero4[np.where(nonZero4 > j)])
+                    rds[j].data[id4s] = rds[upidx4].data[id4s]
+            # end time
+            if meds3[-1] == 0:
+                rds[-1].data[id3s] = rds[nonZero3[-1]].data[id3s]
+            if meds4[-1] == 0:
+                rds[-1].data[id4s] = rds[nonZero4[-1]].data[id4s]
+                
                 
     # |--- No diff, just mapify and restructure ---|
     else:
@@ -2365,7 +2415,6 @@ def commandLineWrapper():
                 sys.exit(val + ' is not inst tag, pkl, or exisiting input folder. Exiting... ')
         else:
             insts.append(val.upper().replace('SOLO', 'Solo'))
-            
 
     if len(insts) < 1:
         sys.exit('No instrument tag provided')
