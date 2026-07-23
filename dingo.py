@@ -180,6 +180,8 @@ def rebaseIt(bkgData, obs, rebase, ogTidx):
     recalc base diff and pass to mass calc
     
     """
+    if obs in ['WISPRI_LW', 'WISPRO_LW', 'HI1A_SR', 'HI1B_SR', 'HI2A_SR', 'HI2B_SR']:
+        sys.exit('Cannot rebase'+obs)
     # |--- Get rebase index ---|
     # Find the closest time to the time provided
     newIdx = 0
@@ -194,9 +196,8 @@ def rebaseIt(bkgData, obs, rebase, ogTidx):
     # |--- Get new base img --- |
     outMasses = []
     for i in ogTidx:
-        # proIm indexing is proImMaps + 1 (for any inst that can get to this spot)
-        newBD = bkgData['proIms'][obs][0][i+1] - bkgData['proIms'][obs][0][newIdx+1]
-        newMass = TB2mass(newBD, bkgData['proIms'][obs][1][i+1], despike=True)[0]
+        newBD = bkgData['proImMaps'][obs][0][i].data - bkgData['proImMaps'][obs][0][newIdx].data
+        newMass = TB2mass(newBD, bkgData['proImMaps'][obs][1][i], despike=True)[0]
         outMasses.append(newMass)
                
     return outMasses
