@@ -138,7 +138,7 @@ sys.path.append('prepCode/')
 sys.path.append('wombatCode/') 
 import wombatWF as wf
 from wombatLoadCTs import *
-from wombatMass import elTheory 
+from wombatMass import elTheory, TB2mass 
 from wcs_funs import fitshead2wcs, wcs_get_pixel, wcs_get_coord
 
 
@@ -172,20 +172,12 @@ picType = '.png' # png or pdf, gets overwritten if set in input
 # |-------------------------|
 # |--- Rebase the masses ---|
 # |-------------------------|
-def rebaseIt(bkgData, obs, rebase):
+def rebaseIt(bkgData, obs, rebase, ogTidx):
     """
     Function to reassign a new base time for the mass images.
     
-    The mass is calc from excess brightness (B_t - B_t0) / sclfactor
-    where sclfactor is calc'ed by eltheory at time t. Since linear
-    combo can set at new t0' by just subtracting the mass im at 
-    the new base time
-        mass2 = (im2 - im0)/ scl(t2)
-        mass1 = (im1 - im0) / scl(t1)
-        mass2' = im2 * scl2/scl1 - im1
-        if change in viewing angle small ->  scl2 ~= scl1
-        mass2' ~= mass2 - mass1 = (im2 - im1) / scl(t2)
-    quite the same. to improve later
+    Just find the closest time index to the given time and
+    recalc base diff and pass to mass calc
     
     """
     # |--- Get rebase index ---|
@@ -199,44 +191,15 @@ def rebaseIt(bkgData, obs, rebase):
             newIdx = i
             minDiff = myDiff
             
-    #|--- Check if masses are one shorter than proIms ---|
-    # Special process ones (LW, SR) will be same lenght
-    # Everyone else is one shorter so proIdx = massIdx + 1
-    # proImMaps as massIms are the same length so newIdx matches mass
-    if len((bkgData['proIms'][obs][0])) == len(bkgData['massIms'][obs]):
-        mass2pro = 0
-    else:
-        mass2pro = 1
-    
-    # |--- Get new base/matching elTheory factor ---|
-    newBase = np.copy(bkgData['massIms'][obs][newIdx])
-    newBaseHdr = bkgData['proIms'][obs][1][newIdx+mass2pro]
-    wcs0 = fitshead2wcs(newBaseHdr) 
-    dist = wcs_get_coord(wcs0) 
-    if newBaseHdr['cunit1'] == 'deg':
-        dist = dist * 3600.
-    if 'RSUN' in newBaseHdr:
-        rsun = newBaseHdr['RSUN']
-    elif 'RSUN_ARC' in newBaseHdr:
-        rsun = newBaseHdr['RSUN_ARC']
-    dist = np.sqrt(dist[0,:,:]**2 + dist[1,:,:]**2) / rsun    
-    R0,scl0 = elTheory(dist,0)
-    
-    # |--- Readjust all the masses ---|    
-    newMasses = []
-    for i in range(len(bkgData['massIms'][obs])):
-        # Get scale for this time
-        myHdr = bkgData['proIms'][obs][1][i+mass2pro]
-        wcs = fitshead2wcs(myHdr) 
-        dist2 = wcs_get_coord(wcs) 
-        if myHdr['cunit1'] == 'deg':
-            dist2 = dist2 * 3600.
-        dist2 = np.sqrt(dist2[0,:,:]**2 + dist2[1,:,:]**2) / rsun    
-        R0,scl = elTheory(dist2,0)
-        
-        newMasses.append(bkgData['massIms'][obs][i] * scl/scl0 - newBase)
-        
-    return newMasses
+    # |--- Get new base img --- |
+    outMasses = []
+    for i in ogTidx:
+        # proIm indexing is proImMaps + 1 (for any inst that can get to this spot)
+        newBD = bkgData['proIms'][obs][0][i+1] - bkgData['proIms'][obs][0][newIdx+1]
+        newMass = TB2mass(newBD, bkgData['proIms'][obs][1][i+1], despike=True)[0]
+        outMasses.append(newMass)
+               
+    return outMasses
 
 
 # |---------------------------|
@@ -3417,17 +3380,15 @@ def dingoWrapper(args, pullMass=False, silent=False):
     #|--- Rebase it (if needed) ---|        
     #|-----------------------------|
     if rebase:
-        allMassMaps = rebaseIt(bkgData, obs, rebase)
-        massMaps = []
-        # Extract the right times again
+        ogTidx = []
         for i in range(nTimes):
             if singleWF:
-                tidx = int(miniLog[i,14])
+                ogTidx.append(int(miniLog[i,14]))
             else:
                 # Inner and outer at same tidx
-                tidx = int(miniLog[pairIds[i][0],14])
-            massMaps.append(allMassMaps[tidx])
-    
+                ogTidx.append(int(miniLog[pairIds[i][0],14]))
+                
+        massMaps = rebaseIt(bkgData, obs, rebase, ogTidx)
 
     #|--------------|
     #|--------------|
