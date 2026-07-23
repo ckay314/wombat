@@ -1718,7 +1718,7 @@ class FigWindow(QWidget):
         myTitle = self.satName.replace('_',' ')    
         # Clean up some title things
         myTitle = myTitle.replace('WISPR HI1', 'WISPR Inner')    
-        myTitle = myTitle.replace('WISPR HI1', 'WISPR Outer')    
+        myTitle = myTitle.replace('WISPR HI2', 'WISPR Outer')    
         self.setWindowTitle(myTitle)        
         
         #|---- Make a layout ----|
