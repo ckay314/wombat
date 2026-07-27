@@ -741,7 +741,6 @@ class ParamWindow(QMainWindow):
             for ii in range(len(myWF.params)):
                 paramLog[myWF.WFtype+myTab][ii][allThisTidx] = paramLog[myWF.WFtype+myTab][ii][tidx]
             
-            
         # |--- Propagate plot min/max ---|
         elif key in [40, 41]:
             if type(justSat) == type(None):
@@ -1047,7 +1046,7 @@ class ParamWindow(QMainWindow):
             tval: the time slider integer value
         
        
-        """
+        """        
         # Cannot for the life of me figure out why having tval = 1
         # makes the parameter sliders appear at 0 (values and WFs ok tho)
         # Just avoid 1 so the slider starts at 2 and shift what is passed
@@ -1090,8 +1089,10 @@ class ParamWindow(QMainWindow):
             # update the wf points if the parameters have changed
             if not self.Tsli_dragging:
                 isDiff = False
+                ogTab = self.tab_widget.currentIndex()
                 if paramsBuilt:
                      for ff in range(self.nTabs):  
+                        self.tab_widget.setCurrentIndex(ff)
                         # Make sure wf is defined 
                         if type(wfs[ff].WFtype) != type(None):
                             theKey = wfs[ff].WFtype+str(ff+1)
@@ -1103,6 +1104,7 @@ class ParamWindow(QMainWindow):
                                 allThisTidx = aPW.p2t[pidx]
                                 if len(allThisTidx) < len(toSwitch):
                                     toSwitch = allThisTidx
+                            
                             for i in range(len(wfs[ff].params)):                               
                                 if type(paramLog[theKey][i][tidx]) == type(None):
                                     paramLog[theKey][i][toSwitch] = wfs[ff].params[i]
@@ -1112,25 +1114,25 @@ class ParamWindow(QMainWindow):
                                             if type(paramLog[theKey][i][ii]) == type(None):
                                                 paramLog[theKey][i][ii] = wfs[ff].params[i]
                                     
-                                # Check if paramLog val diff from current sliders
-                                else:
-                                    sumDiff = 0
-                                    nowVals = [] # collect vals for test printing
-                                    for jj in range(len(wfs[ff].params)):
-                                        sumDiff += np.abs(wfs[ff].params[jj] - paramLog[theKey][jj][tidx])
-                                        nowVals.append(wfs[ff].params[jj])
-                                    # Difference found
-                                    if sumDiff != 0:     
-                                        for i in range(len(wfs[ff].params)):                       
-                                            wfs[ff].params[i] = np.copy(paramLog[theKey][i][tidx]) # no pointer
-                                        wfs[ff].getPoints()
-                                        self.holdIt = True
-                                        for j in range(len(wfs[ff].params)):
-                                            self.widges[ff][0][j].setValue(paramLog[theKey][j][tidx])
-                                        self.holdIt = False
-                                        self.updateWFpoints(wfs[ff], self.widges[ff])
-                                        isDiff = True
+                            # Check if paramLog val diff from current sliders
+                            sumDiff = 0
+                            nowVals = [] # collect vals for test printing
+                            for jj in range(len(wfs[ff].params)):
+                                sumDiff += np.abs(wfs[ff].params[jj] - paramLog[theKey][jj][tidx])
+                                nowVals.append(wfs[ff].params[jj])
                                     
+                            # Difference found
+                            if sumDiff != 0:     
+                                for i in range(len(wfs[ff].params)):                       
+                                    wfs[ff].params[i] = np.copy(paramLog[theKey][i][tidx]) # no pointer
+                                wfs[ff].getPoints()
+                                self.holdIt = True
+                                for j in range(len(wfs[ff].params)):
+                                    self.widges[ff][0][j].setValue(paramLog[theKey][j][tidx])
+                                self.holdIt = False
+                                self.updateWFpoints(wfs[ff], self.widges[ff])
+                                isDiff = True
+                self.tab_widget.setCurrentIndex(ogTab)                    
                 # Replot the wfs if we need to                                                                    
                 if isDiff:
                     for ipw in range(nSats):
@@ -1293,6 +1295,7 @@ class ParamWindow(QMainWindow):
                         tidx2do.append(myLogId)
             else:
                 pidx2do = [aPW.pickIdx]
+            
                 tidx2do = [aPW.p2tBF[aPW.pickIdx]]
             
             # |--- Loop through wfs ---|
