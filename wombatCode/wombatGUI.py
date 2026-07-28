@@ -121,7 +121,7 @@ class ParamWindow(QMainWindow):
                defaults to none
         
     """
-    def __init__(self, nTabs, tlabs=None):
+    def __init__(self, nTabs, tlabs=None, tidxBFs=None):
         """
         Intial setup for the param window class.
     
@@ -150,10 +150,12 @@ class ParamWindow(QMainWindow):
             self.tlabs = tlabs
             self.Tlabels = []
             self.Tsliders = []
+            self.tidxBFs = tidxBFs
         # Hide the time slider if we only have one time
         else:
             self.nTsli = 0 # random number to make it happy
             self.tlabs = ['']
+            self.tidxBFs = [0]
         
         # Flag to keep widgets from overplotting
         self.holdIt = False
@@ -833,7 +835,7 @@ class ParamWindow(QMainWindow):
         
         if type(paramLog) != type(None):
             tidx = self.Tsliders[0].value() - 2
-            toSwitch = range(200)
+            '''toSwitch = range(200)
             # Loop through and find the shortest p2t range to switch
             #for jj in range(nSats):
             for aPW in pws:
@@ -842,8 +844,9 @@ class ParamWindow(QMainWindow):
                 allThisTidx = aPW.p2t[pidx]
                 #print (pidx, allThisTidx)
                 if len(allThisTidx) < len(toSwitch):
-                    toSwitch = allThisTidx
-            
+                    toSwitch = allThisTidx'''
+            toSwitch =  self.tidxBFs[tidx]
+
             newPs = myWF.params
             newPs[myOrd] = float(temp)
             myTab = str(self.tab_widget.currentIndex() +1)
@@ -946,12 +949,13 @@ class ParamWindow(QMainWindow):
                         
                 # save the new values in param log
                 # Grab range to switch
-                toSwitch = range(200)
+                '''toSwitch = range(200)
                 for aPW in pws:
                     pidx = aPW.t2p[tidx]
                     allThisTidx = aPW.p2t[pidx]
                     if len(allThisTidx) < len(toSwitch):
-                        toSwitch = allThisTidx
+                        toSwitch = allThisTidx'''
+                toSwitch =  self.tidxBFs[tidx]
                         
                 for iii in range(len(newLabs)):
                     paramLog[myType+myTab][iii][toSwitch] = newWF.params[iii]
@@ -1098,12 +1102,13 @@ class ParamWindow(QMainWindow):
                             theKey = wfs[ff].WFtype+str(ff+1)
                             
                             # Check if paramLog has None for this time, if so copy current vals
-                            toSwitch = range(200)
+                            '''toSwitch = range(200)
                             for aPW in pws:
                                 pidx = aPW.t2p[tidx]
                                 allThisTidx = aPW.p2t[pidx]
                                 if len(allThisTidx) < len(toSwitch):
-                                    toSwitch = allThisTidx
+                                    toSwitch = allThisTidx'''
+                            toSwitch =  self.tidxBFs[tidx]
                             
                             for i in range(len(wfs[ff].params)):                               
                                 if type(paramLog[theKey][i][tidx]) == type(None):
@@ -1155,12 +1160,13 @@ class ParamWindow(QMainWindow):
                     tidx = tval - 2
                     # Check if param log is empty for this WF
                     # Grab range to switch
-                    toSwitch = range(200)
+                    '''toSwitch = range(200)
                     for aPW in pws:
                         pidx = aPW.t2p[tidx]
                         allThisTidx = aPW.p2t[pidx]
                         if len(allThisTidx) < len(toSwitch):
-                            toSwitch = allThisTidx
+                            toSwitch = allThisTidx'''
+                    toSwitch =  self.tidxBFs[tidx]
                     
                     #|---- Existing params are none ----|
                     # Fill with current values of sliders
@@ -3267,7 +3273,7 @@ def sortTimeIndices(satStuff, tRes=20):
     # Min/max time for each instrument
     allMins  = []
     allMaxs  = []
-    
+
     #|--- Loop through sats ---|
     for j in range(len(satStuff)):
         aSat = satStuff[j]
@@ -3343,17 +3349,53 @@ def sortTimeIndices(satStuff, tRes=20):
         p2ts.append(p2t)
         
         # Find closest tidx match to each pidx
+        # ok that  some idx have no BF? code wont hit?
         p2tBF = {}
         for i in range(len(myTimes)):
-            theseDiffs = np.abs(myTimes[i] - DTgeneral[p2t[i]])
-            minDiff = np.where(theseDiffs == np.min(theseDiffs))[0]
-            p2tBF[i] = p2t[i][minDiff][0]
+            if len(p2t[i]) > 0:
+                theseDiffs = np.abs(myTimes[i] - DTgeneral[p2t[i]])
+                minDiff = np.where(theseDiffs == np.min(theseDiffs))[0]
+                p2tBF[i] = p2t[i][minDiff][0]
         p2tBFs.append(p2tBF)
+    
+    # |-----------------------------------------------|
+    # |------ Group tsli idx by when obs change ------|    
+    # |-----------------------------------------------|
+    allCodes = []
+    nGroups = 0
+    whichGroup = []
+    for i in range(nTimes):
+        # Collect all pidx for this time into str code
+        myCode = ''
+        for j in range(len(satStuff)):
+            myCode += str(t2ps[j][i]) +'-'
+        # See if it matches the previous one or not
+        isMatch = True
+        if i > 0:
+            if allCodes[-1] != myCode:
+                isMatch = False
+        else:
+            isMatch = False
+        allCodes.append(myCode)
         
+        # Make a new group if not a match
+        if not isMatch:
+            nGroups +=1
+        whichGroup.append(nGroups)
+    whichGroup = np.array(whichGroup)
+    
+    # Match who are in the same group    
+    tBFs = []
+    for i in range(nTimes):
+        myMatch = np.where(whichGroup == whichGroup[i])[0]
+        tBFs.append(myMatch)        
+        
+    # Package output
     idxMaps = {}
     idxMaps['p2t'] = p2ts
     idxMaps['t2p'] = t2ps
     idxMaps['p2tBF'] = p2tBFs
+    idxMaps['tBFs'] = tBFs
     
     return nTimes, tlabs, idxMaps
 
@@ -3612,7 +3654,7 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, reloadDict=None, logF
     #|----------------------------------| 
     #|---- Launch Parameter Window -----|
     #|----------------------------------|
-    mainwindow = ParamWindow(nwfs, tlabs=tlabs)
+    mainwindow = ParamWindow(nwfs, tlabs=tlabs, tidxBFs=idxMaps['tBFs'])
     # check if we had a name for the output box
     if type(logFile) != type(None):
         for i in range(nwfs):
