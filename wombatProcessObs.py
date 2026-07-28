@@ -813,7 +813,9 @@ def processEUI(times, wavs, inFolder='pullFolder/SolO/EUI/', outFolder='wbFits/S
             # Make an array and sort alphabetically = time sorted      
             goodFiles[i] = np.sort(np.array(goodFiles[i]))
             
-            for j in range(len(goodFiles[i])):
+            nf = len(goodFiles[i])
+            for j in range(nf):
+                print ('   On file', j+1, 'of', nf)
                 amap = sunpy.map.Map(goodFiles[i][j])
                 amap.plot_settings['norm'] = ImageNormalize(vmin=0, vmax=np.percentile(amap.data,99.9), stretch=PowerStretch(0.2))
             
@@ -2318,8 +2320,10 @@ def scaleIt(obsIn, satStuffs):
     #|--- Loop through both RD and BD ---|
     bothScls = []
     bothSatStuffs = []   
-     
+    
+    diffmode = ['base', 'running'] 
     for k in range(2):
+        print ('Scaling', myInst, diffmode[k], 'diff')
         #|-------------------------------------| 
         #|------- Pull/Clean Map data ---------|
         #|-------------------------------------|
@@ -2331,10 +2335,19 @@ def scaleIt(obsIn, satStuffs):
             #allObs[i,:,:] = np.transpose(obsIn[k][i].data)
             allObs[i,:,:] = obsIn[k][i].data
 
-        #|---- Get overall median ----|
-        imNonNaN = allObs[~np.isnan(allObs)]   
+        #|---- Make a small subset for perc calcs ---|
+        nSample = int(len(satStuffs) / 20)
+        someObs = np.zeros([int(len(satStuffs)/nSample), int(sz[0]/2), int(sz[1]/2)])
+        for i in range(someObs.shape[0]):
+            someObs[i,:,:] = obsIn[k][i*nSample].data[::2,::2]
+
+        #|---- Get median ----|
+        #imNonNaN = allObs[~np.isnan(allObs)]   
+        #medval  = np.median(np.abs(imNonNaN))
+
+        imNonNaN = someObs[~np.isnan(someObs)]   
         medval  = np.median(np.abs(imNonNaN))
- 
+        
         #|---- Check if diff image ----|
         # Get the median negative value to comp to the median abs
         # value. If neg med big enough assume that is diff image
@@ -2353,11 +2366,13 @@ def scaleIt(obsIn, satStuffs):
         #|---- Clean out Infs ----| 
         if not diffImg:
             allObs[np.isinf(np.abs(allObs))] = 0
+            someObs[np.isinf(np.abs(someObs))] = 0
             imNonNaN[np.isinf(np.abs(imNonNaN))] = 0
             goodIdx = np.where(imNonNaN !=0)
 
         else:
             allObs[np.isinf(np.abs(allObs))] = -9999
+            someObs[np.isinf(np.abs(someObs))] = -9999
             imNonNaN[np.isinf(np.abs(imNonNaN))] = -9999
             goodIdx = np.where(imNonNaN != -9999)
 
@@ -2366,7 +2381,7 @@ def scaleIt(obsIn, satStuffs):
         #|-------------------------------------|    
         #|---- Scaled image holder ----|   
         allScls = []    
-    
+        print ('   Linear scaling running... ')
         #|---- Process linear imgs ----|   
         # Get vals at min/max percentile from the config dictionary
         linMin, linMax = np.percentile(imNonNaN[goodIdx], myMM[0][0]), np.percentile(imNonNaN[goodIdx], myMM[1][0])   
@@ -2379,29 +2394,39 @@ def scaleIt(obsIn, satStuffs):
         linIm = (allObs - linMin) * 255 / rng
 
         #|---- Process log imgs ----|   
+        print ('   Log scaling running... ')
         # Normalize to keep things in nice ranges
-        tempIm = allObs / medval
+        tempIm = someObs / medval
+        tempImF = allObs / medval
         tempNonNan = imNonNaN / medval
         # Get min val based on config dict
         minVal = np.percentile(np.abs(tempNonNan[goodIdx]),myMM[0][1])
         # Separate into positive and negative values
         pidx = np.where(tempIm > minVal)
         nidx = np.where(tempIm < -minVal)
+        pidxF = np.where(tempImF > minVal)
+        nidxF = np.where(tempImF < -minVal)
+        
         # Make new img
         logIm = np.zeros(tempIm.shape)
+        logImF = np.zeros(allObs.shape)
         # Set where abs val < min to 1
         logIm[np.where(np.abs(tempIm) < minVal)] = 1
+        logImF[np.where(np.abs(tempImF) < minVal)] = 1
         # Positive is just log + 1
         logIm[pidx] = np.log(tempIm[pidx] - minVal + 1)  
+        logImF[pidxF] = np.log(tempImF[pidxF] - minVal + 1)  
         # Negative is -log(abs) + 1
         logIm[nidx] = -np.log(-tempIm[nidx] - minVal + 1)  
+        logImF[nidxF] = -np.log(-tempImF[nidxF] - minVal + 1)  
         # Get max val from config dict and rescale
         percX = np.percentile(logIm, myMM[1][1])
-        logIm = 191 * logIm / percX
-    
+        logIm = 191 * logImF / percX
+
         #|---- Process sqrt imgs ----|   
+        print ('   SQRT scaling running... ')
         # Normalize to keep things in nice ranges
-        tempIm = allObs / medval
+        tempIm = someObs / medval
         # Get min val based on config dict
         minVal = np.percentile(tempNonNan[goodIdx],myMM[0][2])
         # Set min val to zero
@@ -2412,7 +2437,11 @@ def scaleIt(obsIn, satStuffs):
         sqrtIm = np.sqrt(tempIm)
         # Get max val from config dict and rescale
         percX = np.percentile(sqrtIm, myMM[1][2])
-        sqrtIm = 191 * sqrtIm / percX
+        # Do for the full set
+        allObs = allObs / medval
+        allObs[np.where(allObs <0)] = 0
+        
+        sqrtIm = 191 * allObs / percX
     
         #|-------------------------------------| 
         #|--------- Package Results -----------|
