@@ -11,8 +11,12 @@ def check4CT(satStuff):
     elif satStuff['OBS'] in ['STEREO_A','STEREO_B']:
         myCT = getSTEREOcolors(satStuff)     
     elif satStuff['OBS'] == 'SOHO':
-        myCT = getSOHOcolors(satStuff)   
-    
+        myCT = getSOHOcolors(satStuff) 
+    elif satStuff['OBS'] == 'Solar Orbiter':  
+        if satStuff['WAVE'] == '304':
+            myCT = getAIAcolors('304')
+        if satStuff['WAVE'] == '174':
+            myCT = getAIAcolors('171')
     return myCT
 
 

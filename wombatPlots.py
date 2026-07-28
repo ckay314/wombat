@@ -858,7 +858,8 @@ def getEnergetics(args, wombatRes, wfTypes, kinRes, reloadIt=None, overlap=1, re
                         myv = vs[-1]
                         myverr = verrs[-1]
                     else:
-                        # this is assuming uniform time steps, might want to fix
+                        # vs are on midpoint times so take average to
+                        # find value on the orig time steps
                         myv = 0.5*(vs[idx] + vs[idx-1])
                         myverr = 0.5*(verrs[idx] + verrs[idx-1])
                     

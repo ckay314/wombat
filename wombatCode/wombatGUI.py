@@ -1728,6 +1728,9 @@ class FigWindow(QWidget):
         # Clean up some title things
         myTitle = myTitle.replace('WISPR HI1', 'WISPR Inner')    
         myTitle = myTitle.replace('WISPR HI2', 'WISPR Outer')    
+        
+        if self.satStuff[0][0]['OBSTYPE'] == 'EUV':
+            myTitle += ' ' + self.satStuff[0][0]['WAVE']
         self.setWindowTitle(myTitle)        
         
         #|---- Make a layout ----|
@@ -1737,8 +1740,10 @@ class FigWindow(QWidget):
         self.pWindow = pg.PlotWidget()
         self.pWindow.setMinimumSize(400, 400)
         self.pWindow.scene().sigMouseClicked.connect(self.mouse_clicked)
-        if not mouseEnabled:
+        # Turn off screwing with the plot range unless EUI
+        if not mouseEnabled and (self.satName != 'Solar Orbiter EUI'):
             self.pWindow.getPlotItem().getViewBox().setMouseEnabled(x=False, y=False)
+        
         layoutP.addWidget(self.pWindow,0,0,11,11,alignment=QtCore.Qt.AlignCenter)
 
         #|---- Make an image item ----|
@@ -3167,10 +3172,15 @@ def buildMegaVars(rD, tlabs, tmaps, satNames):
     #|----------------------------------|
     setLog = {}
     tOnes = np.ones(nsli, dtype=int)
+    sclmd = {}
     for aInst in instNames:
         setLog[aInst] = [[], []]        
+        sclmd[aInst] = 0 # set at lin unless we want to swap below
         if ('AIA' in aInst) or ('EUVI' in aInst):
             minVs, maxVs = [0,0,0], [191, 191, 191]
+        elif ('EUI' in aInst):
+            minVs, maxVs = [63,67,32], [150, 230, 191]
+            sclmd[aInst] = 1
         elif ('COR' in aInst) :
             minVs, maxVs = [63,0,21], [191, 191, 191]
         elif ('C2' in aInst):
@@ -3194,7 +3204,7 @@ def buildMegaVars(rD, tlabs, tmaps, satNames):
     #|---------------------------------------------|
     curSet = {}    
     for aInst in instNames:
-        curSet[aInst] = [np.zeros(nsli, dtype=int), np.zeros(nsli, dtype=int), np.copy(setLog[aInst][0][0][0]), np.copy(setLog[aInst][0][0][1])]
+        curSet[aInst] = [np.zeros(nsli, dtype=int), sclmd[aInst]+np.zeros(nsli, dtype=int), np.copy(setLog[aInst][0][sclmd[aInst]][0]), np.copy(setLog[aInst][0][sclmd[aInst]][1])]
          
     #|---------------------------------|
     #|---- Replace with reload vals ---|
@@ -3280,7 +3290,7 @@ def sortTimeIndices(satStuff, tRes=20):
         myTimes = []
         for i in range(len(aSat)):
             myTimes.append(datetime.datetime.strptime(aSat[i]['DATEOBS'], "%Y-%m-%dT%H:%M:%S"))
-             
+ 
         # Check if sorted
         if not all(a <= b for a, b in pairwise(myTimes)):
             sys.exit('Exiting from sortTimeIndices, files should be provided in time order')
@@ -3322,7 +3332,7 @@ def sortTimeIndices(satStuff, tRes=20):
         tlabs.append(tstr)
     DTgeneral = np.array(DTgeneral)
     tlabs = np.array(tlabs)
-    
+
     # |-----------------------------------|
     # |------ Match obs2sli indices ------|    
     # |-----------------------------------|

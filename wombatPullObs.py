@@ -21,6 +21,7 @@ Inputs:
             C3      = LASCO C3
             COR1    = STEREO COR1
             COR2    = STEREO COR2    
+            EUInum  = Solo EUI where num is a wavelength in [174, 304]
             EUVInum = STEREO EUVI where num is a wavelength from [171, 195, 284, 304]
             HI1     = STEREO HI1
             HI2     = STEREO H2
@@ -63,6 +64,7 @@ Usage:
 
 
 from sunpy.net import Fido, attrs as a
+import sunpy_soar
 import astropy.units as u
 import numpy as np
 import wget
@@ -101,7 +103,7 @@ def setupFolderStructure(topName):
                 ['AIA', 'AIA/94', 'AIA/131', 'AIA/171', 'AIA/193', 'AIA/211', 'AIA/304', 
                 'AIA/335', 'AIA/1600', 'AIA/1700'], 
                 ['LASCO', 'LASCO/C2', 'LASCO/C3'],
-                ['SoloHI', 'SoloHI/1', 'SoloHI/2', 'SoloHI/3', 'SoloHI/4' ], 
+                ['SoloHI', 'SoloHI/1', 'SoloHI/2', 'SoloHI/3', 'SoloHI/4',  'EUI','EUI/174', 'EUI/304' ], 
                 ['EUVIA', 'EUVIA/171', 'EUVIA/195', 'EUVIA/284', 'EUVIA/304', 'EUVIB', 
                 'EUVIB/171', 'EUVIB/195', 'EUVIB/284', 'EUVIB/304', 'COR1A', 'COR2A', 
                 'COR1B', 'COR2B', 'HI1A', 'HI2A', 'HI1B', 'HI2B']]    
@@ -340,6 +342,60 @@ def pullSoloHI(times, insts, HItime=30, outFolder='pullFolder/'):
     # This is what doesn't work, keeping it if we want to fix later                 
     #temp = Fido.fetch(result, a.Provider.sdac , path= 'temp/') 
  
+
+# |------------------------------------------------------------|
+# |--------------- Grab SolO EUI Observations -----------------|
+# |------------------------------------------------------------|
+def pullEUI(times, insts, EUVtime=30, outFolder='pullFolder/'):
+    """
+    Function to pull level 2 SolO EUI observations using Fido search
+
+    Inputs:
+        times: an array with [startTime, endTime] where both
+        
+        insts: strings for selected instruments (EUI174 or EUV304)
+    
+    Optional Inputs:
+        EUVtime: time resolution in minutes, will set min spacing between images
+        
+        outFolder: top folder, results will be saved in outFolder/SolO/SoloHI/#/
+
+    Outputs:
+        The downloaded fits files will be placed in the appropriate folders within outFolder
+
+    """
+    for inst in insts:
+        if inst == 'EUI304':
+            product = a.soar.Product('eui-fsi304-image') 
+            moreFolder = 'SolO/EUI/304/'
+        elif inst == 'EUI174':
+            product = a.soar.Product('eui-fsi174-image')
+            moreFolder = 'SolO/EUI/174/'
+        else:
+            sys.exit("Unknown instrument passed to pullEUI: "+inst)
+        result = Fido.search(a.Time(times[0], times[1]), a.Instrument('EUI'), a.Level(2), product ) # sample doesn't work
+        
+        # Downselect by time
+        subidx = []
+        subtimes = []
+        nFound = len(result[0])
+        for idx in range(nFound):
+            myT = parse_time(result[0]['Start time'][idx]) 
+            if idx == 0:
+                subtimes.append(myT)
+                subidx.append(idx)
+            else:
+                if ((myT-subtimes[-1]).to(u.min).to_value() >= 0.95*EUVtime):
+                    subtimes.append(myT)
+                    subidx.append(idx)
+                #if (result[0]['Start time'][idx] - result[0]['Start time'][sublist[-1]]).to(u.min).to_value() >= 0.95*EUVtime:
+                #    sublist.append(idx)
+
+        if len(result[0][subidx]) > 0:
+            print('Downloading', inst, ' files')
+            downloaded_files = Fido.fetch(result[0][subidx], path=outFolder+moreFolder+'{file}') 
+         
+        #print (result)
 
 # |------------------------------------------------------------|
 # |---------------- Grab STEREO Observations ------------------|
@@ -730,6 +786,7 @@ def pullObs(times, insts, outFolder='pullFolder/', EUVtime=10, CORtime=20, HItim
                 C3      = LASCO C3
                 COR1    = STEREO COR1
                 COR2    = STEREO COR2    
+                EUInum  = Solo EUI where num is a wavelength in [174, 304]
                 EUVInum = STEREO EUVI where num is a wavelength from [171, 195, 284, 304]
                 HI1     = STEREO HI1
                 HI2     = STEREO H2
@@ -770,7 +827,7 @@ def pullObs(times, insts, outFolder='pullFolder/', EUVtime=10, CORtime=20, HItim
     # |---------------------------------------| 
     # |---- Check all inst keys are valid ----|
     # |---------------------------------------| 
-    goods = ['AIA94', 'AIA131', 'AIA171','AIA193','AIA211','AIA304','AIA335','AIA1600','AIA1700', 'C2', 'C3', 'COR1', 'COR2', 'COR1A', 'COR2A', 'COR1B', 'COR2B', 'EUVI171', 'EUVI195', 'EUVI284', 'EUVI304', 'EUVI171A', 'EUVI195A', 'EUVI284A', 'EUVI304A', 'EUVI171B', 'EUVI195B', 'EUVI284B', 'EUVI304B', 'HI1', 'HI2', 'HI1A', 'HI2A', 'HI1B', 'HI2B','SoloHI', 'SoloHI1', 'SoloHI2', 'SoloHI3', 'SoloHI4', 'WISPR', 'WISPRI', 'WISPRO']
+    goods = ['AIA94', 'AIA131', 'AIA171','AIA193','AIA211','AIA304','AIA335','AIA1600','AIA1700', 'C2', 'C3', 'COR1', 'COR2', 'COR1A', 'COR2A', 'COR1B', 'COR2B', 'EUI174', 'EUI304', 'EUVI171', 'EUVI195', 'EUVI284', 'EUVI304', 'EUVI171A', 'EUVI195A', 'EUVI284A', 'EUVI304A', 'EUVI171B', 'EUVI195B', 'EUVI284B', 'EUVI304B', 'HI1', 'HI2', 'HI1A', 'HI2A', 'HI1B', 'HI2B','SoloHI', 'SoloHI1', 'SoloHI2', 'SoloHI3', 'SoloHI4', 'WISPR', 'WISPRI', 'WISPRO']
     quitIt = False
     for inst in insts:
         if inst not in goods:
@@ -846,6 +903,16 @@ def pullObs(times, insts, outFolder='pullFolder/', EUVtime=10, CORtime=20, HItim
         if 'SoloHI4' in inst: doSoloHI.append('SoloHI4')
     if len(doSoloHI) > 0:
         pullSoloHI(times, doSoloHI, HItime=HItime, outFolder=outFolder)
+    
+    # |---------------------------------|
+    # |----------- SolO EUI ------------|
+    # |---------------------------------|    
+    doEUI = []
+    for inst in insts:
+        if 'EUI' in inst:
+            doEUI.append(inst)
+    if len(doEUI) > 0:
+        pullEUI(times, doEUI, EUVtime=EUVtime, outFolder=outFolder)
         
 
 # |------------------------------------------------------------|
@@ -899,6 +966,7 @@ def commandLineWrapper():
             C3      = LASCO C3
             COR1    = STEREO COR1
             COR2    = STEREO COR2    
+            EUInum  = Solo EUI where num is a wavelength in [174, 304]
             EUVInum = STEREO EUVI where num is a wavelength from [171, 195, 284, 304]
             HI1     = STEREO HI1
             HI2     = STEREO H2
@@ -919,7 +987,7 @@ def commandLineWrapper():
         
     """
     #|---- All the instrument tags ----|
-    tags = ['AIA94', 'AIA131', 'AIA171','AIA193','AIA211','AIA304','AIA335','AIA1600','AIA1700', 'C2', 'C3', 'COR1', 'COR2', 'COR1A', 'COR2A', 'COR1B', 'COR2B', 'EUVI171', 'EUVI195', 'EUVI284', 'EUVI304', 'EUVI171A', 'EUVI195A', 'EUVI284A', 'EUVI304A', 'EUVI171B', 'EUVI195B', 'EUVI284B', 'EUVI304B', 'HI1', 'HI2', 'HI1A', 'HI2A', 'HI1B', 'HI2B', 'SOLOHI', 'SOLOHI1', 'SOLOHI2', 'SOLOHI3', 'SOLOHI4', 'WISPR', 'WISPRI', 'WISPRO']
+    tags = ['AIA94', 'AIA131', 'AIA171','AIA193','AIA211','AIA304','AIA335','AIA1600','AIA1700', 'C2', 'C3', 'COR1', 'COR2', 'COR1A', 'COR2A', 'COR1B', 'COR2B', 'EUI174', 'EUI304', 'EUVI171', 'EUVI195', 'EUVI284', 'EUVI304', 'EUVI171A', 'EUVI195A', 'EUVI284A', 'EUVI304A', 'EUVI171B', 'EUVI195B', 'EUVI284B', 'EUVI304B', 'HI1', 'HI2', 'HI1A', 'HI2A', 'HI1B', 'HI2B', 'SOLOHI', 'SOLOHI1', 'SOLOHI2', 'SOLOHI3', 'SOLOHI4', 'WISPR', 'WISPRI', 'WISPRO']
     
     #|---- Pull the command line args ----|
     vals = sys.argv[1:]

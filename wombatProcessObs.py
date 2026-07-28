@@ -23,6 +23,7 @@ Inputs:
             C3      = LASCO C3
             COR1    = STEREO COR1
             COR2    = STEREO COR2    
+            EUInum  = Solo EUI where num is a wavelength in [174, 304]
             EUVInum = STEREO EUVI where num is a wavelength from [171, 195, 284, 304]
             HI1     = STEREO HI1
             HI2     = STEREO H2
@@ -87,6 +88,7 @@ from sunpy.coordinates import HeliographicStonyhurst, frames
 import sunpy
 import pickle
 import matplotlib.pyplot as plt
+from astropy.visualization import ImageNormalize, SqrtStretch, PowerStretch
 
 sys.path.append('prepCode/') 
 sys.path.append('wombatCode/') 
@@ -101,6 +103,7 @@ from wombatPullObs import setupFolderStructure
 from sunspyce import load_common_kernels, load_psp_kernels, load_solo_kernels, load_stereo_kernels
 from scc_funs import rebinIDL
 import wombatMass as wM
+
 
 
 # |-------------------------------|
@@ -700,6 +703,131 @@ def processSoloHI(times, insts, inFolder='pullFolder/SolO/SoloHI/', outFolder='w
  
 
 # |------------------------------------------------------------|
+# |----------------- Process AIA Observations -----------------|
+# |------------------------------------------------------------|
+def processEUI(times, wavs, inFolder='pullFolder/SolO/EUI/', outFolder='wbFits/SolO/EUI/', downSize=1024):
+    """
+    Function to process level 2 EUI data. It loads them directly to sunpy maps
+    and calls ImageNormalize but does no other processing
+
+    Inputs:
+        times: an array with [startTime, endTime] where the times are strings
+               that can be interpreted by sunpy parse_time
+        
+        wavs:  an array of wavelength strings
+    
+    Optional Inputs:
+        inFolder: top folder for unprocessed results, will open from outFolder/wav/
+                  defaults to pullFolder/SolO/EUI/
+                  
+        outFolder: top folder for processed results, will be save in outFolder/SolO/EUI/wav/
+                   defaults to wbFits/SolO/EUI/
+    
+        downSize: maximum resolution for the processed images  
+                  defaults to 1024 (square image)
+        
+    Outputs:
+        proIms:     a dictionary with the instrument as key and the entry corresponding to
+                    [[im1, im2, im3,...], [hdr1, hdr2, hdr3,...]] for the processed data
+    
+        outLines:   a dictionary of paths to the original fits files used to make processed results
+    
+
+    """
+    
+    # |----------------------------------|
+    # |--------- Find the files ---------|
+    # |----------------------------------|
+    nWavs = len(wavs)
+    EUIfiles = [[] for i in range(nWavs)]
+    
+    # Pull everything in that wavelength folder
+    for i in range(nWavs):
+        EUIfiles[i] = os.listdir(inFolder+wavs[i])
+    
+    # Make sure we found something before moving on
+    nFound = 0
+    for i in range(nWavs):
+        nFound += len(EUIfiles[i])
+    # Return if nothing found
+    if nFound == 0:
+        print ('No EUI files found')
+        return None
+    
+    # Get the date and time strings
+    ymds, hms = setupTimeStuff(times)
+    nDays = len(ymds)
+    
+    # Format the desired date string(s) for AIA file names
+    EUIdatestrs = [ymd[:4]+ymd[4:6]+ymd[6:] for ymd in ymds]
+    
+    
+    # |----------------------------------|
+    # |--------- Sort the files ---------|
+    # |----------------------------------|
+    # Check all the files to see if they have a matching date str
+    # If date matches then check the hour/min on first/last date
+    # Add into separate arrays for each wavelength
+    goodFiles = [[] for i in range(nWavs)]
+    for i in range(nWavs):
+        for aF in EUIfiles[i]:
+            # Check if it matches any of the days
+            for j in range(nDays):
+                if EUIdatestrs[j] in aF:
+                    hm = aF[34:38]
+                    addIt = True
+                    # If on first day but early toss
+                    if (j == 0) & (hm < hms[0]):
+                        addIt = False
+                    # If on last day but late toss
+                    elif (j == nDays-1) & (hm > hms[1]):
+                        addIt = False
+                    # Add it to the list if a keeper   
+                    if addIt:
+                        goodFiles[i].append(inFolder+wavs[i]+'/'+aF)
+                    
+    # Make sure we found something in the date range before moving on
+    nFound = 0
+    for i in range(nWavs):
+        nFound += len(goodFiles[i])
+    # Return if nothing found
+    if nFound == 0:
+        print ('No matching EUI files found')
+        return None
+    
+    
+    # |----------------------------------|
+    # |------- Process the files --------|
+    # |----------------------------------|                    
+    print ('|--- Processing SolO EUI ---|') 
+    outLines = {}   
+    # Set up dictionary to hold the im/hdr outputs
+    proIms = {}
+    
+    # Loop through each wavelength        
+    for i in range(nWavs):
+        proIms['EUI'+str(wavs[i])] = [[], []]
+        outLines['EUI'+str(wavs[i])] = []
+        if len(goodFiles[i]) > 0:
+            print ('|--- Processing SolO EUI '+str(wavs[i])+'---|')      
+            # Make an array and sort alphabetically = time sorted      
+            goodFiles[i] = np.sort(np.array(goodFiles[i]))
+            
+            for j in range(len(goodFiles[i])):
+                amap = sunpy.map.Map(goodFiles[i][j])
+                amap.plot_settings['norm'] = ImageNormalize(vmin=0, vmax=np.percentile(amap.data,99.9), stretch=PowerStretch(0.2))
+            
+                # Add keywords for wombat
+                amap.meta['SC_ROLL'] =  amap.meta['crota']
+                
+                # Store it
+                outLines['EUI'+str(wavs[i])].append(goodFiles[i][j])
+                proIms['EUI'+str(wavs[i])][0].append(amap.data)
+                proIms['EUI'+str(wavs[i])][1].append(amap.meta)
+                
+    return proIms, outLines
+
+# |------------------------------------------------------------|
 # |-------------- Process STEREO Observations -----------------|
 # |------------------------------------------------------------|
 def processSTEREO(times, insts, inFolder='pullFolder/STEREO/', outFolder='wbFits/STEREO/', downSize=1024, prepDir='prepFiles/stereo/', saveFits=False):
@@ -1089,6 +1217,7 @@ def processObs(times, insts, inFolder='pullFolder/', outFolder='wbFits/', outFil
                 C3      = LASCO C3
                 COR1    = STEREO COR1
                 COR2    = STEREO COR2    
+                EUInum  = Solo EUI where num is a wavelength in [174, 304]
                 EUVInum = STEREO EUVI where num is a wavelength from [171, 195, 284, 304]
                 HI1     = STEREO HI1
                 HI2     = STEREO H2
@@ -1142,7 +1271,7 @@ def processObs(times, insts, inFolder='pullFolder/', outFolder='wbFits/', outFil
     # |---------------------------------------| 
     # |---- Check all inst keys are valid ----|
     # |---------------------------------------| 
-    goods = np.array(['AIA94', 'AIA131', 'AIA171','AIA193','AIA211','AIA304','AIA335','AIA1600','AIA1700', 'C2', 'C3', 'COR1', 'COR2', 'EUVI171', 'EUVI195', 'EUVI284', 'EUVI304', 'HI1', 'HI2', 'HI1A_SR', 'HI1B_SR', 'HI2A_SR', 'HI2B_SR', 'COR1A', 'COR2A', 'EUVI171A', 'EUVI195A', 'EUVI284A', 'EUVI304A', 'HI1A', 'HI2A', 'COR1B', 'COR2B', 'EUVI171B', 'EUVI195B', 'EUVI284B', 'EUVI304B', 'HI1B', 'HI2B' ,'SoloHI', 'SoloHI1', 'SoloHI2', 'SoloHI3', 'SoloHI4', 'WISPR', 'WISPRI', 'WISPRO', 'WISPR_LW', 'WISPRI_LW', 'WISPRO_LW',  'WISPR_L3', 'WISPRI_L3', 'WISPRO_L3'])
+    goods = np.array(['AIA94', 'AIA131', 'AIA171','AIA193','AIA211','AIA304','AIA335','AIA1600','AIA1700', 'C2', 'C3', 'COR1', 'COR2', 'EUVI171', 'EUVI195', 'EUI174', 'EUI304', 'EUVI284', 'EUVI304', 'HI1', 'HI2', 'HI1A_SR', 'HI1B_SR', 'HI2A_SR', 'HI2B_SR', 'COR1A', 'COR2A', 'EUVI171A', 'EUVI195A', 'EUVI284A', 'EUVI304A', 'HI1A', 'HI2A', 'COR1B', 'COR2B', 'EUVI171B', 'EUVI195B', 'EUVI284B', 'EUVI304B', 'HI1B', 'HI2B' ,'SoloHI', 'SoloHI1', 'SoloHI2', 'SoloHI3', 'SoloHI4', 'WISPR', 'WISPRI', 'WISPRO', 'WISPR_LW', 'WISPRI_LW', 'WISPRO_LW',  'WISPR_L3', 'WISPRI_L3', 'WISPRO_L3'])
     quitIt = False
     for inst in insts:
         if inst not in goods:
@@ -1349,11 +1478,21 @@ def processObs(times, insts, inFolder='pullFolder/', outFolder='wbFits/', outFil
                     allProIms[key] = proIms[key]
                     allfnames[key] = outLines[key]
             
-        #if type(outLines) != type(None):
-        #    for line in outLines:
-        #        f1.write(line)
-        #else:
-        #    print('Unable to process any SoloHI images')
+    
+    # |-------------------------------|
+    # |---------- SolO EUI -----------|
+    # |-------------------------------|
+    doEUI = []
+    for inst in insts:
+        if 'EUI' in inst:
+            # If found just save the wavelength
+            doEUI.append(inst.replace('EUI',''))
+    if len(doEUI) > 0:
+        proIms, outLines = processEUI(times, doEUI, inFolder='pullFolder/SolO/EUI/')
+        for key in proIms:
+            allProIms[key] = proIms[key]
+            allfnames[key] = outLines[key]
+    
         
     # |-------------------------------|
     # |---- Close the output file ----|
@@ -1469,11 +1608,11 @@ def thePickler(proIms, fnames, insts0, pickleJar='wbPickles/', name='temp'):
     bigDill['WBinfo']['isEUV'] = {}
     for key in insts:
         bigDill['WBinfo']['OrigFiles'][key] = fnames[key]
-        if ('EUVI' in key) or ('AIA' in key):
+        if ('EUVI' in key) or ('AIA' in key) or ('EUI' in key):
             bigDill['WBinfo']['isEUV'][key] = True
         else:
             bigDill['WBinfo']['isEUV'][key] = False
-            
+
     # Clean up keys for stereo a/b
     stereo_singles = ['EUVI171', 'EUVI195', 'EUVI284', 'EUVI304', 'COR1', 'COR2', 'HI1', 'HI2']
     redo = []
@@ -1514,11 +1653,7 @@ def thePickler(proIms, fnames, insts0, pickleJar='wbPickles/', name='temp'):
             soloFix = True
         
         tempMaps[key] = arr2maps(bigDill['proIms'][key][0], bigDill['proIms'][key][1], doDiff=doDiff, soloFix=soloFix)  
-        #elif key in ['WISPRI_LW', 'WISPRO_LW', 'HI1A_SR', 'HI1B_SR', 'HI2A_SR', 'HI2B_SR']:
-        #tempMaps[key] = arr2maps(bigDill['proIms'][key][0], bigDill['proIms'][key][1], doDiff=False)  
-        #else:
-        #tempMaps[key] = arr2maps(bigDill['proIms'][key][0], bigDill['proIms'][key][1])           
-                
+
         # |---------------------------------------|
         # |---- Process headers into satStuff ----|
         # |---------------------------------------|
@@ -1545,7 +1680,7 @@ def thePickler(proIms, fnames, insts0, pickleJar='wbPickles/', name='temp'):
                 aSStuff['myBDfits'] = fnames[key][0]
                 
             mySatStuff.append(aSStuff)
-        
+
         # |------------------------------------|
         # |---- Calculate masses and store ----|
         # |------------------------------------|
@@ -1583,7 +1718,7 @@ def thePickler(proIms, fnames, insts0, pickleJar='wbPickles/', name='temp'):
         sclIms, satstuff2 = scaleIt(tempMaps[key], mySatStuff)
         bigDill['scaledIms'][key] = sclIms
         bigDill['satStuff'][key] = satstuff2
-        
+
         # |---------------------------------|
         # |---- Make min processed maps ----|
         # |---------------------------------|
@@ -1873,6 +2008,7 @@ def getSatStuff(imMap):
         satDict['OBS'] =  myhdr['obsrvtry']
         satDict['INST'] = myhdr['instrume'] 
         myTag   = myhdr['obsrvtry'] + '_' + myhdr['instrume']
+        
     elif myhdr['telescop'] == 'STEREO':
         satDict['OBS'] =  myhdr['obsrvtry'] 
         satDict['INST'] = myhdr['instrume'] + '_' + myhdr['detector']
@@ -1893,7 +2029,10 @@ def getSatStuff(imMap):
     # |---------------------|
     # Flag between HI, COR, EUV
     if satDict['OBS'] in ['Parker Solar Probe', 'Solar Orbiter']:
-        satDict['OBSTYPE'] = 'HI'
+        if myhdr['instrume'] == 'EUI':
+            satDict['OBSTYPE'] = 'EUV'
+        else:
+            satDict['OBSTYPE'] = 'HI'
     elif satDict['OBS'] in ['STEREO_A', 'STEREO_B']:
         if myhdr['detector'] in ['COR1', 'COR2']:
             satDict['OBSTYPE'] = 'COR'
@@ -2074,7 +2213,7 @@ def getSatStuff(imMap):
     # Make mask array
     mask = np.zeros(imMap.data.shape)
     # Check that not SolO/PSP or STEREO HI
-    if (satDict['OBSTYPE'] != 'HI'):   
+    if (satDict['OBSTYPE'] == 'COR'):   
         myOccR  = occultDict[myTag][0] # radius of the occulter in Rs
         occRpix = int(myOccR * oners)
         # Add radius of occulter in pix and arcsecs
@@ -2165,15 +2304,16 @@ def scaleIt(obsIn, satStuffs):
     # Pull the desired values for each instrument
     
     # mins/maxs on percentiles by instrument [[lower], [upper]] with [lin, log, sqrt]  #tagIt:dynrng
-    pMMs = {'AIA':[[0.001,10,1], [99,99,99]], 'SECCHI_EUVI':[[0.001,0.001,1], [99,99,99]], 'LASCO_C2':[[15,1,15], [97,99,97]], 'LASCO_C3':[[40,1,10], [99,99,90]], 'SECCHI_COR1':[[30,1,10], [99,99,90]], 'SECCHI_COR2':[[20,1,10], [92,99,93]], 'SECCHI_HI1':[[1,40,1], [99.5,80,99.9]], 'SECCHI_HI2':[[1,40,1],[99.9,80,99.9]], 'SECCHI_HI1_SR':[[1,40,1], [99.5,80,99.9]], 'SECCHI_HI2_SR':[[1,40,1],[99.9,80,99.9]], 'WISPR_HI1':[[5,40,1], [98.,80,99.9]], 'WISPR_HI2':[[1,40,1], [99.9,80,99.9]],'WISPR_HI1_LW':[[1,1,1.], [99.,99,99.]], 'WISPR_HI1_L3':[[10,40,1], [95.,80,99.9]], 'WISPR_HI2_L3':[[1,40,1], [99.9,80,99.9]], 'SoloHI':[[1,40,1], [99.5,80,99.5]],'WISPR_HI2_LW':[[1,1,1.], [99.,99,99.]] }
+    pMMs = {'AIA':[[0.001,10,1], [99,99,99]], 'SECCHI_EUVI':[[0.001,0.001,1], [99,99,99]], 'LASCO_C2':[[15,1,15], [97,99,97]], 'LASCO_C3':[[40,1,10], [99,99,90]], 'SECCHI_COR1':[[30,1,10], [99,99,90]], 'SECCHI_COR2':[[20,1,10], [92,99,93]], 'SECCHI_HI1':[[1,40,1], [99.5,80,99.9]], 'SECCHI_HI2':[[1,40,1],[99.9,80,99.9]], 'SECCHI_HI1_SR':[[1,40,1], [99.5,80,99.9]], 'SECCHI_HI2_SR':[[1,40,1],[99.9,80,99.9]], 'WISPR_HI1':[[5,40,1], [98.,80,99.9]], 'WISPR_HI2':[[1,40,1], [99.9,80,99.9]],'WISPR_HI1_LW':[[1,1,1.], [99.,99,99.]], 'WISPR_HI1_L3':[[10,40,1], [95.,80,99.9]], 'WISPR_HI2_L3':[[1,40,1], [99.9,80,99.9]], 'SoloHI':[[1,40,1], [99.5,80,99.5]],'WISPR_HI2_LW':[[1,1,1.], [99.,99,99.]], 'EUI': [[10,10,10], [99.9,99.9,99.9]]}
     
     # Where the background sliders start (between 0 and 255)
-    sliVals = {'AIA':[[0,0,0], [191,191,191]], 'SECCHI_EUVI':[[0,0,0], [191,191,191]], 'LASCO_C2':[[0,0,21],[191,191,191]], 'LASCO_C3':[[37,0,37],[191,191,191]], 'SECCHI_COR1':[[63,0,21],[191,191,191]], 'SECCHI_COR2':[[63,0,21],[191,191,191]], 'SECCHI_HI1':[[63,0,21],[128,191,191]], 'SECCHI_HI2':[[63,0,21],[128,191,191]], 'SECCHI_HI1_SR':[[63,0,21],[128,191,191]], 'SECCHI_HI2_SR':[[63,0,21],[128,191,191]],  'WISPR_HI1':[[20,0,21],[128,191,191]], 'WISPR_HI2':[[0,0,21],[128,191,191]], 'WISPR_HI1_LW':[[10,0,21],[191,191,191]], 'WISPR_HI1_L3':[[20,0,21],[128,191,191]], 'WISPR_HI2_L3':[[0,0,21],[128,191,191]], 'WISPR_HI2_LW':[[10,0,21],[191,191,191]], 'SoloHI':[[10,0,21],[128,191,191]]}
+    sliVals = {'AIA':[[0,0,0], [191,191,191]], 'SECCHI_EUVI':[[0,0,0], [191,191,191]], 'LASCO_C2':[[0,0,21],[191,191,191]], 'LASCO_C3':[[37,0,37],[191,191,191]], 'SECCHI_COR1':[[63,0,21],[191,191,191]], 'SECCHI_COR2':[[63,0,21],[191,191,191]], 'SECCHI_HI1':[[63,0,21],[128,191,191]], 'SECCHI_HI2':[[63,0,21],[128,191,191]], 'SECCHI_HI1_SR':[[63,0,21],[128,191,191]], 'SECCHI_HI2_SR':[[63,0,21],[128,191,191]],  'WISPR_HI1':[[20,0,21],[128,191,191]], 'WISPR_HI2':[[0,0,21],[128,191,191]], 'WISPR_HI1_LW':[[10,0,21],[191,191,191]], 'WISPR_HI1_L3':[[20,0,21],[128,191,191]], 'WISPR_HI2_L3':[[0,0,21],[128,191,191]], 'WISPR_HI2_LW':[[10,0,21],[191,191,191]], 'SoloHI':[[10,0,21],[128,191,191]], 'EUI':[[0,0,0], [191,191,191]]}
     
     # Pull the configuration based on instrument
     myInst = satStuffs[0]['INST']
     myMM = pMMs[myInst]
     mySliVals = sliVals[myInst]
+
 
     #|--- Loop through both RD and BD ---|
     bothScls = []
@@ -2349,6 +2489,7 @@ def commandLineWrapper():
             C3      = LASCO C3
             COR1    = STEREO COR1
             COR2    = STEREO COR2    
+            EUInum  = Solo EUI where num is a wavelength in [174, 304]
             EUVInum = STEREO EUVI where num is a wavelength from [171, 195, 284, 304]
             HI1     = STEREO HI1
             HI2     = STEREO H2
@@ -2371,7 +2512,7 @@ def commandLineWrapper():
     """
     
     #|---- All the instrument tags ----|
-    tags = ['AIA94', 'AIA131', 'AIA171','AIA193','AIA211','AIA304','AIA335','AIA1600','AIA1700', 'C2', 'C3', 'COR1', 'COR2', 'COR1A', 'COR2A', 'COR1B', 'COR2B', 'EUVI171', 'EUVI195', 'EUVI284', 'EUVI304', 'EUVI171A', 'EUVI195A', 'EUVI284A', 'EUVI304A', 'EUVI171B', 'EUVI195B', 'EUVI284B', 'EUVI304B', 'HI1', 'HI2', 'HI1A', 'HI2A', 'HI1B', 'HI2B','HI1A_SR', 'HI1B_SR', 'HI2A_SR', 'HI2B_SR', 'SOLOHI', 'SOLOHI1', 'SOLOHI2', 'SOLOHI3', 'SOLOHI4', 'WISPR', 'WISPRI', 'WISPRO', 'WISPR_LW', 'WISPRI_LW', 'WISPRO_LW', 'WISPR_L3', 'WISPRI_L3', 'WISPRO_L3']
+    tags = ['AIA94', 'AIA131', 'AIA171','AIA193','AIA211','AIA304','AIA335','AIA1600','AIA1700', 'C2', 'C3', 'COR1', 'COR2', 'COR1A', 'COR2A', 'COR1B', 'COR2B', 'EUI174', 'EUI304', 'EUVI171', 'EUVI195', 'EUVI284', 'EUVI304', 'EUVI171A', 'EUVI195A', 'EUVI284A', 'EUVI304A', 'EUVI171B', 'EUVI195B', 'EUVI284B', 'EUVI304B', 'HI1', 'HI2', 'HI1A', 'HI2A', 'HI1B', 'HI2B','HI1A_SR', 'HI1B_SR', 'HI2A_SR', 'HI2B_SR', 'SOLOHI', 'SOLOHI1', 'SOLOHI2', 'SOLOHI3', 'SOLOHI4', 'WISPR', 'WISPRI', 'WISPRO', 'WISPR_LW', 'WISPRI_LW', 'WISPRO_LW', 'WISPR_L3', 'WISPRI_L3', 'WISPRO_L3']
     
     #|---- Pull the command line args ----|
     vals = sys.argv[1:]
