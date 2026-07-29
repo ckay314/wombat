@@ -233,8 +233,8 @@ class ParamWindow(QMainWindow):
         Timelabel.setMaximumHeight(30)
         Timelabel.setMinimumWidth(250)
         Timelabel.setMinimumHeight(30)
-        
-        self.Tlabels.append(Timelabel)
+        if self.nTsli > 0:
+            self.Tlabels.append(Timelabel)
         layout.addWidget(Timelabel,0,0,1,11,alignment=QtCore.Qt.AlignLeft)
         
         # |------ Time Slider ------|
@@ -252,7 +252,8 @@ class ParamWindow(QMainWindow):
         Tslider1.setMaximumHeight(30)
         Tslider1.setMinimumWidth(250)
         Tslider1.setMinimumHeight(30)
-        self.Tsliders.append(Tslider1)
+        if self.nTsli > 0:
+            self.Tsliders.append(Tslider1)
 
 
         # |------ WF Type Label ------|
@@ -584,8 +585,11 @@ class ParamWindow(QMainWindow):
                         focused_widget.deselect()
                     except:
                         pass
-                    tabIndex = self.tab_widget.currentIndex()
-                    self.Tsliders[tabIndex].setFocus()
+                    if mainwindow.nTsli:
+                        tabIndex = self.tab_widget.currentIndex()
+                        self.Tsliders[tabIndex].setFocus()
+                    else:
+                        self.widges[iii][1][0].setFocus()
         #|--- Closing things ---|
         elif event.key() == QtCore.Qt.Key_Q: 
             self.close()    
@@ -697,7 +701,10 @@ class ParamWindow(QMainWindow):
             if doItAll:
                 allThisTidx = range(len(aPW.t2p))
             else:
-                tidx = self.Tsliders[0].value() - 2
+                if self.nTsli:
+                    tidx = self.Tsliders[0].value() - 2
+                else:
+                    tidx = 0
                 # Switch all tidx for the pidx of this inst
                 pidx = aPW.t2p[tidx]
                 allThisTidx = aPW.p2t[pidx]
@@ -834,7 +841,10 @@ class ParamWindow(QMainWindow):
         s.setValue(slidx)
         
         if type(paramLog) != type(None):
-            tidx = self.Tsliders[0].value() - 2
+            if mainwindow.nTsli:
+                tidx = self.Tsliders[0].value() - 2
+            else:
+                tidx = 0
             '''toSwitch = range(200)
             # Loop through and find the shortest p2t range to switch
             #for jj in range(nSats):
@@ -1955,7 +1965,8 @@ class FigWindow(QWidget):
                     mainwindow.updateWFpoints(wfs[iii], mainwindow.widges[iii])
                     focused_widget = mainwindow.focusWidget()
                     focused_widget.deselect()
-                    mainwindow.Tsliders[0].setFocus()
+                    if mainwindow.nTsli:
+                        mainwindow.Tsliders[0].setFocus()
         #|--- Closing Things ---|
         elif event.key() == QtCore.Qt.Key_Q: 
             self.close()
@@ -2389,8 +2400,9 @@ class FigWindow(QWidget):
         self.time_label.setText(self.satStuff[didx][self.pickIdx]['DATEOBS'][:-3])
         # Make slider highlighted so key shortcuts work
         if 'mainwindow' in globals():
-            tabIndex = mainwindow.tab_widget.currentIndex()
-            mainwindow.Tsliders[tabIndex].setFocus()
+            if mainwindow.nTsli:
+                tabIndex = mainwindow.tab_widget.currentIndex()
+                mainwindow.Tsliders[tabIndex].setFocus()
             
 
 # |------------------------------------------------------------|
@@ -3111,12 +3123,16 @@ def buildMegaVars(rD, tlabs, tmaps, satNames):
     # ['PlotVals'][aInst][aTime] = [scale type, diff type, min, max]
     
     # tmaps -> slider idx to pickle idx
-    sliDts = [datetime.datetime.strptime(atime, "%Y-%m-%dT%H:%M") for atime in tlabs]
-    sliDeltas = np.array([(atime - sliDts[0]).total_seconds() for atime in sliDts])
-    
+    if type(tlabs) != type(None):
+        sliDts = [datetime.datetime.strptime(atime, "%Y-%m-%dT%H:%M") for atime in tlabs]
+        sliDeltas = np.array([(atime - sliDts[0]).total_seconds() for atime in sliDts])
+        nsli = len(tmaps['t2p'][0])
+    else:
+        nsli = 1
+        
     # Repackage the reload params by slider time index
     reloadParams = {}
-    nsli = len(tmaps['t2p'][0])
+    
     
     # Allow for passing of None for rD, just make a fully blank log
     if type(rD) != type(None):
@@ -3566,14 +3582,14 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, reloadDict=None, logF
     for i in range(nSats):
         key = WBinfo['Insts'][i]
         i2inst[i] = key
-        if len(proIms[i2inst[i]]) > 1:
+        if len(proIms[i2inst[i]][0]) > 1:
             multiTime = True
         proIms0[i] = proIms0.pop(key)
         proIms[i]  = proIms.pop(key)
         massIms[i] = massIms.pop(key)
         sclIms[i]  = sclIms.pop(key)
         satStuff[i] = satStuff.pop(key)
-        for j in range(len(satStuff[i])):
+        for j in range(len(satStuff[i][0])):
             satStuff[i][0][j]['KEY'] = key
     # Rename this
     obsFiles = proIms
@@ -3664,7 +3680,12 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, reloadDict=None, logF
     #|----------------------------------| 
     #|---- Launch Parameter Window -----|
     #|----------------------------------|
-    mainwindow = ParamWindow(nwfs, tlabs=tlabs, tidxBFs=idxMaps['tBFs'])
+    if multiTime:
+        tbfs = idxMaps['tBFs']
+    else:
+        tbfs = None
+        idxMaps = None
+    mainwindow = ParamWindow(nwfs, tlabs=tlabs, tidxBFs=tbfs)
     # check if we had a name for the output box
     if type(logFile) != type(None):
         for i in range(nwfs):
@@ -3672,7 +3693,8 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, reloadDict=None, logF
         mainwindow.saveName = logFile
     # Set time slider to highlight bc reload will
     # shift focus onto text box
-    mainwindow.Tsliders[0].setFocus()
+    if multiTime:
+        mainwindow.Tsliders[0].setFocus()
     mainwindow.show()
 
     #|---------------------------------| 

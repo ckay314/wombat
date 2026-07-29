@@ -2337,6 +2337,8 @@ def scaleIt(obsIn, satStuffs):
 
         #|---- Make a small subset for perc calcs ---|
         nSample = int(len(satStuffs) / 20)
+        if nSample == 0:
+            nSample = 1
         someObs = np.zeros([int(len(satStuffs)/nSample), int(sz[0]/2), int(sz[1]/2)])
         for i in range(someObs.shape[0]):
             someObs[i,:,:] = obsIn[k][i*nSample].data[::2,::2]
@@ -2427,21 +2429,23 @@ def scaleIt(obsIn, satStuffs):
         print ('   SQRT scaling running... ')
         # Normalize to keep things in nice ranges
         tempIm = someObs / medval
+        allIm  = allObs /medval
         # Get min val based on config dict
         minVal = np.percentile(tempNonNan[goodIdx],myMM[0][2])
         # Set min val to zero
         tempIm = tempIm - minVal 
+        allIm  = allIm - minVal
         # Set all neg to zero
         tempIm[np.where(tempIm < 0)] = 0
+        allIm[np.where(allIm < 0)] = 0
         # Sqrt now that everyone is positive
         sqrtIm = np.sqrt(tempIm)
+        sqrtAllIm = np.sqrt(allIm)
         # Get max val from config dict and rescale
         percX = np.percentile(sqrtIm, myMM[1][2])
-        # Do for the full set
-        allObs = allObs / medval
-        allObs[np.where(allObs <0)] = 0
         
-        sqrtIm = 191 * allObs / percX
+        # Do for the full set
+        sqrtIm = 191 * sqrtAllIm / percX
     
         #|-------------------------------------| 
         #|--------- Package Results -----------|
