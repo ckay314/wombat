@@ -2293,7 +2293,10 @@ class FigWindow(QWidget):
                     # Convert Cart to Sph
                     pt = wfs[i].points[jj,:]
                     r = np.sqrt(pt[0]**2 + pt[1]**2 + pt[2]**2)
-                    lat = np.arcsin(pt[2]/r) * 180/np.pi
+                    if r != 0:
+                        lat = np.arcsin(pt[2]/r) * 180/np.pi
+                    else:
+                        lat = 0
                     lon = np.arctan2(pt[1],pt[0]) * 180 / np.pi
                     pt = [lat, lon, r*7e8]
                     if flatEUV:
@@ -2581,6 +2584,8 @@ class OverviewWindow(QWidget):
         #|---- Get the WF lon ----|
         mywf = wfs[i]
         lon  = mywf.params[1]
+        if mywf.WFtype == 'GCS*':
+            lon = mywf.params[7]        
         h    = mywf.params[0]
         
         #|--- Show arrow if close to Sun ---|
@@ -3636,7 +3641,7 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, reloadDict=None, logF
     if maxFoV < 1:
         maxFoV = 1.5
     # Edit the dictionaries in wombatWF
-    wf.rngDict['Height (Rs)'] = [1,maxFoV]
+    wf.rngDict['Height (Rs)'] = [0,maxFoV]
     if maxFoV > 25:
         wf.defDict['Height (Rs)'] = 25
     elif maxFoV < 5:

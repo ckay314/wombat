@@ -64,10 +64,10 @@ gridDict = {'GCS':[5,15,25], 'Torus':[20,15], 'Sphere':[20,20], 'Half Sphere':[2
 # The default ranges for each of the parameter options
 # These will be more COR appropriate than HI appropriate but will
 # switch if the code see HI observations
-rngDict = {'Height (Rs)':[1,50], 'Lon (deg)':[-180,180], 'Lat (deg)':[-90,90], 'Tilt (deg)':[-90,90], 'AW (deg)':[0,90], 'kappa':[0,1], 'AW_FO (deg)':[0,90], 'AW_EO (deg)':[0,90], 'deltaAx':[0,2], 'deltaCS':[0,2], 'ecc1':[0,1], 'ecc2':[0,1], 'Roll (deg)':[-90,90], 'Yaw (deg)':[-90,90], 'Pitch (deg)':[-90,90], 'Lx (Rs)':[0,25], 'Ly (Rs)':[0,25], 'Lz (Rs)':[0,25], 'HeightO (Rs)':[0,5], 'LonO (deg)':[-180,180], 'LatO (deg)':[-90,90],}
+rngDict = {'Height (Rs)':[0,50], 'Lon (deg)':[-180,180], 'Lat (deg)':[-90,90], 'Tilt (deg)':[-90,90], 'AW (deg)':[0,90], 'kappa':[0,1], 'AW_FO (deg)':[0,90], 'AW_EO (deg)':[0,90], 'deltaAx':[0,2], 'deltaCS':[0,2], 'ecc1':[0,1], 'ecc2':[0,1], 'Roll (deg)':[-90,90], 'Yaw (deg)':[-90,90], 'Pitch (deg)':[-90,90], 'Lx (Rs)':[0,25], 'Ly (Rs)':[0,25], 'Lz (Rs)':[0,25], 'HeightO (Rs)':[0,5], 'LonO (deg)':[-180,180], 'LatO (deg)':[-90,90],}
 
 # The HI values (only includes ones that change)
-rngDictHI = {'Height (Rs)':[1,215], 'Lx (Rs)':[0,215], 'Ly (Rs)':[0,215], 'Lz (Rs)':[0,215], 'HeightO (Rs)':[0,25]}
+rngDictHI = {'Height (Rs)':[0,215], 'Lx (Rs)':[0,215], 'Ly (Rs)':[0,215], 'Lz (Rs)':[0,215], 'HeightO (Rs)':[0,25]}
 
 # The default values for each parameter (again COR appropriate)
 defDict = {'Height (Rs)':10, 'Lon (deg)':0, 'Lat (deg)':0, 'Tilt (deg)':0, 'AW (deg)':30, 'AW_FO (deg)':40, 'AW_EO (deg)':15, 'kappa':0.3, 'deltaAx':1, 'deltaCS':1, 'ecc1':0.8, 'ecc2':0.7, 'Roll (deg)':0, 'Yaw (deg)':0, 'Pitch (deg)':0, 'Lx (Rs)':4, 'Ly (Rs)':10, 'Lz (Rs)':4, 'HeightO (Rs)':0, 'LonO (deg)':0, 'LatO (deg)':0}
@@ -331,6 +331,10 @@ class wireframe():
            # Refine param names to reuse existing code
            lon, lat, tilt, hin, k, alpha = ps[1], ps[2], ps[3], ps[0], ps[5], ps[4]*dtor
            nleg, ncirc, ncross = gps[0], gps[1], gps[2]
+           hmin = 1
+           if WFtype == 'GCS*':
+               hin -= ps[6]
+               hmin = 0
            
            # Assume we have leading edge height, which is not Thernisien h
            h=hin*(1.-k)*np.cos(alpha)/(1.+np.sin(alpha))
@@ -338,7 +342,7 @@ class wireframe():
            gamma = np.arcsin(k)
            
            # Calculate the leg axis
-           hrange = np.linspace(1, h, nleg)
+           hrange = np.linspace(hmin, h, nleg)
            leftLeg = np.zeros([nleg,3])
            leftLeg[:,1] = -np.sin(alpha)*hrange
            leftLeg[:,0] = np.cos(alpha)*hrange
@@ -356,7 +360,7 @@ class wireframe():
            beta = np.linspace(-alpha, pi/2 , ncirc, endpoint=True)
            b = h/np.cos(alpha) # b thernisien
            rho = h*np.tan(alpha) 
-    
+           
            X0 = (rho+b*k**2*np.sin(beta))/(1-k**2)
            rc = np.sqrt((b**2*k**2-rho**2)/(1-k**2)+X0**2)
         
@@ -406,13 +410,29 @@ class wireframe():
            # Convert from theoryland to StonyCart
            cXYZ = np.transpose(shell) 
            
-           if WFtype == 'GCS*':
-               origin = [ps[6], ps[8], ps[7]]
-               deltaCart = SPH2CART(origin)
-               for i in range(3):
-                   cXYZ[i,:] += deltaCart[i]
+           
+           
+           if WFtype == 'GCS':
+               self.points = np.transpose(rotz(roty(rotx(cXYZ, tilt), -lat), lon))
+           else:
+               # lon0, lat0 should replace lat, lon in global rotation
+               # but need to rotate by lon, lat, then move out r0 beforehand
+               r0, lon0, lat0 = [ps[6], ps[7], ps[8]]
+               # Rot by tilt, lat lon rel to source
+               cXYZsource = rotz(roty(rotx(cXYZ, tilt), -lat), lon) 
+               # Add back in r0 to x axis
+               cXYZsource[0] += r0
+               # Rotate to source location
+               cXYZ = rotz(roty(cXYZsource, -lat0), lon0) 
                
-           self.points = np.transpose(rotz(roty(rotx(cXYZ, tilt), -lat), lon))  
+               
+               self.points = np.transpose(cXYZ)
+               #deltaCart = SPH2CART(origin)
+               #print (deltaCart)
+               #for i in range(3):
+               #      cXYZ[i,:] += deltaCart[i]
+               
+               #self.points = np.transpose(rotz(roty(rotx(cXYZ, tilt), -lat), lon))  
            
         # |---------------------------|
         # |---------  Torus ----------|
