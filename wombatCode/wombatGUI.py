@@ -845,16 +845,6 @@ class ParamWindow(QMainWindow):
                 tidx = self.Tsliders[0].value() - 2
             else:
                 tidx = 0
-            '''toSwitch = range(200)
-            # Loop through and find the shortest p2t range to switch
-            #for jj in range(nSats):
-            for aPW in pws:
-                pidx = aPW.t2p[tidx]
-                #allThisTidx = np.where(self.tmap[jj] == pidx)[0]
-                allThisTidx = aPW.p2t[pidx]
-                #print (pidx, allThisTidx)
-                if len(allThisTidx) < len(toSwitch):
-                    toSwitch = allThisTidx'''
             toSwitch =  self.tidxBFs[tidx]
 
             newPs = myWF.params
@@ -1112,12 +1102,6 @@ class ParamWindow(QMainWindow):
                             theKey = wfs[ff].WFtype+str(ff+1)
                             
                             # Check if paramLog has None for this time, if so copy current vals
-                            '''toSwitch = range(200)
-                            for aPW in pws:
-                                pidx = aPW.t2p[tidx]
-                                allThisTidx = aPW.p2t[pidx]
-                                if len(allThisTidx) < len(toSwitch):
-                                    toSwitch = allThisTidx'''
                             toSwitch =  self.tidxBFs[tidx]
                             
                             for i in range(len(wfs[ff].params)):                               
@@ -1128,7 +1112,7 @@ class ParamWindow(QMainWindow):
                                         for ii in range(toSwitch[0]):
                                             if type(paramLog[theKey][i][ii]) == type(None):
                                                 paramLog[theKey][i][ii] = wfs[ff].params[i]
-                                    
+                            
                             # Check if paramLog val diff from current sliders
                             sumDiff = 0
                             nowVals = [] # collect vals for test printing
@@ -1137,16 +1121,17 @@ class ParamWindow(QMainWindow):
                                 nowVals.append(wfs[ff].params[jj])
                                     
                             # Difference found
+                            self.holdIt = True
                             if sumDiff != 0:     
                                 for i in range(len(wfs[ff].params)):                       
                                     wfs[ff].params[i] = np.copy(paramLog[theKey][i][tidx]) # no pointer
                                 wfs[ff].getPoints()
-                                self.holdIt = True
+                                
                                 for j in range(len(wfs[ff].params)):
                                     self.widges[ff][0][j].setValue(paramLog[theKey][j][tidx])
-                                self.holdIt = False
                                 self.updateWFpoints(wfs[ff], self.widges[ff])
                                 isDiff = True
+                            self.holdIt = False
                 self.tab_widget.setCurrentIndex(ogTab)                    
                 # Replot the wfs if we need to                                                                    
                 if isDiff:
@@ -1162,7 +1147,10 @@ class ParamWindow(QMainWindow):
         if type(paramLog) != type(None):
             # Turn off dragging flag
             self.Tsli_dragging = False
-            for ff in range(self.nTabs):  
+            
+            ogTab = self.tab_widget.currentIndex()
+            for ff in range(self.nTabs): 
+                self.tab_widget.setCurrentIndex(ff)
                 if type(wfs[ff].WFtype) != type(None):
                     theKey = wfs[ff].WFtype+str(ff+1)
                     tval = self.Tsliders[ff].value()
@@ -1170,13 +1158,9 @@ class ParamWindow(QMainWindow):
                     tidx = tval - 2
                     # Check if param log is empty for this WF
                     # Grab range to switch
-                    '''toSwitch = range(200)
-                    for aPW in pws:
-                        pidx = aPW.t2p[tidx]
-                        allThisTidx = aPW.p2t[pidx]
-                        if len(allThisTidx) < len(toSwitch):
-                            toSwitch = allThisTidx'''
                     toSwitch =  self.tidxBFs[tidx]
+                    
+                    
                     
                     #|---- Existing params are none ----|
                     # Fill with current values of sliders
@@ -1192,16 +1176,20 @@ class ParamWindow(QMainWindow):
                     else:
                         for i in range(len(wfs[ff].params)): 
                             wfs[ff].params[i] = np.copy(paramLog[theKey][i][tidx])
-                        
-                    #|--- Update the widget values ---|
+                   
+                   #|--- Update the widget values ---|
                     self.holdIt = True
+                    
                     for j in range(len(wfs[ff].params))[::-1]:
                         self.widges[ff][0][j].setValue(paramLog[theKey][j][tidx])
                     self.holdIt = False
                     self.updateWFpoints(wfs[ff], self.widges[ff])     
-   
+                             
+                  
+            self.tab_widget.setCurrentIndex(ogTab)
             for ipw in range(nSats):
                 pws[ipw].plotWFs()
+            
         
     def EBclicked(self):
         """
@@ -1538,11 +1526,12 @@ class ParamWindow(QMainWindow):
                 if widges[0][i].text() != '':
                     aWF.params[i] = float(widges[0][i].text().replace(',','.'))
             aWF.getPoints()
-                        
-            for ipw in range(nSats):
-                pws[ipw].plotWFs(justN=aWF.WFidx-1)
-            if ovw:
-                ovw.updateArrow(aWF.WFidx-1,color=aWF.WFcolor)
+            
+            if not self.holdIt:            
+                for ipw in range(nSats):
+                    pws[ipw].plotWFs(justN=aWF.WFidx-1)
+                if ovw:
+                    ovw.updateArrow(aWF.WFidx-1,color=aWF.WFcolor)
                 
     def makeFigs(self, toDo, silent=False):
         """
@@ -2288,7 +2277,7 @@ class FigWindow(QWidget):
                 #|---- Project Points ----|
                 #|------------------------| 
                 allxs = []
-                allys = []           
+                allys = []  
                 for jj in toShow:
                     # Convert Cart to Sph
                     pt = wfs[i].points[jj,:]
@@ -2337,7 +2326,7 @@ class FigWindow(QWidget):
                 for jj in range(len(allxs))[::skipit]:
                     pos.append({'pos': [allxs[jj], allys[jj]], 'pen':{'color':myColor, 'width':penwid}, 'brush':pg.mkBrush(myColor)})
                 
-                #|---- Reset the scatters to new positions ----|        
+                #|---- Reset the scatters to new positions ----|    
                 self.scatters[i].setData(pos)
  
     def plotBackground(self):
@@ -3188,6 +3177,9 @@ def buildMegaVars(rD, tlabs, tmaps, satNames):
                 for ii in range(nParams):
                     paramLog[aName][ii][i] = rD['Params'][aName][myTimes[myMatch]][ii]        
 
+    #for i in range(len(paramLog['GCS1'][0])):
+    #    print (sliDts[i], paramLog['GCS1'][0][i], paramLog['GCS2'][0][i])
+    #print (sd)
     #|----------------------------------|
     #|---- Set up setLog at defaults ---|
     #|----------------------------------|
