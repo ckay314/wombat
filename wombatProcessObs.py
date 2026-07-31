@@ -1178,6 +1178,7 @@ def processWISPR(times, insts, wcalpath='prepFiles/psp/wispr/',  inFolder='pullF
                     hdrs.append(hdr)
             else:
                 ims, hdrs = wispr_prep(goodFiles[i], wcalpath, straylightOff=True)
+
             #if saveFits:
             #    outLines.append('WISPR_'+ insts[i] + '\n')
             for j in range(len(ims)):

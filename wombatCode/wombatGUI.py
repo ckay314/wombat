@@ -1299,9 +1299,8 @@ class ParamWindow(QMainWindow):
                         tidx2do.append(myLogId)
             else:
                 pidx2do = [aPW.pickIdx]
-            
-                tidx2do = [aPW.p2tBF[aPW.pickIdx]]
-            
+                tidx2do = [aPW.tslIdx]
+
             # |--- Loop through wfs ---|
             for k in range(nwfs):
                 aWF = wfs[k]
