@@ -188,8 +188,11 @@ def reloadLogLine(theFile, lineIds):
             print ('Error in converting id string to individual ids. Error from', idstr)
             sys.exit()
     
-    ids = np.array(ids)            
-    miniLog = logFile[ids-1,:] # indexing starts at 0 not 1
+    ids = np.array(ids) 
+    if len(logFile.shape) == 2:          
+        miniLog = logFile[ids-1,:] # indexing starts at 0 not 1
+    else:
+        miniLog = logFile.reshape([1,-1])
     
      
     #|------------------------------|

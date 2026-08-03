@@ -468,7 +468,7 @@ class wireframe():
             xyz = np.array([xs, ys, zs])
             
             # Convert from theoryland to StonyCart
-            self.points = np.transpose(rotz(roty(rotx(xyz,  90-ps[3]), -ps[2]), ps[1])) 
+            self.points = np.transpose(rotz(roty(rotx(xyz,  90+ps[3]), -ps[2]), ps[1])) 
             
 
         # |---------------------------|
