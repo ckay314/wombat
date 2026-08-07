@@ -339,7 +339,7 @@ def getWidth(points, FoVfs, FoV, satFOVxyz, flatLim=5, nGridY=100, isHI=False, s
         if (np.max([np.max(np.abs(FoVlon)), np.max(np.abs(FoVlat))])) < flatLim:
             canFlat = True
     
-    pad = 0.1 # distance from midpoint to check (in dy)   
+    pad = 0.2 # distance from midpoint to check (in dy)   
     if isHI:
         pad = 0.5
     # Set up empty arrays
@@ -398,10 +398,10 @@ def getWidth(points, FoVfs, FoV, satFOVxyz, flatLim=5, nGridY=100, isHI=False, s
             
     #FoVlon[j,i] = -999       
             
-    #fig = plt.figure()
-    #plt.imshow(mask, origin='lower')
-    #plt.show() 
-    #print (sd)   
+    '''fig = plt.figure()
+    plt.imshow(mask, origin='lower')
+    plt.show() 
+    print (sd)  ''' 
     '''fig = plt.figure(figsize=(8, 5), layout='constrained')
     ax = fig.add_subplot(111, projection='3d')
     im = ax.scatter(temp2[0], temp2[1], temp2[2], c=FoVlon)
@@ -782,7 +782,7 @@ def wf2CartFoV(myMap, inPts, pixCent=None):
 # |------------------------------------|
 # |--- Main mass to density routine ---|
 # |------------------------------------|
-def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSelect=8, deproj=True, silent=False):
+def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSelect=8, deproj=True, silent=False, inOut=False):
     '''
     Fuction to take a mass image map, satellite dictionary, and wireframe object and
     determine the width perp to the plane of sky and convert integrated mass to density.
@@ -822,6 +822,8 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
     
         silent:     flag to surpress unnecessary printing. It will still warn about high deproj
                     factors for percentages above 10%
+    
+        inOut:      flag to indicate two WFs that can be separated as inner and outer
     
     Outputs:
         widMap:     an array of the widths (in Rs) perp to the plane of sky 
@@ -1279,14 +1281,22 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
     #|-------------------------|
     if multiMode:
         # Assume constant ratio between WF1 and WF2
-        # Originally did M = area * wid2 * n2
-        # Want to switch to M = area * ((wid2 - wid1) * n2 + ratio * wid1 * n1)
-        #scaleIt = np.zeros(ovl.shape)
-        scaleIt = deprojScale[1][overlap] * w2[overlap] / (w1[overlap] * densRatio*deprojScale[0][overlap] + (w2 - w1)[overlap]*deprojScale[1][overlap])
+        if inOut:
+            # Originally did M = area * wid2 * n2
+            # Want to switch to M = area * ((wid2 - wid1) * n2 + ratio * wid1 * n1)
+            #scaleIt = np.zeros(ovl.shape)
+            scaleIt = deprojScale[1][overlap] * w2[overlap] / (w1[overlap] * densRatio*deprojScale[0][overlap] + (w2 - w1)[overlap]*deprojScale[1][overlap])
+            
+        else:
+            # n = M / area / wid / deproj where full M used for both
+            # Want to switch to M = area * (wid2 * n2 + ratio * wid1 * n1)
+            scaleIt = deprojScale[1][overlap] * w2[overlap] / (w1[overlap] * densRatio*deprojScale[0][overlap] + w2[overlap]*deprojScale[1][overlap])
+
         dens[overlap]  = scaleIt * densRatio * dens2[overlap]
         dens2[overlap] = scaleIt * dens2[overlap]
         dens2 = dens2 / (6.957e10 **3 )
-    dens = dens / (6.957e10 **3 )
+        dens = dens / (6.957e10 **3 )
+    
     densMap = [dens , dens2 ] # convert to g/cm^3
     
     
@@ -2760,6 +2770,8 @@ def processArgs(args):
     
         singleWF - a flag if single wf or multi wf mode
         
+        inOut    - a flag for a pair that can be separated as inner/outer 
+        
         mode - dimension converted to an integer
     
         pairTimes - a list of all times with a pair of inner/out wf. We allow for
@@ -2850,15 +2862,20 @@ def processArgs(args):
             singleWF  = False
             inWFs = ['GCS', 'Torus', 'GCS*', 'Tube']
             outWFs = ['Sphere', 'HalfSphere', 'Ellipse', 'HalfEllipse']
+            inOut = True
             if (uniqShapes[0][:-1] in inWFs) and (uniqShapes[1][:-1] in outWFs):
                 inWF, outWF = uniqShapes[0], uniqShapes[1]
             elif (uniqShapes[1][:-1] in inWFs) and (uniqShapes[0][:-1] in outWFs):
                 inWF, outWF = uniqShapes[1], uniqShapes[0]
             else:
-                print ('Cannot combine selected WF types. Currently have ', uniqShapes)
-                print ('Need to select one from each of ')
-                print ('   ', inWFs, '(inner)')
-                print ('   ', outWFs, '(outer)')
+                inOut = False
+                inWF, outWF = uniqShapes[0], uniqShapes[1] # Order doesn't matter now
+                print('Cannot combine WFs as inner/outer. Treating as separate')
+                
+                #print ('Cannot combine selected WF types. Currently have ', uniqShapes)
+                #print ('Need to select one from each of ')
+                #print ('   ', inWFs, '(inner)')
+                #print ('   ', outWFs, '(outer)')
             
             # |--- Make sure each time has both inner/outer ---|
             pairTimes = []
@@ -2920,7 +2937,7 @@ def processArgs(args):
             print (astr)
         sys.exit()
          
-    return logFile, miniLog, uniqTs, uniqShapes, nTimes, singleWF, mode, pairTimes, pairIds
+    return logFile, miniLog, uniqTs, uniqShapes, nTimes, singleWF, inOut, mode, pairTimes, pairIds
 
 # |--------------------------|
 # |--- Process Bonus Args ---|
@@ -3292,7 +3309,7 @@ def dingoWrapper(args, pullMass=False, silent=False):
     #|-------------------------------------|
     #|--- Check the critical parameters ---|     
     #|-------------------------------------|
-    logFile, miniLog, uniqTs, uniqShapes, nTimes, singleWF, mode, pairTimes, pairIds = processArgs(args)          
+    logFile, miniLog, uniqTs, uniqShapes, nTimes, singleWF, inOut, mode, pairTimes, pairIds = processArgs(args)          
 
     #|----------------------------------|
     #|--- Check the bonus parameters ---|     
@@ -3404,9 +3421,9 @@ def dingoWrapper(args, pullMass=False, silent=False):
         # for one of the time steps. These will be passed along in the packaged arrays
         # but we will clean them up right after
         if singleWF:
-            widMap, xcMap, maskMap, densMap, subMass, outFoV, pix2FOV, pix2St  = mass2dens(imMaps[i], satDicts[i], wfsI[i], massMaps[i], doInner=dI,  downSelect=ds, deproj=deproj, silent=silent)
+            widMap, xcMap, maskMap, densMap, subMass, outFoV, pix2FOV, pix2St  = mass2dens(imMaps[i], satDicts[i], wfsI[i], massMaps[i], doInner=dI,  downSelect=ds, deproj=deproj, silent=silent, inOut = inOut)
         else:
-            widMap, xcMap, maskMap, densMap, subMass, outFoV, pix2FOV, pix2St  = mass2dens(imMaps[i], satDicts[i], [wfsI[i], wfsO[i]], massMaps[i], doInner=dI,  densRatio=densratio, downSelect=ds, deproj=deproj, silent=silent)
+            widMap, xcMap, maskMap, densMap, subMass, outFoV, pix2FOV, pix2St  = mass2dens(imMaps[i], satDicts[i], [wfsI[i], wfsO[i]], massMaps[i], doInner=dI,  densRatio=densratio, downSelect=ds, deproj=deproj, silent=silent, inOut=inOut)
         # Package it
         widMapsA.append(widMap)
         xcMapsA.append(xcMap)
