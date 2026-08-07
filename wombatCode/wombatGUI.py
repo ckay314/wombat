@@ -72,7 +72,7 @@ External Calls:
 
 import sys, os
 import numpy as np
-from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QLabel, QGridLayout, QTabWidget, QSlider, QComboBox, QLineEdit, QDoubleSpinBox, QPushButton, QRadioButton
+from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QLabel, QGridLayout, QTabWidget, QSlider, QComboBox, QLineEdit, QDoubleSpinBox, QPushButton, QRadioButton, QColorDialog
 from PyQt5 import QtCore
 from PyQt5.QtGui import QPixmap, QPainter
 import pyqtgraph as pg
@@ -100,6 +100,17 @@ import logging
 logging.basicConfig(level='INFO')
 slogger = logging.getLogger('QGridLayout')
 slogger.setLevel(logging.ERROR)
+
+# Define a custom message handler function
+def qt_message_handler(mode, context, message):
+  # Check if the message matches the off-screen warning
+  if "outside any known screen" in message:
+    return  # Ignore/drop this warning
+
+
+# Install the handler before creating QApplication
+QtCore.qInstallMessageHandler(qt_message_handler)
+
 
 # |------------------------------------------------------------|
 # |------------------ Parameter Window Class ------------------|
@@ -186,6 +197,7 @@ class ParamWindow(QMainWindow):
         self.layouts = []
         self.cbs = []
         self.radButs = []
+        self.colButs = []
         self.textBoxes = []
         
         # log File name
@@ -254,11 +266,17 @@ class ParamWindow(QMainWindow):
         Tslider1.setMinimumHeight(30)
         if self.nTsli > 0:
             self.Tsliders.append(Tslider1)
-
+        
+        # |------ WF Color Select Button ------|
+        colBut = QPushButton('')
+        colBut.setStyleSheet("background-color : yellow")
+        colBut.released.connect(lambda: self.CBclicked(i))
+        self.colButs.append(colBut)
+        layout.addWidget(colBut, 2, 0, 1,1,alignment=QtCore.Qt.AlignCenter)
 
         # |------ WF Type Label ------|
         label = QLabel('WF Type')
-        layout.addWidget(label, 2,0,1,4,alignment=QtCore.Qt.AlignLeft)
+        layout.addWidget(label, 2,1,1,3,alignment=QtCore.Qt.AlignLeft)
         
         # |----- WF Drop Down Box ----|
         cbox = self.wfComboBox(i)
@@ -892,6 +910,7 @@ class ParamWindow(QMainWindow):
             self.layouts[idx].addLayout(WFLay, 7,0,30,11)
             self.WFLays[idx] = WFLay
             self.widges[idx] = widges
+            self.colButs[idx].setStyleSheet("background-color : "+wfs[idx].WFcolor)
         
         # |---------------------------------------|
         # |-------- Case of turning WF off -------| 
@@ -902,7 +921,7 @@ class ParamWindow(QMainWindow):
             
             # Change the tab name
             self.tab_widget.setTabText(idx,'None')
-            
+            self.colButs[idx].setStyleSheet("background-color : yellow")
             # Clean the parameter layout
             thisLay = self.cleanLayout(self.WFLays[idx])
             
@@ -970,7 +989,7 @@ class ParamWindow(QMainWindow):
             self.WFLays[idx] = WFLay
             self.widges[idx] = widges
             paramsBuilt = True
-            
+            self.colButs[idx].setStyleSheet("background-color : "+newWF.WFcolor)
             # Give the structure the new wf
             wfs[idx] = newWF
             self.updateWFpoints(newWF, widges)
@@ -1132,6 +1151,8 @@ class ParamWindow(QMainWindow):
                                 self.updateWFpoints(wfs[ff], self.widges[ff])
                                 isDiff = True
                             self.holdIt = False
+                            if ovw:
+                                ovw.updateArrow(wfs[ff].WFidx-1,color=wfs[ff].WFcolor)
                 self.tab_widget.setCurrentIndex(ogTab)                    
                 # Replot the wfs if we need to                                                                    
                 if isDiff:
@@ -1338,6 +1359,9 @@ class ParamWindow(QMainWindow):
                         #svals = aPW.slidervals[aPW.didx, aPW.sclidx] # diff, scale time, min/max 
                         outStr += ' ' + str(smin) + ' '+ str(smax)
                         
+                        # add the wf color (not doing for now)
+                        #outStr += ' ' + aWF.WFcolor
+                        
                         
                         #|--- Check on adding lines ---|
                         addLine = False
@@ -1450,7 +1474,16 @@ class ParamWindow(QMainWindow):
                 aPW.plotBackground()
             else:
                 print ('No mass calc for EUV images')
-                    
+                        
+    def CBclicked(self, i):
+        color = QColorDialog.getColor()
+        if color.isValid():
+            self.colButs[i].setStyleSheet("background-color : "+color.name())
+            wfs[i].WFcolor = color.name()
+            if not self.holdIt:            
+                for ipw in range(nSats):
+                    pws[ipw].plotWFs(justN=wfs[i].WFidx-1)
+    
     def btnstate(self,b, isMain=False):
         """
         Action for hitting the difference mode radio button.
@@ -1952,7 +1985,10 @@ class FigWindow(QWidget):
                 for iii in range(nwfs):
                     mainwindow.updateWFpoints(wfs[iii], mainwindow.widges[iii])
                     focused_widget = mainwindow.focusWidget()
-                    focused_widget.deselect()
+                    try:
+                        focused_widget.deselect()
+                    except:
+                        pass
                     if mainwindow.nTsli:
                         mainwindow.Tsliders[0].setFocus()
         #|--- Closing Things ---|
