@@ -2860,14 +2860,23 @@ def processArgs(args):
             miniLog = miniLog[sortIdx,:]
         else:
             singleWF  = False
+            # Shock + CME
             inWFs = ['GCS', 'Torus', 'GCS*', 'Tube']
             outWFs = ['Sphere', 'HalfSphere', 'Ellipse', 'HalfEllipse']
+            # CME + fil
+            inWFs2 = ['Torus', 'Tube']
+            outWFs2 = ['GCS', 'GCS*', ]
             inOut = True
             if (uniqShapes[0][:-1] in inWFs) and (uniqShapes[1][:-1] in outWFs):
                 inWF, outWF = uniqShapes[0], uniqShapes[1]
             elif (uniqShapes[1][:-1] in inWFs) and (uniqShapes[0][:-1] in outWFs):
-                inWF, outWF = uniqShapes[1], uniqShapes[0]
+                inWF, outWF = uniqShapes[1], uniqShapes[0] 
+            elif (uniqShapes[0][:-1] in inWFs2) and (uniqShapes[1][:-1] in outWFs2):
+                inWF, outWF = uniqShapes[0], uniqShapes[1]
+            elif (uniqShapes[1][:-1] in inWFs2) and (uniqShapes[0][:-1] in outWFs2):
+                inWF, outWF = uniqShapes[1], uniqShapes[0] 
             else:
+                #miniNames = [uniqShapes[0][:-1],uniqShapes[0][:-1] ]
                 inOut = False
                 inWF, outWF = uniqShapes[0], uniqShapes[1] # Order doesn't matter now
                 print('Cannot combine WFs as inner/outer. Treating as separate')
@@ -2876,7 +2885,6 @@ def processArgs(args):
                 #print ('Need to select one from each of ')
                 #print ('   ', inWFs, '(inner)')
                 #print ('   ', outWFs, '(outer)')
-            
             # |--- Make sure each time has both inner/outer ---|
             pairTimes = []
             pairIds   = []
