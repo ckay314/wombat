@@ -9,6 +9,8 @@ from matplotlib.colors import LinearSegmentedColormap
 sys.path.append('wombatCode/') 
 from wombatLoadCTs import *
 import wombatPlots as wp
+import wombatWF as wf
+from wombatGUI import pts2proj
 
 # Python needs ffmpeg installed via brew, pip no happy for some reason
 
@@ -26,10 +28,22 @@ tRes = 30
 nHoriz = 4
 # Include clean imgs without wf proj
 doClean = True
+# Instrument order
+customOrder = True
+instOrder = ['C2', 'COR2A', 'C3', 'SoloHI']
+    
 # Running (0) or base diff (1)
 didx = 0
 # Scaling mode linear(0), log(1), or sqrt(2)
-sclidx = 0
+sclidx = 0 
+# Wireframe scatter point size
+wfSize = 3
+
+# Option to set custom colors, otherwise will use standard
+# wombat GUI colors based on WF type. Custom will cycle 
+# through the array in the order they first appear in logFile
+doCustomColors = False
+customColors = ['pink']
 
 # Calc num of rows bases on nHoriz and nInsts
 nVert = 1 # need to calc this later
@@ -47,6 +61,61 @@ wilomm = [[0,0,21], [128,191,191]]
 
 MMdict = {'AIA94':aiamm, 'AIA131':aiamm, 'AIA171':aiamm,'AIA193':aiamm,'AIA211':aiamm,'AIA304':aiamm,'AIA335':aiamm,'AIA1600':aiamm,'AIA1700':aiamm, 'C2':c2mm, 'C3':c3mm, 'COR1':cormm, 'COR2':cormm, 'COR1A':cormm, 'COR2A':cormm, 'COR1B':cormm, 'COR2B':cormm, 'EUI174':aiamm, 'EUI304':aiamm, 'EUVI171':aiamm, 'EUVI195':aiamm, 'EUVI284':aiamm, 'EUVI304':aiamm, 'EUVI171A':aiamm, 'EUVI195A':aiamm, 'EUVI284A':aiamm, 'EUVI304A':aiamm, 'EUVI171B':aiamm, 'EUVI195B':aiamm, 'EUVI284B':aiamm, 'EUVI304B':aiamm, 'HI1':himm, 'HI2':himm, 'HI1A':himm, 'HI2A':himm, 'HI1B':himm, 'HI2B':himm, 'HI1A_SR':himm, 'HI1B_SR':himm, 'HI2A_SR':himm, 'HI2B_SR':himm, 'SOLOHI':wilomm, 'SOLOHI1':wilomm, 'SOLOHI2':wilomm, 'SOLOHI3':wilomm, 'SOLOHI4':wilomm, 'WISPR':wilomm, 'WISPRI':wilomm, 'WISPRO':wilomm, 'WISPR_LW':wilomm, 'WISPRI_LW':wilomm, 'WISPRO_LW':wilomm, 'WISPR_L3':wilomm, 'WISPRI_L3':wilomm, 'WISPRO_L3':wilomm}
 
+
+def getScatterPoints(mySatStuff, myPoints):
+    #|--- Get parameters needed for projection ---|
+    # Get satellite position
+    obs = mySatStuff['POS']
+     # Scale btwn pix and arcsec
+    obsScl = [mySatStuff['SCALE'], mySatStuff['SCALE']]
+    if mySatStuff['OBSTYPE'] == 'HI':
+        obsScl = [mySatStuff['SCALE'] * 3600, mySatStuff['SCALE'] * 3600]
+    # Occulter info
+    if 'OCCRARC' in mySatStuff:
+        occultR = mySatStuff['OCCRARC']
+    else:
+        occultR = None
+    # WCS info    
+    mywcs  = mySatStuff['WCS']
+    
+    allxs = []
+    allys = []  
+    for jj in range(len(myPoints[:,0])):
+        # Convert Cart to Sph
+        pt = myPoints[jj,:]
+        r = np.sqrt(pt[0]**2 + pt[1]**2 + pt[2]**2)
+        if r != 0:
+            lat = np.arcsin(pt[2]/r) * 180/np.pi
+        else:
+            lat = 0
+        lon = np.arctan2(pt[1],pt[0]) * 180 / np.pi
+        pt = [lat, lon, r*7e8]
+         
+        # WISPR outer (at least) has issues in pts projection when CME
+        # is behind the satellite. The projection code matches IDL so unclear
+        # what the original issue is but not a porting issue. Work around
+        # by just checking if a point is behind the sat lon   
+        if 'WISPR' in mySatStuff['MYTAG']:  
+            dLon = lon - myPos[1]
+            if dLon < -180:
+                dLon +=360
+            if dLon > 0:
+                myPt = pts2proj(pt, obs, obsScl, mywcs,  occultR=occultR)
+            else:
+                myPt = []
+                
+        # Just calc all non wispr cases        
+        else:
+            myPt = pts2proj(pt, obs, obsScl, mywcs, occultR=occultR)
+        
+        
+        # If the point is in the FoV add it to draw    
+        if len(myPt) > 0:   
+            allxs.append(myPt[0][0])      
+            allys.append(myPt[0][1])
+    plotPts = np.transpose(np.array([allxs,allys]))    
+    return plotPts
+
  
     
 #|------------------------------|
@@ -54,6 +123,15 @@ MMdict = {'AIA94':aiamm, 'AIA131':aiamm, 'AIA171':aiamm,'AIA193':aiamm,'AIA211':
 #|------------------------------|
 logFile = np.genfromtxt(logFilePath, dtype=str)
 allInsts = np.unique(logFile[lines,1])
+if np.array_equal(np.sort(instOrder), np.sort(allInsts)):
+    allInsts = instOrder
+else:
+    print ('Cannot match custom instrument order:')
+    print ('   ', instOrder)
+    print ('To instruments from log file: ')
+    print ('   ', allInsts)
+    sys.exit('Exiting movie script')
+
 nInsts = len(allInsts)
 allPickles = np.unique(logFile[lines,13])
 if len(allPickles) != 1:
@@ -61,6 +139,33 @@ if len(allPickles) != 1:
 nLines = len(logFile[:,0])
 theWFs = np.unique(logFile[lines,3])
 nWFs = len(theWFs)
+
+# Check WF types 
+fullWF2type = {}
+for i in range(nWFs):
+    myType = theWFs[i][:-1] # take off last character -> should be good for most cases
+    if myType in wf.colorDict:
+        fullWF2type[theWFs[i]] = myType
+    elif myType[:-1] in wf.colorDict: # try one more in case has two digit number
+        fullWF2type[theWFs[i]] = myType[:-1]
+    else:
+        print ('Unknown WF type:', theWFs[i])
+        print('Needs to be an existing WOMBAT WF type with no more than two additional')
+        print('identifying characters at the end (e.g. typeX or typeXX)')
+        sys.exit()
+        
+# Set up colors
+wfColorDict = {}
+if doCustomColors:
+    if len(customColors) < nWFs:
+        sys.exit('Given fewer custom colors than number of wireframes. Fix at top of movie script.')
+    for i in range(nWFs):
+        wfColorDict[theWFs[i]] = customColors[i]
+else:
+    for i in range(nWFs):
+        myType = fullWF2type[theWFs[i]] # take off last character -> should be good for most cases
+        wfColorDict[theWFs[i]] = wf.colorDict[myType]
+
 
 # Package by inst, figure out min/max time
 timesByInst  = {}
@@ -73,7 +178,7 @@ for i in range(nLines):
     myWFtype = logFile[i,3]
     myParams = logFile[i,4:13]
     myParams = myParams[myParams != 'None'].astype(float)
-    mypidx   = logFile[i,14]
+    mypidx   = int(logFile[i,14])
     if myInst not in timesByInst:
         timesByInst[myInst]  = []
         pidx2params[myInst]   = {}
@@ -86,6 +191,8 @@ for i in range(nLines):
     # Track early/late time
     if myTime < minTime: minTime = myTime
     if myTime > maxTime: maxTime = myTime
+
+
 
 # Start at rounded minTime
 startTime = datetime.datetime(minTime.year, minTime.month, minTime.day, minTime.hour)     
@@ -188,16 +295,33 @@ for i in range(nInsts):
         textObj = axes[i+nHoriz].text(0.5, 0, panelLabel, c='w', bbox=dict(facecolor='black', alpha=0.5), horizontalalignment='center',verticalalignment='bottom', transform = axes[i+nHoriz].transAxes)
     textObjs.append(textObj)
 
-plt.subplots_adjust(wspace=0.0, hspace=0.0,left=0,right=1,bottom=0,top=1)
-#plt.show()
+    # Set up dummy scatter objects. One for each wf for each inst
+    scatObjs[myInst] = []
+    for j in range(nWFs):
+        scatObj = axes[i].scatter(0,0, c=wfColorDict[theWFs[j]], s=0)
+        scatObjs[myInst].append(scatObj)
+        
+    #|--- Get WF scatter points in pixels ---|
+    if instIdx in pidx2params[myInst]:        
+        #|--- Convert WF points to proj ---|
+        for j in range(nWFs):
+            if theWFs[j] in pidx2params[myInst][instIdx]:
+                nowPs = pidx2params[myInst][instIdx][theWFs[j]]
+                awf = wf.wireframe(fullWF2type[theWFs[j]])
+                awf.params = nowPs
+                awf.getPoints()
+                plotPts = getScatterPoints(satStuff[myInst][didx][instIdx], awf.points)
+                scatObjs[myInst][j].set_offsets(plotPts)
+                scatObjs[myInst][j].set_sizes(wfSize*np.ones(plotPts.shape[0]))                
 
+plt.subplots_adjust(wspace=0.0, hspace=0.0,left=0,right=1,bottom=0,top=1)
+
+    
+    
 def update(movt):
     for i in range(nInsts):
         myInst = allInsts[i]
-        instIdx = movie2inst[myInst][movt]
-        #instPidx = pidxByInst[myInst][instIdx]
-        #instParams = paramsByInst[myInst][instIdx]
-    
+        instIdx = movie2inst[myInst][movt]    
         didx = 0
         sclidx = 0
         mySclIm = sclIms[myInst][didx][instIdx][sclidx]
@@ -208,9 +332,27 @@ def update(movt):
         textObjs[i].set_text(panelLabel)
         if doClean:
             imObjsC[i].set_data(mySclIm)
+            
+        #|--- Get WF scatter points in pixels ---|
+        if instIdx in pidx2params[myInst]:        
+            #|--- Convert WF points to proj ---|
+            for j in range(nWFs):
+                if theWFs[j] in pidx2params[myInst][instIdx]:
+                    nowPs = pidx2params[myInst][instIdx][theWFs[j]]
+                    awf = wf.wireframe(fullWF2type[theWFs[j]])
+                    awf.params = nowPs
+                    awf.getPoints()
+                    plotPts = getScatterPoints(satStuff[myInst][didx][instIdx], awf.points)
+                    scatObjs[myInst][j].set_offsets(plotPts)
+                    scatObjs[myInst][j].set_sizes(wfSize*np.ones(plotPts.shape[0]))
+        else:
+            # Clean it out if we don't have a fit
+            for j in range(nWFs):
+                scatObjs[myInst][j].set_offsets([0,0])
+        
     
-#ani = animation.FuncAnimation(fig=fig, func=update, frames=nTimes+2, interval=150)
-#plt.show()
+ani = animation.FuncAnimation(fig=fig, func=update, frames=nTimes+2, interval=150)
+plt.show()
 #ani.save('test.mp4', writer='ffmpeg')
 
 
