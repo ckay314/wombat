@@ -14,7 +14,8 @@ import wombatPlots as wp
 import wombatWF as wf
 from wombatGUI import pts2proj
 
-# Python needs ffmpeg installed via brew, pip no happy for some reason
+# Python needs ffmpeg installed via brew, just using pip does
+# not work for some random reason
 
 
 #|-------------------------|
@@ -23,17 +24,24 @@ from wombatGUI import pts2proj
 # Name of wombat log file
 #logFilePath = 'wbOutputs/2303full_CME1b.txt'
 logFilePath = 'tempLog.txt'
+logFilePath = 'wbOutputs/201207pretty.txt'
+
+# Movie save name
+#movieName = '2023full.mp4'
+movieName = '2012full.mp4'
+
 # Lines to do
 #lines = range(41) # Replace with string reading code from other files
-lines = range(120)
+#lines = range(410)
+lines=np.arange(40, 160)-1
 # Time Resolution (in minutes)
 tRes = 30 
 # Plot shape (max of 5 horiz)
-nHoriz = 4
+nHoriz = 2
 # Include clean imgs without wf proj
-doClean = True
+doClean = False
 # Instrument order
-customOrder = True
+customOrder = False
 instOrder = ['C2', 'COR2A', 'C3', 'WISPRI', 'SoloHI', 'HI1A_SR']
     
 # Running (0) or base diff (1)
@@ -48,9 +56,9 @@ ovw = True
 
 # Option to set custom colors, otherwise will use standard
 # wombat GUI colors based on WF type. Custom will cycle 
-# through the array in the order they first appear in logFile
-doCustomColors = True
-customColors = ['pink', 'yellow']
+# through the array in alphabetical order 
+doCustomColors = False
+customColors = ['#9AE630', 'cyan', 'DeepPink', 'PeachPuff', 'Gold', 'BlueViolet', 'LimeGreen']
 
     
 # Dictionary for min/max values based on inst/scale mode
@@ -258,14 +266,15 @@ if doClean:
     nVert *= 2
 
 # Check if given custom order
-if np.array_equal(np.sort(instOrder), np.sort(allInsts)):
-    allInsts = instOrder
-else:
-    print ('Cannot match custom instrument order:')
-    print ('   ', instOrder)
-    print ('To instruments from log file: ')
-    print ('   ', allInsts)
-    sys.exit('Exiting movie script')
+if customOrder:
+    if np.array_equal(np.sort(instOrder), np.sort(allInsts)):
+        allInsts = instOrder
+    else:
+        print ('Cannot match custom instrument order:')
+        print ('   ', instOrder)
+        print ('To instruments from log file: ')
+        print ('   ', allInsts)
+        sys.exit('Exiting movie script')
 
 # |--- Set up figure ---|
 fig, allAx = setupFigure(allInsts, nHoriz, doClean, ovw)
@@ -274,14 +283,14 @@ fig, allAx = setupFigure(allInsts, nHoriz, doClean, ovw)
 allPickles = np.unique(logFile[lines,13])
 if len(allPickles) != 1:
     sys.exit('Cannot combine multiple pickles (yet)')
-nLines = len(logFile[:,0])
+nLines = len(logFile[lines,0])
 theWFs = np.unique(logFile[lines,3])
 nWFs = len(theWFs)
 
 # Check WF types 
 fullWF2type = {}
 for i in range(nWFs):
-    myType = theWFs[i][:-1] # take off last character -> should be good for most cases
+    myType = theWFs[i][:-1].replace("Half", 'Half ') # take off last character -> should be good for most cases
     if myType in wf.colorDict:
         fullWF2type[theWFs[i]] = myType
     elif myType[:-1] in wf.colorDict: # try one more in case has two digit number
@@ -310,7 +319,8 @@ timesByInst  = {}
 pidx2params   = {}
 minTime = datetime.datetime(3000,1,1)
 maxTime = datetime.datetime(1000,1,1)
-for i in range(nLines):
+for j in range(nLines):
+    i = lines[j]
     myInst = logFile[i,1]
     myTime = datetime.datetime.strptime(logFile[i,2], "%Y-%m-%dT%H:%M:%S" )
     myWFtype = logFile[i,3]
@@ -329,8 +339,6 @@ for i in range(nLines):
     # Track early/late time
     if myTime < minTime: minTime = myTime
     if myTime > maxTime: maxTime = myTime
-
-
 
 # Start at rounded minTime
 startTime = datetime.datetime(minTime.year, minTime.month, minTime.day, minTime.hour)     
@@ -537,7 +545,9 @@ if ovw:
                     ysat = y +0.05
             textItem = allAx[2].text(xsat, ysat, myName, c='w')    
             myLat = '{:.1f}'.format(myPos[0])
-            latItem = allAx[2].text(0.98, 1.01 -0.03*len(satStr), myName +': '+myLat+'$^{\\circ}$', c='w', horizontalalignment='right',verticalalignment='top', transform = allAx[2].transAxes)  
+            ywid = 0.03
+            if nInsts <= nHoriz: ywid = 0.05
+            latItem = allAx[2].text(0.98, 0.98 - ywid*(len(satStr)-1), myName +': '+myLat+'$^{\\circ}$', c='w', horizontalalignment='right',verticalalignment='top', transform = allAx[2].transAxes)  
             
         else:
             textItem = None
@@ -561,8 +571,12 @@ if ovw:
             awf = wf.wireframe(fullWF2type[theWFs[j]])
             awf.params = myParams
             awf.getPoints()
-            myxs = -awf.points[::2,0] / 215
-            myys = awf.points[::2,1]  / 215
+            if awf.WFtype not in ['Sphere', 'Half Sphere', 'Ellipse', 'Half Ellipse']:
+                myxs = -awf.points[::2,0] / 215
+                myys = awf.points[::2,1]  / 215
+            else:
+                myxs = -awf.points[:,0] / 215
+                myys = awf.points[:,1]  / 215
             ovwScats[j].set_offsets(np.transpose(np.array([myys,myxs])))
             ovwScats[j].set_sizes(int(0.5*wfSize)*np.ones(len(myxs)))
             
@@ -693,8 +707,12 @@ def update(movt):
                 awf = wf.wireframe(fullWF2type[theWFs[j]])
                 awf.params = myParams
                 awf.getPoints()
-                myxs = -awf.points[::2,0] / 215
-                myys = awf.points[::2,1]  / 215
+                if awf.WFtype not in ['Sphere', 'Half Sphere', 'Ellipse', 'Half Ellipse']:
+                    myxs = -awf.points[::2,0] / 215
+                    myys = awf.points[::2,1]  / 215
+                else:
+                    myxs = -awf.points[:,0] / 215
+                    myys = awf.points[:,1]  / 215
                 ovwScats[j].set_offsets(np.transpose(np.array([myys,myxs])))
                 ovwScats[j].set_sizes(int(0.5*wfSize)*np.ones(len(myxs)))
             else:
@@ -705,38 +723,5 @@ def update(movt):
     
 ani = animation.FuncAnimation(fig=fig, func=update, frames=nTimes+2, interval=150)
 #plt.show()
-ani.save('test.mp4', writer='ffmpeg')
+ani.save(movieName, writer='ffmpeg')
 
-
-'''fig, ax = plt.subplots()
-t = np.linspace(0, 3, 40)
-g = -9.81
-v0 = 12
-z = g * t**2 / 2 + v0 * t
-
-v02 = 5
-z2 = g * t**2 / 2 + v02 * t
-
-scat = ax.scatter(t[0], z[0], c="b", s=5, label=f'v0 = {v0} m/s')
-line2 = ax.plot(t[0], z2[0], label=f'v0 = {v02} m/s')[0]
-ax.set(xlim=(0, 3), ylim=(-4, 10), xlabel='Time [s]', ylabel='Z [m]')
-ax.legend()
-
-
-def update(frame):
-    # for each frame, update the data stored on each artist.
-    x = t[:frame]
-    y = z[:frame]
-    # update the scatter plot:
-    data = np.stack([x, y]).T
-    scat.set_offsets(data)
-    # update the line plot:
-    line2.set_xdata(t[:frame])
-    line2.set_ydata(z2[:frame])
-    return (scat, line2)
-
-
-ani = animation.FuncAnimation(fig=fig, func=update, frames=40, interval=30)
-#plt.show()
-#ani.save(filename="pillow_example.gif", writer="pillow")
-ani.save('test.mp4', writer='ffmpeg')'''
