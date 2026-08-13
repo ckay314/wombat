@@ -5,6 +5,8 @@ import datetime
 import pickle
 import matplotlib.animation as animation
 from matplotlib.colors import LinearSegmentedColormap
+import matplotlib.gridspec as gridspec
+
 
 sys.path.append('wombatCode/') 
 from wombatLoadCTs import *
@@ -19,18 +21,20 @@ from wombatGUI import pts2proj
 #|--- Configure here!!! ---|
 #|-------------------------|
 # Name of wombat log file
-logFilePath = 'wbOutputs/2303full_CME1b.txt'
+#logFilePath = 'wbOutputs/2303full_CME1b.txt'
+logFilePath = 'tempLog.txt'
 # Lines to do
-lines = range(41) # Replace with string reading code from other files
+#lines = range(41) # Replace with string reading code from other files
+lines = range(120)
 # Time Resolution (in minutes)
 tRes = 30 
-# Plot shape
+# Plot shape (max of 5 horiz)
 nHoriz = 4
 # Include clean imgs without wf proj
 doClean = True
 # Instrument order
 customOrder = True
-instOrder = ['C2', 'COR2A', 'C3', 'SoloHI']
+instOrder = ['C2', 'COR2A', 'C3', 'WISPRI', 'SoloHI', 'HI1A_SR']
     
 # Running (0) or base diff (1)
 didx = 0
@@ -39,16 +43,15 @@ sclidx = 0
 # Wireframe scatter point size
 wfSize = 3
 
+# Option to include overview plot
+ovw = True
+
 # Option to set custom colors, otherwise will use standard
 # wombat GUI colors based on WF type. Custom will cycle 
 # through the array in the order they first appear in logFile
-doCustomColors = False
-customColors = ['pink']
+doCustomColors = True
+customColors = ['pink', 'yellow']
 
-# Calc num of rows bases on nHoriz and nInsts
-nVert = 1 # need to calc this later
-if doClean:
-    nVert *= 2
     
 # Dictionary for min/max values based on inst/scale mode
 aiamm = [[0,0,0], [191, 191, 191]]
@@ -95,8 +98,8 @@ def getScatterPoints(mySatStuff, myPoints):
         # is behind the satellite. The projection code matches IDL so unclear
         # what the original issue is but not a porting issue. Work around
         # by just checking if a point is behind the sat lon   
-        if 'WISPR' in mySatStuff['MYTAG']:  
-            dLon = lon - myPos[1]
+        if 'WISPR' in mySatStuff['MYTAG']:              
+            dLon = lon - obs[1]
             if dLon < -180:
                 dLon +=360
             if dLon > 0:
@@ -117,12 +120,144 @@ def getScatterPoints(mySatStuff, myPoints):
     return plotPts
 
  
+
+
+def setupFigure(allInsts, nHoriz, doClean, ovw, bigOVW=True):
+    # |---------------------------|
+    # |--- Sort out grid sizes ---|
+    # |---------------------------|
+    # Check that nHoriz is < 5
+    if nHoriz >5:
+        sys.exit('Max of 5 for nHoriz, currently set at '+str(nHoriz))
+    # Number of insts
+    nInst = len(allInsts)
+    # Set nHoriz at nInst if shorter
+    nHoriz = np.min([nInst,nHoriz])
+    # Number of rows needed for insts
+    nBot = nInst % nHoriz
+    isFull = False
+    if nBot == 0:
+        isFull = True
+        nVertI = int(nInst / nHoriz)
+        nFull = nVertI
+    else:
+        nVertI = int(nInst / nHoriz) + 1
+        nFull = nVertI - 1    
     
+    # Number of rows in the grid
+    if doClean:
+        nVertG = 2 * nVertI
+    else:
+        nVertG = nVertI
+        
+    # |------------------------------|    
+    # |--- Figure out size of ovw ---|
+    # |------------------------------|    
+    nHorizG = nHoriz # actual grid size, might add for ovw
+    if ovw:
+        ovwsize = 1 # number of cells for gridspec. will be square
+        # Single row -> add to end
+        if bigOVW:
+            if nVertI == 1:
+                # Actually two rows to incl clean plot
+                if doClean & (nHoriz <= 4):
+                    ovwsize = 2
+                # Otherwise is 1x1
+            # Multiple rows of insts
+            else:
+                # Bottom row is full
+                if isFull:
+                    # Has at least two rows so don't need to check doClean
+                    if nHoriz <= 4:
+                        ovwsize = 2
+                # Partial bottom row
+                else:
+                    # Need clean row for potential 2x2
+                    if doClean:
+                        nEmpty = nHoriz - nFull
+                        if nEmpty > 1:
+                            ovwsize = 2
+        # Expand grid if needed
+        if isFull:
+            nHorizG += ovwsize
+    
+    # |-----------------------|    
+    # |--- Make the figure ---| 
+    # |-----------------------|    
+    sclFig = {1:5, 2:4, 3:3.5, 4:2.5, 5:2, 6:2 }
+    myFigScl = sclFig[nHorizG]
+    
+    fig = plt.figure(figsize = (nHorizG*myFigScl,nVertG*myFigScl))
+    gs = gridspec.GridSpec(nrows=nVertG, ncols=nHorizG, figure=fig)
+    
+    axesI = []
+    axesC = []
+    axesO = None # grammatically incorrect but CK less likely to typo it matching
+    # integer shift to account for clean rows
+    clShift = 0
+    if doClean: clShift = 1
+    
+    # Make the full rows
+    for i in range(nFull):
+        for j in range(nHoriz):
+            ax = fig.add_subplot(gs[i*(1+clShift),j])
+            axesI.append(ax)
+            if doClean:
+                ax2 = fig.add_subplot(gs[1+i*(1+clShift),j])
+                axesC.append(ax2)
+    # Add a bottom partial row
+    if not isFull:
+        for j in range(nBot):
+            ax = fig.add_subplot(gs[nFull*(1+clShift),j])
+            axesI.append(ax)
+            if doClean:
+                ax2 = fig.add_subplot(gs[1+nFull*(1+clShift),j])
+                axesC.append(ax2)
+    # Add ovw
+    if ovw:
+        if isFull:
+            axesO = fig.add_subplot(gs[:ovwsize,nHoriz:nHoriz+ovwsize])
+        else:
+            axesO = fig.add_subplot(gs[-ovwsize:,-ovwsize:])
+        axesO.set_axis_off()
+        axesO.set_aspect('equal')
+    
+    
+    for axSet in [axesI,axesC]:
+        for ax in axSet: 
+            ax.set_axis_off()
+            ax.set_aspect('equal')
+    
+    fig.set_facecolor('k')   
+    plt.subplots_adjust(wspace=0.0, hspace=0.0,left=0,right=1,bottom=0,top=1)
+         
+    allAx = [axesI, axesC, axesO]
+    
+    return fig, allAx
+            
+                
+        
+        
+        
+        
+    
+        
+        
+    
+ 
 #|------------------------------|
 #|--- Read in fits, organize ---|
 #|------------------------------|
 logFile = np.genfromtxt(logFilePath, dtype=str)
 allInsts = np.unique(logFile[lines,1])
+nInsts = len(allInsts)
+
+# Calc num of rows bases on nHoriz and nInsts
+nVert = int(nInsts / nHoriz)+1 # need to calc this later
+if doClean:
+    nVert *= 2
+
+# Check if given custom order
 if np.array_equal(np.sort(instOrder), np.sort(allInsts)):
     allInsts = instOrder
 else:
@@ -132,7 +267,10 @@ else:
     print ('   ', allInsts)
     sys.exit('Exiting movie script')
 
-nInsts = len(allInsts)
+# |--- Set up figure ---|
+fig, allAx = setupFigure(allInsts, nHoriz, doClean, ovw)
+    
+
 allPickles = np.unique(logFile[lines,13])
 if len(allPickles) != 1:
     sys.exit('Cannot combine multiple pickles (yet)')
@@ -259,19 +397,11 @@ for key in timesByInst:
     instMinMax[key] = [myMMs[0][sclidx], myMMs[1][sclidx]]
 
 
-sclFig = {1:5, 2:4, 3:3.5, 4:2.5, 5:2, 6:2 }
-myFigScl = sclFig[nHoriz]
-    
-fig, ax0 = plt.subplots(nVert, nHoriz, figsize = (nHoriz*myFigScl,nVert*myFigScl))
-axes = ax0.flatten()
-fig.set_facecolor('k')
-for ax in axes: 
-    ax.set_axis_off()
-    ax.set_aspect('equal')
+
+
+# Plot time zero and set up all the img object
 
 movt = 0
-nPanels = nInsts
-if doClean: nPanels *= 2
 imObjs = []
 imObjsC = []
 textObjs = []
@@ -282,24 +412,25 @@ for i in range(nInsts):
     mm = instMinMax[myInst]
     mySclIm = sclIms[myInst][didx][instIdx][sclidx]
     
-    imObj = axes[i].imshow(mySclIm, cmap=instCMaps[myInst], vmin=mm[0], vmax=mm[1], origin='lower')
+    imObj = allAx[0][i].imshow(mySclIm, cmap=instCMaps[myInst], vmin=mm[0], vmax=mm[1], origin='lower')
     imObjs.append(imObj)
     mydate =  proIms[myInst][0][instIdx].date.datetime.strftime("%Y-%m-%dT%H:%M")
     panelLabel = myInst + ' ' + mydate
 
     if doClean:
-        imObjC = axes[i+nHoriz].imshow(mySclIm, cmap=instCMaps[myInst], vmin=mm[0], vmax=mm[1], origin='lower')
+        imObjC = allAx[1][i].imshow(mySclIm, cmap=instCMaps[myInst], vmin=mm[0], vmax=mm[1], origin='lower')
         imObjsC.append(imObjC)
-        textObj = axes[i+nHoriz].text(0.5, 0, panelLabel, c='w', bbox=dict(facecolor='black', alpha=0.5), horizontalalignment='center',verticalalignment='bottom', transform = axes[i+nHoriz].transAxes)
+        textObj = allAx[1][i].text(0.5, 0, panelLabel, c='w', bbox=dict(facecolor='black', alpha=0.5), horizontalalignment='center',verticalalignment='bottom', transform = allAx[1][i].transAxes)
     else:
-        textObj = axes[i+nHoriz].text(0.5, 0, panelLabel, c='w', bbox=dict(facecolor='black', alpha=0.5), horizontalalignment='center',verticalalignment='bottom', transform = axes[i+nHoriz].transAxes)
+        textObj = allAx[0][i].text(0.5, 0, panelLabel, c='w', bbox=dict(facecolor='black', alpha=0.5), horizontalalignment='center',verticalalignment='bottom', transform = allAx[0][i].transAxes)
     textObjs.append(textObj)
 
     # Set up dummy scatter objects. One for each wf for each inst
     scatObjs[myInst] = []
     for j in range(nWFs):
-        scatObj = axes[i].scatter(0,0, c=wfColorDict[theWFs[j]], s=0)
+        scatObj = allAx[0][i].scatter(0,0, c=wfColorDict[theWFs[j]], s=0, zorder=20)
         scatObjs[myInst].append(scatObj)
+        
         
     #|--- Get WF scatter points in pixels ---|
     if instIdx in pidx2params[myInst]:        
@@ -312,10 +443,132 @@ for i in range(nInsts):
                 awf.getPoints()
                 plotPts = getScatterPoints(satStuff[myInst][didx][instIdx], awf.points)
                 scatObjs[myInst][j].set_offsets(plotPts)
-                scatObjs[myInst][j].set_sizes(wfSize*np.ones(plotPts.shape[0]))                
+                scatObjs[myInst][j].set_sizes(wfSize*np.ones(plotPts.shape[0]))         
+# Set up ovw
+if ovw:
+    ovwScats = []
+    satScats = [[], [], [], [], [], []] # [line1, line2, fill, text] for each sat
+    satStr   = [] # temp holder to make sure no duplicate sat names
+    L1counter = 0
+    #|---- Create the sun and earth (nbd) ----|
+    # These are const, don't need to save plot objects
+    twopi = np.linspace(0, 2.01*np.pi, 200)
+    x_data = np.cos(twopi)
+    y_data = np.sin(twopi)
+    allAx[2].plot(x_data, y_data, 'w', lw=1, zorder=0)    
+    allAx[2].scatter([0],[0], c='y', s=50, zorder=10)
+    allAx[2].scatter([0],[-1], c='DeepSkyBlue', s=50, zorder=2)
+    
+    # Add the general time on the ovw
+    theTime = tMovie[movt].strftime("%Y-%m-%dT%H:%M")
+    timeItem = allAx[2].text(0.02, 0.98, theTime, c='w', horizontalalignment='left',verticalalignment='top', transform = allAx[2].transAxes)  
+    
+    #|---- Create wireframe scatters ----|
+    for j in range(nWFs):
+        scatObj = allAx[2].scatter(0,0, c=wfColorDict[theWFs[j]], s=0, zorder=10)
+        ovwScats.append(scatObj)  
+    
+    #|---- Create/plot satellite scatters ----|
+    for i in range(nInsts):
+        myInst = allInsts[i]
+        instIdx = movie2inst[myInst][movt]
+        
+        # Sat scatter dots
+        myPos  = satStuff[myInst][0][instIdx]['POS']
+        myR = myPos[2] / 1.496e+11 
+        myLon = myPos[1] * np.pi / 180.
+        y = - myR * np.cos(myLon)
+        x = myR * np.sin(myLon)
+        satScat = allAx[2].scatter(x,y, c='w', s=20, zorder=3)
+        satScats[0].append(satScat)
+        
+        # Sat FoVs
+        # Line 1
+        myPoint = satStuff[myInst][0][instIdx]['POINTING'][1]
+        xPt1 = myPoint[1] 
+        yPt1 = -myPoint[0]
+        curve1, = allAx[2].plot([x, xPt1], [y, yPt1], 'w', lw=0.5, zorder=2)
+        satScats[1].append(curve1)
+        # Line 2
+        myPoint = satStuff[myInst][0][instIdx]['POINTING'][2]
+        xPt2 = myPoint[1] 
+        yPt2 = -myPoint[0]
+        curve2, = allAx[2].plot([x, xPt2], [y, yPt2], 'w', lw=0.5, zorder=2)
+        satScats[2].append(curve2)
+        # Fill
+        xA, yA = np.array([x, xPt1]), np.array([y, yPt1])
+        xB, yB = np.array([x, xPt2]), np.array([y, yPt2])
+        xClosed = np.append(xA, xB[::-1])
+        yClosed = np.append(yA, yB[::-1])
+        fillIt = allAx[2].fill(xClosed, yClosed, color='blue', alpha=0.25, zorder=0)[0]
+        satScats[3].append(fillIt)
+        
+        # Sat Name (not inst)
+        myName = satStuff[myInst][0][instIdx]['SHORTNAME']
+        if myName not in satStr:
+            satStr.append(myName)
+            # inner cases
+            if myR < 0.8:
+                if x < 0:
+                    xsat = x - 0.07
+                else:
+                    xsat = x + 0.07
+                if y < 0:
+                    ysat =  y - 0.1
+                else:
+                    ysat = y +0.05
+            # L1 cases
+            elif np.abs(myLon) < np.pi / 18:
+                xsat = myR * np.sin(myLon)
+                if L1counter == 0:
+                    ysat = -1.05
+                else:
+                    ysat = -0.95 + L1counter * 0.1
+                L1counter +=1
+            # Other cases prob ok with this?               
+            else:
+                if x < 0:
+                    xsat = x - 0.07
+                else:
+                    xsat = x + 0.07
+                if y < 0:
+                    ysat =  y - 0.1
+                else:
+                    ysat = y +0.05
+            textItem = allAx[2].text(xsat, ysat, myName, c='w')    
+            myLat = '{:.1f}'.format(myPos[0])
+            latItem = allAx[2].text(0.98, 1.01 -0.03*len(satStr), myName +': '+myLat+'$^{\\circ}$', c='w', horizontalalignment='right',verticalalignment='top', transform = allAx[2].transAxes)  
+            
+        else:
+            textItem = None
+            latItem = None
+        satScats[4].append(textItem)
+        satScats[5].append(latItem)
+                    
+    
+    for j in range(nWFs):
+        # Figure out if any inst has a set of params for this time
+        # This will overwrite vals if diff insts have diff values 
+        # but the small diffs shouldn't matter on ovw plot scale
+        myParams = None
+        for i in range(nInsts):
+            myInst = allInsts[i]
+            instIdx = movie2inst[myInst][movt] 
+            if instIdx in pidx2params[myInst]: 
+                if theWFs[j] in pidx2params[myInst][instIdx]:
+                    myParams = pidx2params[myInst][instIdx][theWFs[j]]
+        if type(myParams) != type(None):
+            awf = wf.wireframe(fullWF2type[theWFs[j]])
+            awf.params = myParams
+            awf.getPoints()
+            myxs = -awf.points[::2,0] / 215
+            myys = awf.points[::2,1]  / 215
+            ovwScats[j].set_offsets(np.transpose(np.array([myys,myxs])))
+            ovwScats[j].set_sizes(int(0.5*wfSize)*np.ones(len(myxs)))
+            
 
-plt.subplots_adjust(wspace=0.0, hspace=0.0,left=0,right=1,bottom=0,top=1)
-
+#plt.show()
+#print (sd)
     
     
 def update(movt):
@@ -334,7 +587,7 @@ def update(movt):
             imObjsC[i].set_data(mySclIm)
             
         #|--- Get WF scatter points in pixels ---|
-        if instIdx in pidx2params[myInst]:        
+        if instIdx in pidx2params[myInst]:     
             #|--- Convert WF points to proj ---|
             for j in range(nWFs):
                 if theWFs[j] in pidx2params[myInst][instIdx]:
@@ -345,15 +598,114 @@ def update(movt):
                     plotPts = getScatterPoints(satStuff[myInst][didx][instIdx], awf.points)
                     scatObjs[myInst][j].set_offsets(plotPts)
                     scatObjs[myInst][j].set_sizes(wfSize*np.ones(plotPts.shape[0]))
+                else:
+                    scatObjs[myInst][j].set_offsets([0,0])
         else:
             # Clean it out if we don't have a fit
             for j in range(nWFs):
                 scatObjs[myInst][j].set_offsets([0,0])
+    if ovw:
+        theTime = tMovie[movt].strftime("%Y-%m-%dT%H:%M")
+        timeItem.set_text(theTime)  
+                
+        # |--- Update satellites ---|
+        satStr = []
+        L1counter = 0
+        for i in range(nInsts):
+            myInst = allInsts[i]
+            instIdx = movie2inst[myInst][movt]
+        
+            myPos  = satStuff[myInst][0][instIdx]['POS']
+            myR = myPos[2] / 1.496e+11 
+            myLon = myPos[1] * np.pi / 180.
+            y = - myR * np.cos(myLon)
+            x = myR * np.sin(myLon)
+            satScats[0][i].set_offsets([x,y])
+            
+            # Line 1
+            myPoint = satStuff[myInst][0][instIdx]['POINTING'][1]
+            xPt1 = myPoint[1] 
+            yPt1 = -myPoint[0]
+            satScats[1][i].set_data([x, xPt1], [y, yPt1])
+            # Line 2
+            myPoint = satStuff[myInst][0][instIdx]['POINTING'][2]
+            xPt2 = myPoint[1] 
+            yPt2 = -myPoint[0]
+            satScats[2][i].set_data([x, xPt2], [y, yPt2])
+            # Fill
+            xA, yA = np.array([x, xPt1]), np.array([y, yPt1])
+            xB, yB = np.array([x, xPt2]), np.array([y, yPt2])
+            xClosed = np.append(xA, xB[::-1])
+            yClosed = np.append(yA, yB[::-1])
+            
+            new_vertices = np.column_stack((xClosed, yClosed))
+            satScats[3][i].set_xy(new_vertices)
+            
+            myName = satStuff[myInst][0][instIdx]['SHORTNAME']
+            if myName not in satStr:
+                satStr.append(myName)
+                # inner cases
+                if myR < 0.8:
+                    if x < 0:
+                        xsat = x - 0.07
+                    else:
+                        xsat = x + 0.07
+                    if y < 0:
+                        ysat =  y - 0.1
+                    else:
+                        ysat = y +0.05
+                # L1 cases
+                elif np.abs(myLon) < np.pi / 18:
+                    xsat = myR * np.sin(myLon)
+                    if L1counter == 0:
+                        ysat = -1.05
+                    else:
+                        ysat = -0.95 + L1counter * 0.1
+                    L1counter +=1
+                # Other cases prob ok with this?               
+                else:
+                    if x < 0:
+                        xsat = x - 0.07
+                    else:
+                        xsat = x + 0.07
+                    if y < 0:
+                        ysat =  y - 0.1
+                    else:
+                        ysat = y +0.05
+                satScats[4][i].set_position((xsat, ysat))    
+                
+                myLat = '{:.1f}'.format(myPos[0])
+                satScats[5][i].set_text(myName +': '+myLat+'$^{\\circ}$')
+            
+        # |--- Update wireframes ---|
+        for j in range(nWFs):
+            # Figure out if any inst has a set of params for this time
+            # This will overwrite vals if diff insts have diff values 
+            # but the small diffs shouldn't matter on ovw plot scale
+            myParams = None
+            for i in range(nInsts):
+                myInst = allInsts[i]
+                instIdx = movie2inst[myInst][movt] 
+                if instIdx in pidx2params[myInst]: 
+                    if theWFs[j] in pidx2params[myInst][instIdx]:
+                        myParams = pidx2params[myInst][instIdx][theWFs[j]]
+            if type(myParams) != type(None):
+                awf = wf.wireframe(fullWF2type[theWFs[j]])
+                awf.params = myParams
+                awf.getPoints()
+                myxs = -awf.points[::2,0] / 215
+                myys = awf.points[::2,1]  / 215
+                ovwScats[j].set_offsets(np.transpose(np.array([myys,myxs])))
+                ovwScats[j].set_sizes(int(0.5*wfSize)*np.ones(len(myxs)))
+            else:
+                ovwScats[j].set_offsets([0,0])
+                #ovwScats[j].set_sizes(wfSize*np.ones(len(myxs)))
+           
         
     
 ani = animation.FuncAnimation(fig=fig, func=update, frames=nTimes+2, interval=150)
-plt.show()
-#ani.save('test.mp4', writer='ffmpeg')
+#plt.show()
+ani.save('test.mp4', writer='ffmpeg')
 
 
 '''fig, ax = plt.subplots()
