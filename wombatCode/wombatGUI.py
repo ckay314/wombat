@@ -2399,8 +2399,8 @@ class FigWindow(QWidget):
                         print ('!!!--- Warning PoS separation large, capping at 80 deg ---!!!')
                         mySep = 80                                            
                     # Need to convert the h to projected for elTheory
-                    rpos, Bpos = wM.elTheory([wfs[i].params[0]]*np.cos(mySep*np.pi/180.), 0)
-                    rsep, Bsep = wM.elTheory([wfs[i].params[0]]*np.cos(mySep*np.pi/180.), mySep)
+                    rpos, Bpos = wM.elTheory([wfs[i].params[0]*np.cos(mySep*np.pi/180.)], 0)
+                    rsep, Bsep = wM.elTheory([wfs[i].params[0]*np.cos(mySep*np.pi/180.)], mySep)
                     sclfct = Bsep / Bpos
                     print ((self.satName + ' PoS WF' + str(i+1) + ' mass (g): ').rjust(50) + "{:.3e}".format(np.sum(self.WFmasks[i]* self.mIms[self.pickIdx])))
                     print ((self.satName + ' deProj WF' + str(i+1) + ' mass (g): ').rjust(50) + "{:.3e}".format(np.sum(self.WFmasks[i]* self.mIms[self.pickIdx]/sclfct)), ' (scale factor ', "{:.1f}".format(1/sclfct[0]), ')')

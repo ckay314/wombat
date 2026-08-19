@@ -1,3 +1,97 @@
+"""
+Helper script to make a movie from a wombat log file
+
+python3 wombatMovie.py
+
+Unlike the other wombat scripts this does not support direct
+command line interfacing. There are enough parameters that it is
+best to just edit the top portion of the file instead of trying to
+pass them all via tags. This is all done in the 'Configure here!!!'
+section
+
+!!! Note that this is set to save movies using ffmpeg (even tho there
+is no explict import of ffmpeg). For this to work, at least on Mac,
+ffmpeg must be installed via brew not pip. If you are getting codec
+errors try uninstalling the pip version then using brew !!!
+
+"""
+
+#|---------------------------------------|
+#|---------------------------------------|
+#|---------- Configure here!!! ----------|
+#|---------------------------------------|
+#|---------------------------------------|
+global doClean, customOrder, ovw
+
+# Name of wombat log file
+logFilePath = 'wbOutputs/202303pretty.txt'
+
+# Movie save name. Should end with .mp4 (other formats untested)
+movieName = 'test.mp4'
+
+# Lines to do, same string format as other wombat functions
+idstr = '1-9'
+
+# Time Resolution (in minutes)
+tRes = 30 
+
+# Number of columns in movie (max 5)
+nHoriz = 1
+
+# Include clean imgs without wf proj
+doClean = True
+
+# Flag to set the instrument order
+# (must include all the inst in the pickle)
+customOrder = True
+#instOrder = ['C2', 'COR2A', 'C3', 'WISPRI', 'SoloHI', 'HI1A_SR']
+instOrder = ['C2']
+    
+# Running (0) or base diff (1)
+didx = 0
+# Scaling mode linear(0), log(1), or sqrt(2)
+sclidx = 0 
+# Wireframe scatter point size
+wfSize = 3
+
+# Option to include overview plot
+ovw = True
+
+# Option to set custom colors, otherwise will use standard
+# wombat GUI colors based on WF type. Custom will cycle 
+# through the array in alphabetical order. Can use names 
+# or html tags 
+doCustomColors = True
+customColors = ['#9AE630', 'cyan', 'DeepPink', 'PeachPuff', 'Gold', 'BlueViolet', 'LimeGreen']
+
+    
+# Dictionary for min/max values based on inst/scale mode
+# Edit these if you want to change the levels in the movie
+# order is [[min], [max]] where each is [linear, log, sqrt]
+aiamm = [[0,0,0], [191, 191, 191]]    # [[0,0,0], [191, 191, 191]]
+euimm = [[63,67,32], [150, 230, 191]] # [63,67,32], [150, 230, 191]]
+cormm = [[63,0,21], [191, 191, 191]]  # [[63,0,21], [191, 191, 191]]
+c2mm  = [[0,0,21], [191,191,191]]     # [[0,0,21], [191,191,191]]
+c3mm  = [[37,0,37], [191,191,191]]    # [[37,0,37], [191,191,191]]
+himm  = [[63,0,21], [128,191,191]]    # [[63,0,21], [128,191,191]]
+solomm = [[0,0,21], [128,191,191]]    # [[0,0,21], [128,191,191]]
+wispmm = [[0,0,21], [128,191,191]]    # [[0,0,21], [128,191,191]]
+
+
+
+
+
+
+
+
+#|----------------------------------------------|
+#|----------------------------------------------|
+#|--------------- No touching!!! ---------------|
+#|----------------------------------------------|
+#|----------------------------------------------|
+# Standard use should not involved editing 
+# anything below here
+#|--- Imports ---|
 import matplotlib.pyplot as plt
 import numpy as np
 import sys
@@ -14,66 +108,94 @@ import wombatPlots as wp
 import wombatWF as wf
 from wombatGUI import pts2proj
 
-# Python needs ffmpeg installed via brew, just using pip does
-# not work for some random reason
+# Dump the min max in a dictionary to match inst tags
+MMdict = {'AIA94':aiamm, 'AIA131':aiamm, 'AIA171':aiamm,'AIA193':aiamm,'AIA211':aiamm,'AIA304':aiamm,'AIA335':aiamm,'AIA1600':aiamm,'AIA1700':aiamm, 'C2':c2mm, 'C3':c3mm, 'COR1':cormm, 'COR2':cormm, 'COR1A':cormm, 'COR2A':cormm, 'COR1B':cormm, 'COR2B':cormm, 'EUI174':aiamm, 'EUI304':aiamm, 'EUVI171':aiamm, 'EUVI195':aiamm, 'EUVI284':aiamm, 'EUVI304':aiamm, 'EUVI171A':aiamm, 'EUVI195A':aiamm, 'EUVI284A':aiamm, 'EUVI304A':aiamm, 'EUVI171B':aiamm, 'EUVI195B':aiamm, 'EUVI284B':aiamm, 'EUVI304B':aiamm, 'HI1':himm, 'HI2':himm, 'HI1A':himm, 'HI2A':himm, 'HI1B':himm, 'HI2B':himm, 'HI1A_SR':himm, 'HI1B_SR':himm, 'HI2A_SR':himm, 'HI2B_SR':himm, 'SOLOHI':solomm, 'SOLOHI1':solomm, 'SOLOHI2':solomm, 'SOLOHI3':solomm, 'SOLOHI4':solomm, 'WISPR':wispmm, 'WISPRI':wispmm, 'WISPRO':wispmm, 'WISPR_LW':wispmm, 'WISPRI_LW':wispmm, 'WISPRO_LW':wispmm, 'WISPR_L3':wispmm, 'WISPRI_L3':wispmm, 'WISPRO_L3':wispmm}
 
-
-#|-------------------------|
-#|--- Configure here!!! ---|
-#|-------------------------|
-# Name of wombat log file
-#logFilePath = 'wbOutputs/2303full_CME1b.txt'
-logFilePath = 'tempLog.txt'
-logFilePath = 'wbOutputs/201207pretty.txt'
-
-# Movie save name
-#movieName = '2023full.mp4'
-movieName = '2012full.mp4'
-
-# Lines to do
-#lines = range(41) # Replace with string reading code from other files
-#lines = range(410)
-lines=np.arange(40, 160)-1
-# Time Resolution (in minutes)
-tRes = 30 
-# Plot shape (max of 5 horiz)
-nHoriz = 2
-# Include clean imgs without wf proj
-doClean = False
-# Instrument order
-customOrder = False
-instOrder = ['C2', 'COR2A', 'C3', 'WISPRI', 'SoloHI', 'HI1A_SR']
+#|----------------------------------|
+#|--- ID string to integer array ---|
+#|----------------------------------|
+def processIDstring(idstr):
+    """
+    Helper function that converts a string into an
+    array of integer line numbers
     
-# Running (0) or base diff (1)
-didx = 0
-# Scaling mode linear(0), log(1), or sqrt(2)
-sclidx = 0 
-# Wireframe scatter point size
-wfSize = 3
-
-# Option to include overview plot
-ovw = True
-
-# Option to set custom colors, otherwise will use standard
-# wombat GUI colors based on WF type. Custom will cycle 
-# through the array in alphabetical order 
-doCustomColors = False
-customColors = ['#9AE630', 'cyan', 'DeepPink', 'PeachPuff', 'Gold', 'BlueViolet', 'LimeGreen']
-
+    Input:
+        idstr: an string with a single integer or a
+               set of ints separated by + and/or -
     
-# Dictionary for min/max values based on inst/scale mode
-aiamm = [[0,0,0], [191, 191, 191]]
-euimm = [[63,67,32], [150, 230, 191]]
-cormm = [[63,0,21], [191, 191, 191]]
-c2mm  = [[0,0,21], [191,191,191]]
-c3mm  = [[37,0,37], [191,191,191]]
-himm  = [[63,0,21], [128,191,191]]
-wilomm = [[0,0,21], [128,191,191]]
+    Output:
+        ids:   an array of integers
+    
+    Examples:
+        '1+2' -> [1,2]
+        '1-5' -> [1,2,3,4,5]
+        '1-3+5+8-10' -> [1,2,3,5,8,9,10]
+    """
+    # String includes a range
+    if '-' in idstr:
+        # Range and an add!
+        if '+' in idstr:
+            # Split by adds
+            chunks = idstr.split('+')
+            ids = []
+            # Check each chunk
+            for chunk in chunks:
+                if '-' in chunk:
+                    splitstr = chunk.split('-')
+                    theseIds = np.arange(int(splitstr[0]), int(splitstr[1])+1,1, dtype=int)
+                    ids.extend(theseIds)
+                else:
+                    try:
+                        myId = int(chunk)
+                        ids.extend(chunk)
+                    except:
+                        sys.exit('Error processing id string')
+        # Just a range
+        else:
+            splitstr = idstr.split('-')
+            if len(splitstr) > 2:
+                sys.exit('Cannot process ids with multiple -')
+            ids = np.arange(int(splitstr[0]), int(splitstr[1])+1,1, dtype=int)
+    # Just an add
+    elif '+' in idstr:
+        splitstr = idstr.split('+')
+        ids = []
+        for aStr in splitstr:
+            try:
+                ids.append(int(aStr))
+            except:
+                print ('Error in converting id string to individual ids. Error at', aStr)
+                sys.exit()                
+    # Just an int (or fail for a letter)
+    else:
+        try:
+            ids = [int(idstr)]
+        except:
+            print ('Error in converting id string to individual ids. Error from', idstr)
+            sys.exit()
+    return ids
 
-MMdict = {'AIA94':aiamm, 'AIA131':aiamm, 'AIA171':aiamm,'AIA193':aiamm,'AIA211':aiamm,'AIA304':aiamm,'AIA335':aiamm,'AIA1600':aiamm,'AIA1700':aiamm, 'C2':c2mm, 'C3':c3mm, 'COR1':cormm, 'COR2':cormm, 'COR1A':cormm, 'COR2A':cormm, 'COR1B':cormm, 'COR2B':cormm, 'EUI174':aiamm, 'EUI304':aiamm, 'EUVI171':aiamm, 'EUVI195':aiamm, 'EUVI284':aiamm, 'EUVI304':aiamm, 'EUVI171A':aiamm, 'EUVI195A':aiamm, 'EUVI284A':aiamm, 'EUVI304A':aiamm, 'EUVI171B':aiamm, 'EUVI195B':aiamm, 'EUVI284B':aiamm, 'EUVI304B':aiamm, 'HI1':himm, 'HI2':himm, 'HI1A':himm, 'HI2A':himm, 'HI1B':himm, 'HI2B':himm, 'HI1A_SR':himm, 'HI1B_SR':himm, 'HI2A_SR':himm, 'HI2B_SR':himm, 'SOLOHI':wilomm, 'SOLOHI1':wilomm, 'SOLOHI2':wilomm, 'SOLOHI3':wilomm, 'SOLOHI4':wilomm, 'WISPR':wilomm, 'WISPRI':wilomm, 'WISPRO':wilomm, 'WISPR_LW':wilomm, 'WISPRI_LW':wilomm, 'WISPRO_LW':wilomm, 'WISPR_L3':wilomm, 'WISPRI_L3':wilomm, 'WISPRO_L3':wilomm}
-
-
+#|-------------------------------|
+#|--- WF points to projection ---|
+#|-------------------------------|
 def getScatterPoints(mySatStuff, myPoints):
+    """
+    Helper function largely lifted from pieces of 
+    WOMBAT. Takes the satellite pointing information
+    and converts the wireframe points into the 
+    projected pixels
+    
+    Inputs:
+        mySatStuff - a satStuff (wombat header dictionary)
+                     for the instrument of interest
+    
+        myPoints - an array of wireframe points from wf.points
+    
+    Output:
+        plotPoints - an array of pixel locations [x,y] for the points
+                     given in myPoints
+    
+    """
     #|--- Get parameters needed for projection ---|
     # Get satellite position
     obs = mySatStuff['POS']
@@ -91,6 +213,7 @@ def getScatterPoints(mySatStuff, myPoints):
     
     allxs = []
     allys = []  
+    #|--- Loop through WF points ---|
     for jj in range(len(myPoints[:,0])):
         # Convert Cart to Sph
         pt = myPoints[jj,:]
@@ -118,8 +241,7 @@ def getScatterPoints(mySatStuff, myPoints):
         # Just calc all non wispr cases        
         else:
             myPt = pts2proj(pt, obs, obsScl, mywcs, occultR=occultR)
-        
-        
+                
         # If the point is in the FoV add it to draw    
         if len(myPt) > 0:   
             allxs.append(myPt[0][0])      
@@ -127,10 +249,44 @@ def getScatterPoints(mySatStuff, myPoints):
     plotPts = np.transpose(np.array([allxs,allys]))    
     return plotPts
 
- 
-
-
-def setupFigure(allInsts, nHoriz, doClean, ovw, bigOVW=True):
+#|--------------------|
+#|--- Figure Setup ---|
+#|--------------------|
+def setupFigure(nInsts, nHoriz, doClean, ovw, bigOVW=True):
+    """
+    Helper function to set up the figure and axes. Hiding this
+    away in a function because a little bit of effort sorting 
+    out sizes and whatnot based on user specifications.
+    
+    Inputs:
+        nInsts - the number of instruments/panels to include 
+        
+        nHoriz - the number of columns in the figure. if nInsts is
+                 greater than nHoriz it will make multiple rows
+    
+        doClean - flag to include 'clean' versions of the obs where
+                  there are no wf points plotted on top. these will
+                  be shown directly under each unclean panel
+    
+        ovw -  flag to include the overview window showing the sat
+               locations, FoVs, and projections of the wfs in the 
+               equatorial plane
+        
+    Optional Inputs:
+        bigOVW - flag to allow for a large ovw that takes up 2x2
+                 panels instead of 1x1 like the observations. it's
+                 only shown large if the layout is such to have a 
+                 2x2 gap available
+    
+    Outputs:
+        fig - the figure object
+    
+        allAx - an array of 1d axes arrays in the form [axesI, axesC, axesO]
+                where axesI are the main instrument panels (with wf proj)
+                axesC are the clean panels (None if not used) and axesO is
+                the overview window panel (None if not used)
+    """
+    
     # |---------------------------|
     # |--- Sort out grid sizes ---|
     # |---------------------------|
@@ -139,7 +295,7 @@ def setupFigure(allInsts, nHoriz, doClean, ovw, bigOVW=True):
         sys.exit('Max of 5 for nHoriz, currently set at '+str(nHoriz))
     # Number of insts
     nInst = len(allInsts)
-    # Set nHoriz at nInst if shorter
+    # Set nHoriz at nInst if shorter to make life easy
     nHoriz = np.min([nInst,nHoriz])
     # Number of rows needed for insts
     nBot = nInst % nHoriz
@@ -200,7 +356,7 @@ def setupFigure(allInsts, nHoriz, doClean, ovw, bigOVW=True):
     
     axesI = []
     axesC = []
-    axesO = None # grammatically incorrect but CK less likely to typo it matching
+    axesO = None # grammatically incorrect but CK less likely to typo axis
     # integer shift to account for clean rows
     clShift = 0
     if doClean: clShift = 1
@@ -230,7 +386,7 @@ def setupFigure(allInsts, nHoriz, doClean, ovw, bigOVW=True):
         axesO.set_axis_off()
         axesO.set_aspect('equal')
     
-    
+    # Turn off axes and set equal aspect
     for axSet in [axesI,axesC]:
         for ax in axSet: 
             ax.set_axis_off()
@@ -243,221 +399,326 @@ def setupFigure(allInsts, nHoriz, doClean, ovw, bigOVW=True):
     
     return fig, allAx
             
-                
-        
-        
-        
-        
+#|-------------------|
+#|--- Color Setup ---|
+#|-------------------|
+def setUpCMaps(allInsts):
+    """
+    Helper function that calls check4CT from wombatLoadCTs
+    and converts the results into color maps for the figure
+    to use
     
-        
-        
+    Input:
+        allInsts - an array of the instrument names
     
- 
-#|------------------------------|
-#|--- Read in fits, organize ---|
-#|------------------------------|
-logFile = np.genfromtxt(logFilePath, dtype=str)
-allInsts = np.unique(logFile[lines,1])
-nInsts = len(allInsts)
-
-# Calc num of rows bases on nHoriz and nInsts
-nVert = int(nInsts / nHoriz)+1 # need to calc this later
-if doClean:
-    nVert *= 2
-
-# Check if given custom order
-if customOrder:
-    if np.array_equal(np.sort(instOrder), np.sort(allInsts)):
-        allInsts = instOrder
+    Output:
+        instCMaps - a dictionary with the color map for each inst
+    
+        instMinMax - a dictionary with the [min, max] contour values
+    """
+    # Set up color maps and min/max for each inst
+    instCMaps = {}
+    instMinMax = {}
+    for key in allInsts:
+        # Get the color table
+        fakeIt = {}
+        fakeIt['OBS'] = wp.inst2sat[key.upper()]
+        fakeIt['INST'] = key
+        hasCT = check4CT(fakeIt)
+        if type(hasCT) == type(None):
+            hasCT = 'gray'
+        else:
+            normalized_colors = [(r/255, g/255, b/255) for r, g, b in hasCT]        
+            hasCT = LinearSegmentedColormap.from_list('mygrad',normalized_colors)
+        instCMaps[key] = hasCT
+        myMMs = MMdict[key.upper()]
+        instMinMax[key] = [myMMs[0][sclidx], myMMs[1][sclidx]]
+    return instCMaps, instMinMax
+        
+def setupWFcolors(theWFs, customColors=None):
+    """
+    Helper function to get the wireframe colors
+    
+    Input:
+        theWFs - a list of wf names
+    
+    Optional Input:
+        customColors - a list of custom colors to use instead
+                       of using the wombat defaults by wf type
+                       (defaults to None -> wombat colors)
+    
+    Output:
+        wfColorDict - a dictionary mapping wf name to a color
+    
+    """
+    # Set up colors
+    wfColorDict = {}
+    nWFs = len(theWFs)
+    if type(customColors) != type(None):
+        if len(customColors) < nWFs:
+            sys.exit('Given fewer custom colors than number of wireframes. Fix at top of movie script.')
+        for i in range(nWFs):
+            wfColorDict[theWFs[i]] = customColors[i]
     else:
-        print ('Cannot match custom instrument order:')
-        print ('   ', instOrder)
-        print ('To instruments from log file: ')
-        print ('   ', allInsts)
-        sys.exit('Exiting movie script')
-
-# |--- Set up figure ---|
-fig, allAx = setupFigure(allInsts, nHoriz, doClean, ovw)
+        for i in range(nWFs):
+            myType = fullWF2type[theWFs[i]] # take off last character -> should be good for most cases
+            wfColorDict[theWFs[i]] = wf.colorDict[myType]
+    return wfColorDict
     
-
-allPickles = np.unique(logFile[lines,13])
-if len(allPickles) != 1:
-    sys.exit('Cannot combine multiple pickles (yet)')
-nLines = len(logFile[lines,0])
-theWFs = np.unique(logFile[lines,3])
-nWFs = len(theWFs)
-
-# Check WF types 
-fullWF2type = {}
-for i in range(nWFs):
-    myType = theWFs[i][:-1].replace("Half", 'Half ') # take off last character -> should be good for most cases
-    if myType in wf.colorDict:
-        fullWF2type[theWFs[i]] = myType
-    elif myType[:-1] in wf.colorDict: # try one more in case has two digit number
-        fullWF2type[theWFs[i]] = myType[:-1]
-    else:
-        print ('Unknown WF type:', theWFs[i])
-        print('Needs to be an existing WOMBAT WF type with no more than two additional')
-        print('identifying characters at the end (e.g. typeX or typeXX)')
-        sys.exit()
-        
-# Set up colors
-wfColorDict = {}
-if doCustomColors:
-    if len(customColors) < nWFs:
-        sys.exit('Given fewer custom colors than number of wireframes. Fix at top of movie script.')
-    for i in range(nWFs):
-        wfColorDict[theWFs[i]] = customColors[i]
-else:
-    for i in range(nWFs):
-        myType = fullWF2type[theWFs[i]] # take off last character -> should be good for most cases
-        wfColorDict[theWFs[i]] = wf.colorDict[myType]
-
-
-# Package by inst, figure out min/max time
-timesByInst  = {}
-pidx2params   = {}
-minTime = datetime.datetime(3000,1,1)
-maxTime = datetime.datetime(1000,1,1)
-for j in range(nLines):
-    i = lines[j]
-    myInst = logFile[i,1]
-    myTime = datetime.datetime.strptime(logFile[i,2], "%Y-%m-%dT%H:%M:%S" )
-    myWFtype = logFile[i,3]
-    myParams = logFile[i,4:13]
-    myParams = myParams[myParams != 'None'].astype(float)
-    mypidx   = int(logFile[i,14])
-    if myInst not in timesByInst:
-        timesByInst[myInst]  = []
-        pidx2params[myInst]   = {}
-    if mypidx not in pidx2params[myInst]:
-        pidx2params[myInst][mypidx] = {}
-    timesByInst[myInst].append(myTime)
-    pidx2params[myInst][mypidx][myWFtype] = myParams
+#|--------------------|
+#|--- Time Mapping ---|
+#|--------------------|
+def setupTimes(lines, logFile, proIms):
+    """
+    Function that sorts out everything related to time for
+    the movie. It determines the time range, the individual 
+    time steps, and maps from observation time to movie time
     
+    Input:
+        lines - the integer ids of the lines in the logFile that the movie
+                will use
+    
+        logFile - the contents of the wombat log file opened using genfromtxt
+    
+        proIms - the process images structure from the wombat pickle
+    
+    Output:
+        timesByInst - a dictionary with an array containing the observation times f
+                      for each instrument
+                      e.g. timesByInst[inst][time1, time2 ] where times are datetimes
+    
+        pidx2params - a dictionary for each instrument that maps each pickle index
+                      to the corresponding wf parameters at that time
+                      e.g. pidx2params[inst][pickleIdx][wfType] = [params]
+    
+        tMovie - an array of datetime objects corresponding to the movie frames
+    
+        movie2inst - a dictionary mapping from movie index to pickle index for each inst
+    
+    """
+    # Package by inst, figure out min/max time
+    timesByInst  = {}
+    pidx2params   = {}
+    minTime = datetime.datetime(3000,1,1)
+    maxTime = datetime.datetime(1000,1,1)
+    nLines = len(lines)
+    for j in range(nLines):
+        i = lines[j]
+        myInst = logFile[i,1]
+        myTime = datetime.datetime.strptime(logFile[i,2], "%Y-%m-%dT%H:%M:%S" )
+        myWFtype = logFile[i,3]
+        myParams = logFile[i,4:13]
+        myParams = myParams[myParams != 'None'].astype(float)
+        mypidx   = int(logFile[i,14])
+        if myInst not in timesByInst:
+            timesByInst[myInst]  = []
+            pidx2params[myInst]   = {}
+        if mypidx not in pidx2params[myInst]:
+            pidx2params[myInst][mypidx] = {}
+        timesByInst[myInst].append(myTime)
+        pidx2params[myInst][mypidx][myWFtype] = myParams
+    
+        # Track early/late time
+        if myTime < minTime: minTime = myTime
+        if myTime > maxTime: maxTime = myTime
 
-    # Track early/late time
-    if myTime < minTime: minTime = myTime
-    if myTime > maxTime: maxTime = myTime
+    # Start at rounded minTime
+    startTime = datetime.datetime(minTime.year, minTime.month, minTime.day, minTime.hour)     
+    fracUnder = (minTime-startTime).total_seconds()/60 / tRes
+    if fracUnder > 1:
+        startTime = startTime + datetime.timedelta(seconds=int(fracUnder)*tRes*60)
 
-# Start at rounded minTime
-startTime = datetime.datetime(minTime.year, minTime.month, minTime.day, minTime.hour)     
-fracUnder = (minTime-startTime).total_seconds()/60 / tRes
-if fracUnder > 1:
-    startTime = startTime + datetime.timedelta(seconds=int(fracUnder)*tRes*60)
-
-# Figure out number of movie steps
-nTimes = int((maxTime - startTime).total_seconds()/60/tRes)
-tMovie = []
-for i in range(nTimes+2):
-    tMovie.append(startTime + datetime.timedelta(seconds=i*tRes*60))
-dtMovie = np.array([i*tRes for i in range(nTimes+2)])
-
-
-# Want to get all avail imgs in the pickle, including if beyond the latest
-# fit for that inst -> need to open pickles
-# Open the pickle
-with open(allPickles[0], 'rb') as file:
-    bkgData = pickle.load(file)   
-WBinfo = bkgData['WBinfo']
-proIms = bkgData['proImMaps']
-sclIms = bkgData['scaledIms']
-satStuff = bkgData['satStuff']
-
-allPtimes = {}
-allPdts = {}
-for key in timesByInst:
-    allPtimes[key] = []
-    allPdts[key] = []
-    for i in range(len(proIms[key][0])):
-        allPtimes[key].append(proIms[key][0][i].date.datetime)
-        allPdts[key].append((allPtimes[key][-1] - allPtimes[key][0]).total_seconds()/60. )
-# Map movie to instrument idx and pidx
-movie2inst  = {}
-movie2instP = {}
-
-
-for key in timesByInst:
-    movie2inst[key]  = []
-    my0diff = (allPtimes[key][0] - tMovie[0]).total_seconds()/60.
-    shiftDiff = np.array(allPdts[key]) + my0diff
+    # Figure out number of movie steps
+    nTimes = int((maxTime - startTime).total_seconds()/60/tRes)
+    tMovie = []
     for i in range(nTimes+2):
-        tdiff = np.abs(shiftDiff - dtMovie[i])         
-        idx = np.where(tdiff == np.min(tdiff))[0][0]
-        movie2inst[key].append(idx)
-
-# Set up color maps and min/max for each inst
-instCMaps = {}
-instMinMax = {}
-for key in timesByInst:
-    # Get the color table
-    fakeIt = {}
-    fakeIt['OBS'] = wp.inst2sat[key.upper()]
-    fakeIt['INST'] = key
-    hasCT = check4CT(fakeIt)
-    if type(hasCT) == type(None):
-        hasCT = 'gray'
-    else:
-        normalized_colors = [(r/255, g/255, b/255) for r, g, b in hasCT]        
-        hasCT = LinearSegmentedColormap.from_list('mygrad',normalized_colors)
-    instCMaps[key] = hasCT
-    myMMs = MMdict[key.upper()]
-    instMinMax[key] = [myMMs[0][sclidx], myMMs[1][sclidx]]
-
-
-
-
-# Plot time zero and set up all the img object
-
-movt = 0
-imObjs = []
-imObjsC = []
-textObjs = []
-scatObjs = {}
-for i in range(nInsts):
-    myInst = allInsts[i]
-    instIdx = movie2inst[myInst][movt]
-    mm = instMinMax[myInst]
-    mySclIm = sclIms[myInst][didx][instIdx][sclidx]
+        tMovie.append(startTime + datetime.timedelta(seconds=i*tRes*60))
+    dtMovie = np.array([i*tRes for i in range(nTimes+2)])    
     
-    imObj = allAx[0][i].imshow(mySclIm, cmap=instCMaps[myInst], vmin=mm[0], vmax=mm[1], origin='lower')
-    imObjs.append(imObj)
-    mydate =  proIms[myInst][0][instIdx].date.datetime.strftime("%Y-%m-%dT%H:%M")
-    panelLabel = myInst + ' ' + mydate
+    allPtimes = {}
+    allPdts = {}
+    for key in timesByInst:
+        allPtimes[key] = []
+        allPdts[key] = []
+        for i in range(len(proIms[key][0])):
+            allPtimes[key].append(proIms[key][0][i].date.datetime)
+            allPdts[key].append((allPtimes[key][-1] - allPtimes[key][0]).total_seconds()/60. )
+            
+    # Map movie to instrument idx and pidx
+    movie2inst  = {}
+    for key in timesByInst:
+        movie2inst[key]  = []
+        my0diff = (allPtimes[key][0] - tMovie[0]).total_seconds()/60.
+        shiftDiff = np.array(allPdts[key]) + my0diff
+        for i in range(nTimes+2):
+            tdiff = np.abs(shiftDiff - dtMovie[i])         
+            idx = np.where(tdiff == np.min(tdiff))[0][0]
+            movie2inst[key].append(idx)
+    
+    return timesByInst, pidx2params, tMovie, movie2inst
+    
+#|---------------------|
+#|--- General Setup ---|
+#|---------------------|
+def checkSetup(lines, logFile):
+    """
+    Function to check that everything is correct in the input
+    parameters and returns some basic settings
+    
+    Input:
+        lines - the integer ids of the lines in the logFile that the movie
+                will use
+    
+        logFile - the contents of the wombat log file opened using genfromtxt
+    
+    Output:
+        allInsts - a list of all the instruments to include. It will be in the
+                   custom order if that is provided in the user settings
+    
+        allPickles - a list of all the pickles to open. will be a single pickle
+                     right now because that is all that is supported
+    
+        theWFs - a list of all the wireframes to add in the figure. this will 
+                 be the tags as provided in logFile which are a combination of
+                 the wfType and an identifying tag (e.g. GCS1)
+    
+        fullWF2type - a dictionary mapping the full name in theWFs to the wf type
+                      that wombat needs to create a wf structure
+    
+    
+    """
+    allInsts = np.unique(logFile[lines,1])
+    nInsts = len(allInsts)
+    
+    # Check if given custom order
+    if customOrder:
+        if np.array_equal(np.sort(instOrder), np.sort(allInsts)):
+            allInsts = instOrder
+        else:
+            print ('Cannot match custom instrument order:')
+            print ('   ', instOrder)
+            print ('To instruments from log file: ')
+            print ('   ', allInsts)
+            sys.exit('Exiting movie script')
+            
+    allPickles = np.unique(logFile[lines,13])
+    if len(allPickles) != 1:
+        sys.exit('Cannot combine multiple pickles (yet)')
+    nLines = len(logFile[lines,0])
+    theWFs = np.unique(logFile[lines,3])
+    nWFs = len(theWFs)
+    
+    # Check WF types 
+    fullWF2type = {}
+    for i in range(nWFs):
+        myType = theWFs[i][:-1].replace("Half", 'Half ') # take off last character -> should be good for most cases
+        if myType in wf.colorDict:
+            fullWF2type[theWFs[i]] = myType
+        elif myType[:-1] in wf.colorDict: # try one more in case has two digit number
+            fullWF2type[theWFs[i]] = myType[:-1]
+        else:
+            print ('Unknown WF type:', theWFs[i])
+            print('Needs to be an existing WOMBAT WF type with no more than two additional')
+            print('identifying characters at the end (e.g. typeX or typeXX)')
+            sys.exit()
+    
+    
+    return allInsts, allPickles, theWFs, fullWF2type
 
-    if doClean:
-        imObjC = allAx[1][i].imshow(mySclIm, cmap=instCMaps[myInst], vmin=mm[0], vmax=mm[1], origin='lower')
-        imObjsC.append(imObjC)
-        textObj = allAx[1][i].text(0.5, 0, panelLabel, c='w', bbox=dict(facecolor='black', alpha=0.5), horizontalalignment='center',verticalalignment='bottom', transform = allAx[1][i].transAxes)
-    else:
-        textObj = allAx[0][i].text(0.5, 0, panelLabel, c='w', bbox=dict(facecolor='black', alpha=0.5), horizontalalignment='center',verticalalignment='bottom', transform = allAx[0][i].transAxes)
-    textObjs.append(textObj)
+#|-------------------------|
+#|--- Plot Object Setup ---|
+#|-------------------------|
+def setupImgObj():
+    """
+    Function to initialize all the objects in the figure. It set things
+    at the earliest time step values. The objects will be used in the
+    update function for animation. There are no direct inputs but it does
+    make use of all the global variables set before calling it
+    
+    Outputs:
+        imObjs - an array of all the imshow object for each main instrument panel
+    
+        imObjsC - an array of all the imshow object for each clean instrument panel
+    
+        textObjs - an array of the text objects that display the inst name/obs time
+    
+        scatObjs - a dictionary with entries for each instrument. the entry is an
+                   array with one scatter object for each wf that appears in the movie
+    
+    """
+    movt = 0 # set time at 0
+    # Setup holders
+    imObjs = []
+    imObjsC = []
+    textObjs = []
+    scatObjs = {}
+    
+    # Loop through instruments
+    for i in range(nInsts):
+        myInst = allInsts[i]
+        instIdx = movie2inst[myInst][movt]
+        mm = instMinMax[myInst]
+        mySclIm = sclIms[myInst][didx][instIdx][sclidx]
+        
+        #|--- Set up main image objects ---|
+        imObj = allAx[0][i].imshow(mySclIm, cmap=instCMaps[myInst], vmin=mm[0], vmax=mm[1], origin='lower')
+        imObjs.append(imObj)
+        mydate =  proIms[myInst][0][instIdx].date.datetime.strftime("%Y-%m-%dT%H:%M")
+        panelLabel = myInst + ' ' + mydate
 
-    # Set up dummy scatter objects. One for each wf for each inst
-    scatObjs[myInst] = []
-    for j in range(nWFs):
-        scatObj = allAx[0][i].scatter(0,0, c=wfColorDict[theWFs[j]], s=0, zorder=20)
-        scatObjs[myInst].append(scatObj)
-        
-        
-    #|--- Get WF scatter points in pixels ---|
-    if instIdx in pidx2params[myInst]:        
-        #|--- Convert WF points to proj ---|
+        #|--- Set up clean img objects and text label ---|
+        if doClean:
+            imObjC = allAx[1][i].imshow(mySclIm, cmap=instCMaps[myInst], vmin=mm[0], vmax=mm[1], origin='lower')
+            imObjsC.append(imObjC)
+            textObj = allAx[1][i].text(0.5, 0, panelLabel, c='w', bbox=dict(facecolor='black', alpha=0.5), horizontalalignment='center',verticalalignment='bottom', transform = allAx[1][i].transAxes)
+        else:
+            textObj = allAx[0][i].text(0.5, 0, panelLabel, c='w', bbox=dict(facecolor='black', alpha=0.5), horizontalalignment='center',verticalalignment='bottom', transform = allAx[0][i].transAxes)
+        textObjs.append(textObj)
+
+        # Set up dummy scatter objects. One for each wf for each inst
+        scatObjs[myInst] = []
         for j in range(nWFs):
-            if theWFs[j] in pidx2params[myInst][instIdx]:
-                nowPs = pidx2params[myInst][instIdx][theWFs[j]]
-                awf = wf.wireframe(fullWF2type[theWFs[j]])
-                awf.params = nowPs
-                awf.getPoints()
-                plotPts = getScatterPoints(satStuff[myInst][didx][instIdx], awf.points)
-                scatObjs[myInst][j].set_offsets(plotPts)
-                scatObjs[myInst][j].set_sizes(wfSize*np.ones(plotPts.shape[0]))         
-# Set up ovw
-if ovw:
+            scatObj = allAx[0][i].scatter(0,0, c=wfColorDict[theWFs[j]], s=0, zorder=20)
+            scatObjs[myInst].append(scatObj)
+        
+        #|--- Get WF scatter points in pixels ---|
+        if instIdx in pidx2params[myInst]:        
+            #|--- Convert WF points to proj ---|
+            for j in range(nWFs):
+                if theWFs[j] in pidx2params[myInst][instIdx]:
+                    nowPs = pidx2params[myInst][instIdx][theWFs[j]]
+                    awf = wf.wireframe(fullWF2type[theWFs[j]])
+                    awf.params = nowPs
+                    awf.getPoints()
+                    plotPts = getScatterPoints(satStuff[myInst][didx][instIdx], awf.points)
+                    scatObjs[myInst][j].set_offsets(plotPts)
+                    scatObjs[myInst][j].set_sizes(wfSize*np.ones(plotPts.shape[0]))   
+                     
+    return imObjs, imObjsC, textObjs, scatObjs
+
+def setupOVW(): 
+    """
+    Function to initialize all the objects in the figure. It set things
+    at the earliest time step values. The objects will be used in the
+    update function for animation. There are no direct inputs but it does
+    make use of all the global variables set before calling it
+    
+    Outputs:
+        ovwScats - an array of scatter objects for the wireframes
+        
+        satScats - an array of arrays of plot objects related to the satellites
+                   it contains [scatterPoint, FoVline1, FoVline2, FoVobject, text]
+                   where each item is an array for all satellites
+    
+        timeItem - the time label object
+    
+    """    
+    movt = 0
     ovwScats = []
     satScats = [[], [], [], [], [], []] # [line1, line2, fill, text] for each sat
     satStr   = [] # temp holder to make sure no duplicate sat names
     L1counter = 0
+    
     #|---- Create the sun and earth (nbd) ----|
     # These are const, don't need to save plot objects
     twopi = np.linspace(0, 2.01*np.pi, 200)
@@ -515,6 +776,7 @@ if ovw:
         myName = satStuff[myInst][0][instIdx]['SHORTNAME']
         if myName not in satStr:
             satStr.append(myName)
+            # Figure out where to place text
             # inner cases
             if myR < 0.8:
                 if x < 0:
@@ -571,6 +833,7 @@ if ovw:
             awf = wf.wireframe(fullWF2type[theWFs[j]])
             awf.params = myParams
             awf.getPoints()
+            # Downselect project, or not based on type
             if awf.WFtype not in ['Sphere', 'Half Sphere', 'Ellipse', 'Half Ellipse']:
                 myxs = -awf.points[::2,0] / 215
                 myys = awf.points[::2,1]  / 215
@@ -580,12 +843,18 @@ if ovw:
             ovwScats[j].set_offsets(np.transpose(np.array([myys,myxs])))
             ovwScats[j].set_sizes(int(0.5*wfSize)*np.ones(len(myxs)))
             
-
-#plt.show()
-#print (sd)
+    return ovwScats, satScats, timeItem
     
-    
+#|------------------------|
+#|--- Animation Update ---|
+#|------------------------|
 def update(movt):
+    """
+    Function passed to the animator which will update the plot based on time index. 
+    
+    This is essentially a copy of the setupImgObj and setupOVW functions with all
+    the object saving portions cut out
+    """
     for i in range(nInsts):
         myInst = allInsts[i]
         instIdx = movie2inst[myInst][movt]    
@@ -718,10 +987,69 @@ def update(movt):
             else:
                 ovwScats[j].set_offsets([0,0])
                 #ovwScats[j].set_sizes(wfSize*np.ones(len(myxs)))
-           
-        
+
+
+#|----------------------|
+#|----------------------|
+#|--- Main Procedure ---|
+#|----------------------|
+#|----------------------|
+ 
+#|---------------------|
+#|--- General Setup ---|
+#|---------------------|
+ids = processIDstring(idstr)
+lines = ids - 1 # txt file numbering one more than array index
+logFile = np.genfromtxt(logFilePath, dtype=str)
+
+# |--- Check the settings ---|    
+global allInsts, allPickles, theWFs, fullWF2type, nInsts, nWFs
+allInsts, allPickles, theWFs, fullWF2type = checkSetup(lines, logFile)
+nInsts = len(allInsts)
+nWFs = len(theWFs)
+
+# |--- Set up figure ---|
+global fig, allAx
+fig, allAx = setupFigure(len(allInsts), nHoriz, doClean, ovw)    
+
     
-ani = animation.FuncAnimation(fig=fig, func=update, frames=nTimes+2, interval=150)
+# |--- Open/unpackage the pickle ---|
+global proIms, sclIms, satStuff
+with open(allPickles[0], 'rb') as file:
+    bkgData = pickle.load(file)   
+WBinfo = bkgData['WBinfo']
+proIms = bkgData['proImMaps']
+sclIms = bkgData['scaledIms']
+satStuff = bkgData['satStuff']
+
+#|--- Map out times ---|
+global timesByInst, pidx2params, tMovie, movie2inst, nTimes
+timesByInst, pidx2params, tMovie, movie2inst = setupTimes(lines, logFile, proIms)
+nTimes = len(tMovie)
+    
+#|--- Set up color maps ---|
+global instCMaps, instMinMax
+instCMaps, instMinMax = setUpCMaps(allInsts) 
+
+#|--- Set up wf colors ---|
+global wfColorDict
+if not doCustomColors:
+    customColor = None
+wfColorDict = setupWFcolors(theWFs, customColors=customColors)
+
+#|--------------------|
+#|--- Object Setup ---|
+#|--------------------|
+global imObjs, imObjsC, textObjs, scatObjs
+imObjs, imObjsC, textObjs, scatObjs = setupImgObj()
+if ovw:
+    global ovwScats, satScats, timeItem 
+    ovwScats, satScats, timeItem = setupOVW()
+                
+#|------------------|
+#|--- Animate it ---|
+#|------------------|
+ani = animation.FuncAnimation(fig=fig, func=update, frames=nTimes, interval=150)
 #plt.show()
 ani.save(movieName, writer='ffmpeg')
 

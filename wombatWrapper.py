@@ -145,7 +145,7 @@ def reloadLogLine(theFile, lineIds):
     #|--------------------------|
     # Check it exists and is a text file
     if not os.path.exists(theFile):
-        print ('Cannot find log file. Check location and/or call syntax')
+        sys.exit('Cannot find log file. Check location and/or call syntax')
     else:
         try:
             logFile = np.genfromtxt(theFile, dtype=str)
@@ -166,11 +166,27 @@ def reloadLogLine(theFile, lineIds):
     # Range in ids
     if '-' in idstr:
         if '+' in idstr:
-            sys.exit('Cannot process ids with both + and -')
-        splitstr = idstr.split('-')
-        if len(splitstr) > 2:
-            sys.exit('Cannot process ids with multiple -')
-        ids = np.arange(int(splitstr[0]), int(splitstr[1])+1,1, dtype=int)
+            chunks = idstr.split('+')
+            ids = []
+            for chunk in chunks:
+                if '-' in chunk:
+                    splitstr = chunk.split('-')
+                    theseIds = np.arange(int(splitstr[0]), int(splitstr[1])+1,1, dtype=int)
+                    ids.extend(theseIds)
+                else:
+                    try:
+                        myId = int(chunk)
+                        ids.extend(chunk)
+                    except:
+                        sys.exit('Error processing id string')
+                    
+            #sys.exit('Cannot process ids with both + and -')
+        else:
+            splitstr = idstr.split('-')
+            if len(splitstr) > 2:
+                sys.exit('Cannot process ids with multiple -')
+            ids = np.arange(int(splitstr[0]), int(splitstr[1])+1,1, dtype=int)
+    
     # Series of specific ids     
     elif '+' in idstr:
         splitstr = idstr.split('+')
@@ -204,6 +220,7 @@ def reloadLogLine(theFile, lineIds):
     # Must be same for all, can't swap in GUI (at least right now)
     uniqPickles = np.unique(miniLog[:, 13])
     if len(uniqPickles) != 1:
+        print ('Pickles attempted:', uniqPickles)
         sys.exit('Different background pickles passed, cannot reload')
     thePickle =  miniLog[0,13]  
     reloadDict['BkgPickle'] = thePickle
