@@ -147,10 +147,10 @@ labSwap = {'Height (Rs)':'Height (R$_S$)', 'Lon (deg)':'Lon'+deg , 'Lat (deg)': 
 labelMatch = {'Tilt (deg)':['Roll (deg)'], 'AW (deg)': ['AW_FO (deg)', 'Lx (Rs)'], 'AW_FO (deg)':['AW (deg)', 'Lx (Rs)'],  'AW_EO (deg)':['AW (deg)', 'Ly (Rs)'], 'kappa':['ecc1', 'deltaAx',  'Yaw (deg)'], 'ecc1':['kappa', 'deltaAx', 'Yaw (deg)'],  'ecc2': ['deltaCS', 'Pitch (deg)'], 'deltaAx':['kappa', 'ecc1', 'Yaw (deg)'], 'deltaCS':['ecc2', 'Pitch (deg)']}
 
 # |--- Dictionary of instruments by sat ---|
-inst2sat = {'AIA94':'SDO', 'AIA131':'SDO', 'AIA171':'SDO','AIA193':'SDO','AIA211':'SDO','AIA304':'SDO','AIA335':'SDO','AIA1600':'SDO','AIA1700':'SDO', 'C2':'SOHO', 'C3':'SOHO', 'COR1':'STEREO', 'COR2':'STEREO', 'COR1A':'STEREOA', 'COR2A':'STEREOA', 'COR1B':'STEREOB', 'COR2B':'STEREOB', 'EUVI171':'STEREO', 'EUVI195':'STEREO', 'EUVI284':'STEREO', 'EUVI304':'STEREO', 'EUVI171A':'STEREOA', 'EUVI195A':'STEREOA', 'EUVI284A':'STEREOA', 'EUVI304A':'STEREOA', 'EUVI171B':'STEREOB', 'EUVI195B':'STEREOB', 'EUVI284B':'STEREOB', 'EUVI304B':'STEREOB', 'HI1':'STEREO', 'HI2':'STEREO', 'HI1A':'STEREOA', 'HI2A':'STEREOA', 'HI1B':'STEREOB', 'HI2B':'STEREOB', 'HI1A_SR':'STEREOA', 'HI1B_SR':'STEREOB', 'HI2A_SR':'STEREOA', 'HI2B_SR':'STEREOB', 'SOLOHI':'SOLO', 'SOLOHI1':'SOLO', 'SOLOHI2':'SOLO', 'SOLOHI3':'SOLO', 'SOLOHI4':'SOLO', 'WISPR':'PSP', 'WISPRI':'PSP', 'WISPRO':'PSP', 'WISPR_LW':'PSP', 'WISPRI_LW':'PSP', 'WISPRO_LW':'PSP', 'WISPR_L3':'PSP', 'WISPRI_L3':'PSP', 'WISPRO_L3':'PSP'}
+inst2sat = {'AIA94':'SDO', 'AIA131':'SDO', 'AIA171':'SDO','AIA193':'SDO','AIA211':'SDO','AIA304':'SDO','AIA335':'SDO','AIA1600':'SDO','AIA1700':'SDO', 'C2':'SOHO', 'C3':'SOHO', 'COR1':'STEREO', 'COR2':'STEREO', 'COR1A':'STEREOA', 'COR2A':'STEREOA', 'COR1B':'STEREOB', 'COR2B':'STEREOB', 'EUI174':'SOLO', 'EUI304':'SOLO', 'EUVI171':'STEREO', 'EUVI195':'STEREO', 'EUVI284':'STEREO', 'EUVI304':'STEREO', 'EUVI171A':'STEREOA', 'EUVI195A':'STEREOA', 'EUVI284A':'STEREOA', 'EUVI304A':'STEREOA', 'EUVI171B':'STEREOB', 'EUVI195B':'STEREOB', 'EUVI284B':'STEREOB', 'EUVI304B':'STEREOB', 'HI1':'STEREO', 'HI2':'STEREO', 'HI1A':'STEREOA', 'HI2A':'STEREOA', 'HI1B':'STEREOB', 'HI2B':'STEREOB', 'HI1A_SR':'STEREOA', 'HI1B_SR':'STEREOB', 'HI2A_SR':'STEREOA', 'HI2B_SR':'STEREOB', 'SOLOHI':'SOLO', 'SOLOHI1':'SOLO', 'SOLOHI2':'SOLO', 'SOLOHI3':'SOLO', 'SOLOHI4':'SOLO', 'WISPR':'PSP', 'WISPRI':'PSP', 'WISPRO':'PSP', 'WISPR_LW':'PSP', 'WISPRI_LW':'PSP', 'WISPRO_LW':'PSP', 'WISPR_L3':'PSP', 'WISPRI_L3':'PSP', 'WISPRO_L3':'PSP'}
 
 # |--- Dictionary for inst type ---|
-inst2type = {'AIA94':'EUV', 'AIA131':'EUV', 'AIA171':'EUV','AIA193':'EUV','AIA211':'EUV','AIA304':'EUV','AIA335':'EUV','AIA1600':'EUV','AIA1700':'EUV', 'C2':'COR', 'C3':'COR', 'COR1':'COR', 'COR2':'COR', 'COR1A':'COR', 'COR2A':'COR', 'COR1B':'COR', 'COR2B':'COR', 'EUVI171':'EUV', 'EUVI195':'EUV', 'EUVI284':'EUV', 'EUVI304':'EUV', 'EUVI171A':'EUV', 'EUVI195A':'EUV', 'EUVI284A':'EUV', 'EUVI304A':'EUV', 'EUVI171B':'EUV', 'EUVI195B':'EUV', 'EUVI284B':'EUV', 'EUVI304B':'EUV', 'HI1':'HI', 'HI2':'HI', 'HI1A':'HI', 'HI2A':'HI', 'HI1B':'HI', 'HI2B':'HI', 'HI1A_SR':'HI', 'HI1B_SR':'HI', 'HI2A_SR':'HI', 'HI2B_SR':'HI', 'SOLOHI':'HI', 'SOLOHI1':'HI', 'SOLOHI2':'HI', 'SOLOHI3':'HI', 'SOLOHI4':'HI', 'WISPR':'HI', 'WISPRI':'HI', 'WISPRO':'HI', 'WISPR_LW':'HI', 'WISPRI_LW':'HI', 'WISPRO_LW':'HI', 'WISPR_L3':'HI', 'WISPRI_L3':'HI', 'WISPRO_L3':'HI'}
+inst2type = {'AIA94':'EUV', 'AIA131':'EUV', 'AIA171':'EUV','AIA193':'EUV','AIA211':'EUV','AIA304':'EUV','AIA335':'EUV','AIA1600':'EUV','AIA1700':'EUV', 'C2':'COR', 'C3':'COR', 'COR1':'COR', 'COR2':'COR', 'COR1A':'COR', 'COR2A':'COR', 'COR1B':'COR', 'COR2B':'COR', 'EUI174':'EUV', 'EUI304':'EUV', 'EUVI171':'EUV', 'EUVI195':'EUV', 'EUVI284':'EUV', 'EUVI304':'EUV', 'EUVI171A':'EUV', 'EUVI195A':'EUV', 'EUVI284A':'EUV', 'EUVI304A':'EUV', 'EUVI171B':'EUV', 'EUVI195B':'EUV', 'EUVI284B':'EUV', 'EUVI304B':'EUV', 'HI1':'HI', 'HI2':'HI', 'HI1A':'HI', 'HI2A':'HI', 'HI1B':'HI', 'HI2B':'HI', 'HI1A_SR':'HI', 'HI1B_SR':'HI', 'HI2A_SR':'HI', 'HI2B_SR':'HI', 'SOLOHI':'HI', 'SOLOHI1':'HI', 'SOLOHI2':'HI', 'SOLOHI3':'HI', 'SOLOHI4':'HI', 'WISPR':'HI', 'WISPRI':'HI', 'WISPRO':'HI', 'WISPR_LW':'HI', 'WISPRI_LW':'HI', 'WISPRO_LW':'HI', 'WISPR_L3':'HI', 'WISPRI_L3':'HI', 'WISPRO_L3':'HI'}
 
 
 global vdragScalers 
@@ -1192,11 +1192,25 @@ def processArgs(args):
     # Range in ids
     if '-' in idstr:
         if '+' in idstr:
-            sys.exit('Cannot process ids with both + and -')
-        splitstr = idstr.split('-')
-        if len(splitstr) > 2:
-            sys.exit('Cannot process ids with multiple -')
-        ids = np.arange(int(splitstr[0]), int(splitstr[1])+1,1, dtype=int)
+            chunks = idstr.split('+')
+            ids = []
+            for chunk in chunks:
+                if '-' in chunk:
+                    splitstr = chunk.split('-')
+                    theseIds = np.arange(int(splitstr[0]), int(splitstr[1])+1,1, dtype=int)
+                    ids.extend(theseIds)
+                else:
+                    try:
+                        myId = int(chunk)
+                        ids.extend(chunk)
+                    except:
+                        sys.exit('Error processing id string '+idstr)
+        else:
+            splitstr = idstr.split('-')
+            if len(splitstr) > 2:
+                sys.exit('Cannot process ids with multiple -')
+            ids = np.arange(int(splitstr[0]), int(splitstr[1])+1,1, dtype=int)
+    
     # Series of specific ids     
     elif '+' in idstr:
         splitstr = idstr.split('+')
