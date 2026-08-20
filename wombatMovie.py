@@ -24,28 +24,31 @@ errors try uninstalling the pip version then using brew !!!
 global doClean, customOrder, ovw
 
 # Name of wombat log file
-logFilePath = 'wbOutputs/202303pretty.txt'
+logFilePath = 'wbOutputs/201207pretty.txt'
 
 # Movie save name. Should end with .mp4 (other formats untested)
 movieName = 'test.mp4'
 
 # Lines to do, same string format as other wombat functions
-idstr = '1-9'
+idstr = '2-39'
 
 # Time Resolution (in minutes)
-tRes = 30 
+tRes = 5
 
 # Number of columns in movie (max 5)
-nHoriz = 1
+nHoriz = 2
 
 # Include clean imgs without wf proj
-doClean = True
+doClean = False
+
+# Frames per second
+fps = 4
 
 # Flag to set the instrument order
 # (must include all the inst in the pickle)
 customOrder = True
 #instOrder = ['C2', 'COR2A', 'C3', 'WISPRI', 'SoloHI', 'HI1A_SR']
-instOrder = ['C2']
+instOrder = ['EUVI195B', 'EUVI195A','COR1B', 'COR1A','COR2B','COR2A']
     
 # Running (0) or base diff (1)
 didx = 0
@@ -55,13 +58,13 @@ sclidx = 0
 wfSize = 3
 
 # Option to include overview plot
-ovw = True
+ovw = False
 
 # Option to set custom colors, otherwise will use standard
 # wombat GUI colors based on WF type. Custom will cycle 
 # through the array in alphabetical order. Can use names 
 # or html tags 
-doCustomColors = True
+doCustomColors = False
 customColors = ['#9AE630', 'cyan', 'DeepPink', 'PeachPuff', 'Gold', 'BlueViolet', 'LimeGreen']
 
     
@@ -433,6 +436,9 @@ def setUpCMaps(allInsts):
         instCMaps[key] = hasCT
         myMMs = MMdict[key.upper()]
         instMinMax[key] = [myMMs[0][sclidx], myMMs[1][sclidx]]
+        # Set to log if EUV
+        if ('AIA' in key.upper()) or ('EUI' in key.upper()) or ('EUVI' in key.upper()):
+            instMinMax[key] = [myMMs[0][1], myMMs[1][1]]
     return instCMaps, instMinMax
         
 def setupWFcolors(theWFs, customColors=None):
@@ -529,12 +535,15 @@ def setupTimes(lines, logFile, proIms):
         startTime = startTime + datetime.timedelta(seconds=int(fracUnder)*tRes*60)
 
     # Figure out number of movie steps
-    nTimes = int((maxTime - startTime).total_seconds()/60/tRes)
+    fracNtimes = (maxTime - startTime).total_seconds()/60/tRes
+    nTimes = int(fracNtimes) + 1 # add one bc edges = intervals +1
+    # Figure out if need to add one for last time (took int but might be over half dt away)
+    if fracNtimes - nTimes > 0.5:
+        nTimes += 1
     tMovie = []
-    for i in range(nTimes+2):
+    for i in range(nTimes):
         tMovie.append(startTime + datetime.timedelta(seconds=i*tRes*60))
-    dtMovie = np.array([i*tRes for i in range(nTimes+2)])    
-    
+    dtMovie = np.array([i*tRes for i in range(nTimes)])    
     allPtimes = {}
     allPdts = {}
     for key in timesByInst:
@@ -550,7 +559,7 @@ def setupTimes(lines, logFile, proIms):
         movie2inst[key]  = []
         my0diff = (allPtimes[key][0] - tMovie[0]).total_seconds()/60.
         shiftDiff = np.array(allPdts[key]) + my0diff
-        for i in range(nTimes+2):
+        for i in range(nTimes):
             tdiff = np.abs(shiftDiff - dtMovie[i])         
             idx = np.where(tdiff == np.min(tdiff))[0][0]
             movie2inst[key].append(idx)
@@ -602,8 +611,43 @@ def checkSetup(lines, logFile):
             sys.exit('Exiting movie script')
             
     allPickles = np.unique(logFile[lines,13])
+    # Check if need to combine pickles
     if len(allPickles) != 1:
-        sys.exit('Cannot combine multiple pickles (yet)')
+        pickleDict = {}
+        # Check if each inst only has one pickle
+        for inst in allInsts:
+            myIds = np.where(logFile[lines,1] == inst)[0]
+            myPickles = np.unique(logFile[lines[myIds],13])
+            if len(myPickles) > 1:
+                sys.exit('Cannot combine multiple pickles for the same instrument. Error for '+inst)
+            else:
+                if myPickles[0] in pickleDict:
+                    pickleDict[myPickles[0]].append(inst)
+                else:
+                    pickleDict[myPickles[0]] = [inst]
+        
+        # Combine them if didn't hit exit        
+        bkgData = {}
+        bkgData['proImMaps'] = {}
+        bkgData['scaledIms'] = {}
+        bkgData['satStuff'] = {}
+        for aPick in pickleDict:
+            with open(aPick, 'rb') as file:
+                thisData = pickle.load(file)
+            for aInst in pickleDict[aPick]:
+                bkgData['proImMaps'][aInst] = {}
+                bkgData['scaledIms'][aInst] = {}
+                bkgData['satStuff'][aInst]  = {}
+                bkgData['proImMaps'][aInst] = thisData['proImMaps'][aInst]
+                bkgData['scaledIms'][aInst] = thisData['scaledIms'][aInst]
+                bkgData['satStuff'][aInst]  = thisData['satStuff'][aInst]
+      
+    else:
+        with open(allPickles[0], 'rb') as file:
+            bkgData = pickle.load(file)   
+        
+            
+        
     nLines = len(logFile[lines,0])
     theWFs = np.unique(logFile[lines,3])
     nWFs = len(theWFs)
@@ -623,7 +667,7 @@ def checkSetup(lines, logFile):
             sys.exit()
     
     
-    return allInsts, allPickles, theWFs, fullWF2type
+    return allInsts, allPickles, bkgData, theWFs, fullWF2type
 
 #|-------------------------|
 #|--- Plot Object Setup ---|
@@ -659,7 +703,9 @@ def setupImgObj():
         instIdx = movie2inst[myInst][movt]
         mm = instMinMax[myInst]
         mySclIm = sclIms[myInst][didx][instIdx][sclidx]
-        
+        # Force log scale if euv
+        if (satStuff[myInst][0][0]['OBSTYPE'] == 'EUV'):
+            mySclIm = sclIms[myInst][didx][instIdx][1]
         #|--- Set up main image objects ---|
         imObj = allAx[0][i].imshow(mySclIm, cmap=instCMaps[myInst], vmin=mm[0], vmax=mm[1], origin='lower')
         imObjs.append(imObj)
@@ -861,6 +907,9 @@ def update(movt):
         didx = 0
         sclidx = 0
         mySclIm = sclIms[myInst][didx][instIdx][sclidx]
+        # Force log scale if euv
+        if (satStuff[myInst][0][0]['OBSTYPE'] == 'EUV'):
+            mySclIm = sclIms[myInst][didx][instIdx][1]
         mydate =  proIms[myInst][0][instIdx].date.datetime.strftime("%Y-%m-%dT%H:%M")
         panelLabel = myInst + ' ' + mydate
         
@@ -1004,7 +1053,7 @@ logFile = np.genfromtxt(logFilePath, dtype=str)
 
 # |--- Check the settings ---|    
 global allInsts, allPickles, theWFs, fullWF2type, nInsts, nWFs
-allInsts, allPickles, theWFs, fullWF2type = checkSetup(lines, logFile)
+allInsts, allPickles, bkgData, theWFs, fullWF2type = checkSetup(lines, logFile)
 nInsts = len(allInsts)
 nWFs = len(theWFs)
 
@@ -1015,9 +1064,6 @@ fig, allAx = setupFigure(len(allInsts), nHoriz, doClean, ovw)
     
 # |--- Open/unpackage the pickle ---|
 global proIms, sclIms, satStuff
-with open(allPickles[0], 'rb') as file:
-    bkgData = pickle.load(file)   
-WBinfo = bkgData['WBinfo']
 proIms = bkgData['proImMaps']
 sclIms = bkgData['scaledIms']
 satStuff = bkgData['satStuff']
@@ -1049,7 +1095,8 @@ if ovw:
 #|------------------|
 #|--- Animate it ---|
 #|------------------|
-ani = animation.FuncAnimation(fig=fig, func=update, frames=nTimes, interval=150)
+intv = 1 / fps * 1000 # interval in milliseconds
+ani = animation.FuncAnimation(fig=fig, func=update, frames=nTimes, interval=intv)
 #plt.show()
 ani.save(movieName, writer='ffmpeg')
 
