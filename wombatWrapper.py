@@ -252,7 +252,7 @@ def reloadLogLine(theFile, lineIds):
         
     for aWF in wfTypes:
         reloadDict['Params'][aWF] = {}
-        thisWF = np.where(miniLog[:,3] == aWF)[0]
+        thisWF = np.where(miniLog[:,3] == aWF.replace(' ', ''))[0]
         for idx in thisWF:
             myInst = miniLog[idx, 1]
             myTime = miniLog[idx,2][:-3]

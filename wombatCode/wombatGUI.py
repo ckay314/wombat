@@ -3226,6 +3226,7 @@ def buildMegaVars(rD, tlabs, tmaps, satNames):
         sclmd[aInst] = 0 # set at lin unless we want to swap below
         if ('AIA' in aInst) or ('EUVI' in aInst):
             minVs, maxVs = [0,0,0], [191, 191, 191]
+            sclmd[aInst] = 1
         elif ('EUI' in aInst):
             minVs, maxVs = [63,67,32], [150, 230, 191]
             sclmd[aInst] = 1

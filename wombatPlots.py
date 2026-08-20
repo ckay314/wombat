@@ -159,9 +159,9 @@ vdragScalers = [600e5, 350e5, 1e-12]
 global picType
 picType = '.png' # png or pdf, gets overwritten if set in input 
 
-# |-----------------------------------------|
-# |--- Normalized rag func (for fitting) ---|
-# |-----------------------------------------|
+# |------------------------------------------|
+# |--- Normalized drag func (for fitting) ---|
+# |------------------------------------------|
 def vdrag(t_in, vCME0_in, vSW_in, C_in): 
     # Inputs are normalized to near 1 to make the 
     # curve_fit happy, convert back to physical units 
@@ -265,7 +265,7 @@ def getKinematics(wombatRes, wfTypes, dragHeights=[5,21.5], incDrag=False, predA
     # |--- Collect things ---|
     for aInst in wombatRes.keys():
         subRes = wombatRes[aInst]
-        hunc = hErrs[inst2type[aInst]]
+        hunc = hErrs[inst2type[aInst.upper()]]
         for awf in wfTypes:
             if awf in subRes.keys():
                 myRes = subRes[awf]
@@ -803,13 +803,14 @@ def getEnergetics(args, wombatRes, wfTypes, kinRes, reloadIt=None, overlap=1, re
         times[awf] = allts
         masses[awf] = allMs
         mheights[awf] = allhs
-        
+    
     # Get a dt analogous to kin calc, might be useful
     earlyT = datetime.datetime(3000,1,1)
     for awf in wfTypes:
         for aSat in times[awf].keys():
-            if times[awf][aSat][0] < earlyT:
-                earlyT = times[awf][aSat][0]   
+            if len(times[awf][aSat]) > 0:
+                if times[awf][aSat][0] < earlyT:
+                    earlyT = times[awf][aSat][0]   
     dts = {}
     for awf in wfTypes:
         dts[awf] = {}
@@ -1245,7 +1246,7 @@ def processArgs(args):
     
     wombatRes = {}
     for aInst in allInsts:
-        myType = inst2type[aInst]
+        myType = inst2type[aInst.upper()]
         
         someIdx = np.where(miniLog[:,1] == aInst)[0]
         myWFs = np.unique(miniLog[someIdx,3])
@@ -1426,7 +1427,7 @@ def processBonusArgs(args, mode):
             logIt = True        
 
         elif lval in ['versush', 'versusr', 'versusd', 'vsh', 'vsr', 'vsd',]:
-            versusH = True        
+            versusH = True      
 
         elif lval in ['wfcolors', 'guicolors']:
             wfColors = True        
@@ -1539,7 +1540,8 @@ def profilePlot(mode, wombatRes, wfTypes, logH=False, wfColors=False, enRes=None
             pltColors[wft] = wf.colorDict[wft]
     else:
         counter = 0
-        cols = ['#888888','#882255', '#332288', '#661100', '#6699CC']
+        #cols = ['#888888','#882255', '#332288', '#661100', '#6699CC']
+        cols = ['#9AE630', 'cyan', 'DeepPink', 'PeachPuff', 'Gold', 'BlueViolet', 'LimeGreen']
         for wft in wfTypes:
             pltColors[wft] = cols[counter]
             counter += 1
@@ -1670,8 +1672,8 @@ def profilePlot(mode, wombatRes, wfTypes, logH=False, wfColors=False, enRes=None
         maxType = None
         ylabs = {}
         for wft in wfTypes:
-            if wf.npDict[wft.replace('Half', 'Half ')] > nParams:
-                nParams = wf.npDict[wft.replace('Half', 'Half ')]
+            if wf.npDict[wft[:-1].replace('Half', 'Half ')] > nParams:
+                nParams = wf.npDict[wft[:-1].replace('Half', 'Half ')]
                 maxType = wft
             tempWF = wf.wireframe(wft[:-1].replace('Half', 'Half '))
             ylabs[wft] = tempWF.labels

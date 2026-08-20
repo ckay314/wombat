@@ -24,16 +24,16 @@ errors try uninstalling the pip version then using brew !!!
 global doClean, customOrder, ovw
 
 # Name of wombat log file
-logFilePath = 'wbOutputs/201207pretty.txt'
+logFilePath = 'wbOutputs/201207full.txt'
 
 # Movie save name. Should end with .mp4 (other formats untested)
-movieName = 'test.mp4'
+movieName = '2012_COR.mp4'
 
 # Lines to do, same string format as other wombat functions
-idstr = '2-39'
+idstr = '8-75'
 
 # Time Resolution (in minutes)
-tRes = 5
+tRes = 10
 
 # Number of columns in movie (max 5)
 nHoriz = 2
@@ -48,7 +48,7 @@ fps = 4
 # (must include all the inst in the pickle)
 customOrder = True
 #instOrder = ['C2', 'COR2A', 'C3', 'WISPRI', 'SoloHI', 'HI1A_SR']
-instOrder = ['EUVI195B', 'EUVI195A','COR1B', 'COR1A','COR2B','COR2A']
+instOrder = ['COR1B', 'COR1A','COR2B','COR2A']
     
 # Running (0) or base diff (1)
 didx = 0
