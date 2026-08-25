@@ -244,23 +244,23 @@ def getKinematics(wombatRes, wfTypes, dragHeights=[5,21.5], incDrag=False, predA
     dragHeights = np.array(dragHeights)*7e10
     
     # |--- Make holders ---|
-    times = {}
-    dts   = {}
-    heights = {}
-    newtVs  = {} # newtonian derivs (x2 - x1) / (t2 - t1)
-    newtAs  = {} # newtonian derivs
-    uncHs   = {}
-    uncVs   = {}
-    uncAs   = {}
+    timesF = {}
+    dtsF   = {}
+    heightsF = {}
+    newtVsF  = {} # newtonian derivs (x2 - x1) / (t2 - t1)
+    newtAsF  = {} # newtonian derivs
+    uncHsF   = {}
+    uncVsF   = {}
+    uncAsF   = {}
     for awf in wfTypes:
-        times[awf]   = []
-        heights[awf] = []
-        dts[awf] = []
-        newtVs[awf] = []
-        newtAs[awf] = []
-        uncHs[awf] = []
-        uncVs[awf] = []
-        uncAs[awf] = []
+        timesF[awf]   = []
+        heightsF[awf] = []
+        dtsF[awf] = []
+        newtVsF[awf] = []
+        newtAsF[awf] = []
+        uncHsF[awf] = []
+        uncVsF[awf] = []
+        uncAsF[awf] = []
         
     # |--- Collect things ---|
     for aInst in wombatRes.keys():
@@ -272,21 +272,65 @@ def getKinematics(wombatRes, wfTypes, dragHeights=[5,21.5], incDrag=False, predA
                 myTimes = myRes['times']
                 for i in range(len(myTimes)):
                     roundTime = myTimes[i].replace(second=0)
-                    if roundTime not in times[awf]:
-                        times[awf].append(roundTime)
-                        heights[awf].append(myRes['paramGrid'][0,i])
-                        uncHs[awf].append(hunc)
-                        
-    # |--- Sort things ---|
-    for awf in wfTypes:
-        times[awf] = np.array(times[awf])
-        heights[awf] = np.array(heights[awf])  * 7e10
-        uncHs[awf] = np.array(uncHs[awf]) * 7e10
-        idxs  = np.argsort(times[awf])
-        times[awf] = times[awf][idxs]
-        heights[awf] = heights[awf][idxs]
-        uncHs[awf] = uncHs[awf][idxs]
+                    if roundTime not in timesF[awf]:
+                        timesF[awf].append(roundTime)
+                        heightsF[awf].append(myRes['paramGrid'][0,i])
+                        uncHsF[awf].append(hunc)
     
+    # Single/non-duplicate holders
+    timesS = {}
+    dtsS   = {}
+    heightsS = {}
+    newtVsS  = {} 
+    newtAsS  = {} 
+    uncHsS   = {}
+    uncVsS   = {}
+    uncAsS   = {}      
+    idxMap = {}              
+    # |--- Sort/clean things ---|
+    for awf in wfTypes:
+        # Arrayify and change units
+        timesF[awf] = np.array(timesF[awf])
+        heightsF[awf] = np.array(heightsF[awf])  * 7e10
+        uncHsF[awf] = np.array(uncHsF[awf]) * 7e10
+        # Sort by time
+        idxs  = np.argsort(timesF[awf])
+        timesF[awf] = timesF[awf][idxs]
+        heightsF[awf] = heightsF[awf][idxs]
+        uncHsF[awf] = uncHsF[awf][idxs]
+        
+        
+        timesS[awf]   = []
+        heightsS[awf] = []
+        dtsS[awf] = []
+        newtVsS[awf] = []
+        newtAsS[awf] = []
+        uncHsS[awf] = []
+        uncVsS[awf] = []
+        uncAsS[awf] = []
+        # Check if duplicate heights
+        uniqH = np.unique(heightsF[awf])
+        heightsS[awf] = uniqH
+        idxMap[awf] = {}
+        if len(uniqH) != len(heightsF[awf]):
+            for i in range(len(uniqH)):
+                nowIds = np.where(heightsF[awf] == uniqH[i])[0]
+                for aId in nowIds:
+                    idxMap[awf][aId] = i # full idx to single idx
+                nowTimes = timesF[awf][nowIds]
+                
+                # Get average time
+                timestamps = [dt.timestamp() for dt in nowTimes]
+                avgTS = sum(timestamps) / len(timestamps)
+                myT   = datetime.datetime.fromtimestamp(avgTS)
+                timesS[awf].append(myT)
+                uncHsS[awf].append(uncHsF[awf][nowIds[0]])
+        else:
+            timesS[awf] = timesF[awf]
+            uncHsS[awf] = uncHsF[awf]
+            for i in range(len(heightsF[awf])):
+                idxMap[awf][i] = i
+                
     # |----------------------------|
     # |--- Secret testing plot  ---|
     # |----------------------------|
@@ -304,45 +348,61 @@ def getKinematics(wombatRes, wfTypes, dragHeights=[5,21.5], incDrag=False, predA
     earlyT = datetime.datetime(3000,1,1)
     lateT  = datetime.datetime(1000,1,1)
     for awf in wfTypes:
-        if times[awf][0] < earlyT:
-            earlyT = times[awf][0]
-        if times[awf][-1] > lateT:
-            lateT = times[awf][-1]
+        if timesS[awf][0] < earlyT:
+            earlyT = timesS[awf][0]
+        if timesS[awf][-1] > lateT:
+            lateT = timesS[awf][-1]
             
     #|--- Loop through wf types ---|        
     for awf in wfTypes:
         print ('Calculating two-point derivatives for', awf)
-        #hSmooth = gaussian_filter1d(heights[awf], sigma=1) 
-        hSmooth = heights[awf] # Not smoothing anymore but leaving structure
-        myuncH  = uncHs[awf]
-        for i in range(len(times[awf])):
-            dts[awf].append((times[awf][i]-earlyT).total_seconds())
+        # Calculate using the single arrays and copy results to full later
+        hSmooth = heightsS[awf] # Not smoothing anymore but leaving structure
+        myuncH  = uncHsS[awf]
+        for i in range(len(timesS[awf])):
+            dtsS[awf].append((timesS[awf][i]-earlyT).total_seconds())
             # Get v
             if i != 0:
-                newtVs[awf].append((hSmooth[i]-hSmooth[i-1])/(times[awf][i]-times[awf][i-1]).total_seconds())
-                uncVs[awf].append(np.sqrt(myuncH[i]**2 + myuncH[i-1]**2)/(times[awf][i]-times[awf][i-1]).total_seconds()) # cm/s
-                #print ((np.sqrt(myuncH[i]**2 + myuncH[i-1]**2))/7e10, (times[awf][i]-times[awf][i-1]).total_seconds()/60, uncVs[awf][-1]/1e5)
+                newtVsS[awf].append((hSmooth[i]-hSmooth[i-1])/(timesS[awf][i]-timesS[awf][i-1]).total_seconds())
+                uncVsS[awf].append(np.sqrt(myuncH[i]**2 + myuncH[i-1]**2)/(timesS[awf][i]-timesS[awf][i-1]).total_seconds()) # cm/s
+                print (awf,hSmooth[i-1]/7e10, hSmooth[i]/7e10, (hSmooth[i]-hSmooth[i-1])/7e10, (timesS[awf][i]-timesS[awf][i-1]).total_seconds()/60, newtVsS[awf][-1] /1e5)
             # Get a    
             if i > 1:
                 j = i -1
-                newtAs[awf].append((newtVs[awf][j] - newtVs[awf][j-1])/(dts[awf][j] - dts[awf][j-1]))
-                uncAs[awf].append(np.sqrt(uncVs[awf][j]**2 + uncVs[awf][j-1]**2)/(dts[awf][i]-dts[awf][i-1])) # cm/s
+                newtAsS[awf].append((newtVsS[awf][j] - newtVsS[awf][j-1])/(dtsS[awf][j] - dtsS[awf][j-1]))
+                uncAsS[awf].append(np.sqrt(uncVsS[awf][j]**2 + uncVsS[awf][j-1]**2)/(dtsS[awf][i]-dtsS[awf][i-1])) # cm/s
         
         # Package as arrays       
-        dts[awf] = np.array(dts[awf])
-        newtVs[awf] = np.array(newtVs[awf])
-        newtAs[awf] = np.array(newtAs[awf]) # matches dts[awf][1:-1]
-        uncVs[awf]  = np.array(uncVs[awf])
-        uncAs[awf]  = np.array(uncAs[awf])
+        dtsS[awf] = np.array(dtsS[awf])
+        newtVsS[awf] = np.array(newtVsS[awf])
+        newtAsS[awf] = np.array(newtAsS[awf]) # matches dts[awf][1:-1]
+        uncVsS[awf]  = np.array(uncVsS[awf])
+        uncAsS[awf]  = np.array(uncAsS[awf])
         
+        # Fill in the full arrays
+        for i in range(len(heightsF[awf])):
+            mySid = idxMap[awf][i]
+            dtsF[awf].append(dtsS[awf][mySid])
+            if mySid < len(newtVsS[awf]):
+                newtVsF[awf].append(newtVsS[awf][mySid])
+                uncVsF[awf].append(uncVsS[awf][mySid])
+            if mySid < len(newtAsS[awf]):
+                newtAsF[awf].append(newtAsS[awf][mySid])
+                uncAsF[awf].append(uncAsS[awf][mySid])
+        dtsF[awf] = np.array(dtsF[awf])
+        newtVsF[awf] = np.array(newtVsF[awf])
+        newtAsF[awf] = np.array(newtAsF[awf]) # matches dts[awf][1:-1]
+        uncVsF[awf]  = np.array(uncVsF[awf])
+        uncAsF[awf]  = np.array(uncAsF[awf])
+            
         # |--- Print some basic things ---|
-        print ('    Max v (km/s):', '{:.1f}'.format(np.max(newtVs[awf])/1e5))
-        ipPoints = np.where(heights[awf] >= dragHeights[0])[0]
+        print ('    Max v (km/s):', '{:.1f}'.format(np.max(newtVsS[awf])/1e5))
+        ipPoints = np.where(heightsS[awf] >= dragHeights[0])[0]
         if len(ipPoints) > 3:
-            print (' avg IP v (km/s):', '{:.1f}'.format(np.mean(newtVs[awf][ipPoints[0]+1:])/1e5))
-            print (' med IP v (km/s):', '{:.1f}'.format(np.median(newtVs[awf][ipPoints[0]+1:])/1e5))        
+            print (' avg IP v (km/s):', '{:.1f}'.format(np.mean(newtVsS[awf][ipPoints[0]+1:])/1e5))
+            print (' med IP v (km/s):', '{:.1f}'.format(np.median(newtVsS[awf][ipPoints[0]+1:])/1e5))        
         print ('')
-                         
+              
     # |--------------------|
     # |--- Fit Drag Eq  ---|
     # |--------------------|
@@ -352,9 +412,9 @@ def getKinematics(wombatRes, wfTypes, dragHeights=[5,21.5], incDrag=False, predA
         dragFits = {}
         for awf in wfTypes:
             # Get the mid heights/times that match the vs
-            midH = 0.5*(heights[awf][1:] + heights[awf][:-1])
-            midT = 0.5*(dts[awf][1:] + dts[awf][:-1])
-            vSmooth = gaussian_filter1d(newtVs[awf], sigma=1)       
+            midH = 0.5*(heightsS[awf][1:] + heightsS[awf][:-1])
+            midT = 0.5*(dtsS[awf][1:] + dtsS[awf][:-1])
+            vSmooth = gaussian_filter1d(newtVsS[awf], sigma=1)       
         
             # Consider all starting points in between heights given
             # by dragHeights
@@ -461,10 +521,10 @@ def getKinematics(wombatRes, wfTypes, dragHeights=[5,21.5], incDrag=False, predA
                 print('Calculating simple '+awf+ ' arrival time at ' + predAT)
             if awf not in didDrag:
                 # Use max v to calc
-                maxv  = np.max(newtVs[awf])
-                maxId = np.where(newtVs[awf] == maxv)[0]
-                maxh  = heights[awf][maxId[0]]
-                t0    = times[awf][maxId[0]]
+                maxv  = np.max(newtVsS[awf])
+                maxId = np.where(newtVsS[awf] == maxv)[0]
+                maxh  = heightsS[awf][maxId[0]]
+                t0    = timesS[awf][maxId[0]]
                 dist  = critx* 1.496e+13 - maxh
                 
                 tt_maxv = dist / maxv
@@ -472,14 +532,14 @@ def getKinematics(wombatRes, wfTypes, dragHeights=[5,21.5], incDrag=False, predA
                 print ('   max  v gives impact at ', artimeMax.strftime("%Y-%m-%d %H:%M") )
                 
                 
-                ipPoints = np.where(heights[awf] >= dragHeights[0])[0]
+                ipPoints = np.where(heightsS[awf] >= dragHeights[0])[0]
                 if len(ipPoints) > 3:
-                    meanv = np.mean(newtVs[awf][ipPoints[0]+1:])
+                    meanv = np.mean(newtVsS[awf][ipPoints[0]+1:])
                     tt_meanv = dist / meanv
                     artimeMean = t0 + datetime.timedelta(seconds=tt_meanv)
                     print ('   mean v gives impact at ', artimeMean.strftime("%Y-%m-%d %H:%M") )
                     
-                    medv  = np.median(newtVs[awf][ipPoints[0]+1:])
+                    medv  = np.median(newtVsS[awf][ipPoints[0]+1:])
                     tt_medv = dist / medv
                     artimeMed = t0 + datetime.timedelta(seconds=tt_medv)
                     print ('   med  v gives impact at ', artimeMed.strftime("%Y-%m-%d %H:%M") )
@@ -490,9 +550,9 @@ def getKinematics(wombatRes, wfTypes, dragHeights=[5,21.5], incDrag=False, predA
     if False:
         fig = plt.figure()
         for awf in wfTypes:
-            midH = 0.5*(heights[awf][1:] + heights[awf][:-1])
-            midT = 0.5*(dts[awf][1:] + dts[awf][:-1])
-            vSmooth = gaussian_filter1d(newtVs[awf], sigma=1)
+            midH = 0.5*(heightsS[awf][1:] + heightsS[awf][:-1])
+            midT = 0.5*(dtsS[awf][1:] + dtsS[awf][:-1])
+            vSmooth = gaussian_filter1d(newtVsS[awf], sigma=1)
         
             #plt.plot(midT/3600, newtVs[awf]/1e5, 'co')
             #plt.plot(midT/3600, vSmooth/1e5, 'ko')
@@ -508,10 +568,10 @@ def getKinematics(wombatRes, wfTypes, dragHeights=[5,21.5], incDrag=False, predA
                 #plt.plot((x+midT[myIdx])/3600, vdrag(x,v1, v2, v3)/1e5, '--')
                 plt.plot(midH[myIdx:]/7e10, vdrag(x,v1, v2, v3)/1e5, '--', c=cDict[awf])
                 
-            ats = dts[awf][1:-1]   
-            ahts = heights[awf][1:-1] / 7e10
+            ats = dtsS[awf][1:-1]   
+            ahts = heightsS[awf][1:-1] / 7e10
             #plt.plot(ats/3600, newtAs[awf]/1e2, 'c+')
-            plt.plot(ahts, newtAs[awf]/1e2, '+', c=cDict[awf])
+            plt.plot(ahts, newtAsS[awf]/1e2, '+', c=cDict[awf])
             myIdx = splitIds[awf]
             if myIdx != -1:
                 myParams = dragFits[awf]
@@ -533,18 +593,18 @@ def getKinematics(wombatRes, wfTypes, dragHeights=[5,21.5], incDrag=False, predA
     # |--- Package Output  ---|
     # |-----------------------|
     outResK = {}
-    outResK['times'] = times
-    outResK['dts'] = dts
-    outResK['heights'] = heights    
-    outResK['vels'] = newtVs
-    outResK['accs'] = newtAs 
-    outResK['errs'] = [uncHs, uncVs, uncAs]
+    outResK['times'] = timesF
+    outResK['dts'] = dtsF
+    outResK['heights'] = heightsF    
+    outResK['vels'] = newtVsF
+    outResK['accs'] = newtAsF
+    outResK['errs'] = [uncHsF, uncVsF, uncAsF]
     if incDrag:
         outResK['splitIds'] = splitIds
         outResK['dragFits'] = dragFits
 
     return outResK
-
+    
 # |-----------------------------------|
 # |--- Get energetics from results ---|
 # |-----------------------------------|
@@ -1541,7 +1601,7 @@ def profilePlot(mode, wombatRes, wfTypes, logH=False, wfColors=False, enRes=None
     else:
         counter = 0
         #cols = ['#888888','#882255', '#332288', '#661100', '#6699CC']
-        cols = ['#9AE630', 'cyan', 'DeepPink', 'PeachPuff', 'Gold', 'BlueViolet', 'LimeGreen']
+        cols = ['#9AE630', 'LimeGreen', 'cyan', 'DeepPink', 'PeachPuff', 'Gold', 'BlueViolet']
         for wft in wfTypes:
             pltColors[wft] = cols[counter]
             counter += 1
@@ -1876,6 +1936,8 @@ def profilePlot(mode, wombatRes, wfTypes, logH=False, wfColors=False, enRes=None
                 xdata = midHs
             else:
                 xdata = midTimes
+            xdata =  xdata[:len(myVels)]
+            
             
             # Check if we need to add a label for wf type 
             # No params in first part for kin1/en3 cases versus height    
@@ -1894,6 +1956,8 @@ def profilePlot(mode, wombatRes, wfTypes, logH=False, wfColors=False, enRes=None
                 xdata = kinRes['heights'][awf][1:-1] / 7e10
             else:
                 xdata = myTimes[1:-1]
+            xdata =  xdata[:len(myAccs)]
+                
             ax[kinAxId+1].plot(xdata, myAccs/1e5, 'o', c=myC)
             if errorbars:
                 ax[kinAxId+1].errorbar(xdata, myAccs/1e5, yerr=kinRes['errs'][2][awf]/1e5, c=myC, capsize=3, fmt='none')
@@ -2141,7 +2205,7 @@ def wombatPlotWrapper(args):
     kinRes = None
     if ('kin' in mode) or ('en' in mode):
         kinRes = getKinematics(wombatRes, wfTypes, incDrag=incDrag, predAT=predAT)
-
+        
     #|--------------------------|
     #|--- Process energetics ---|     
     #|--------------------------| 

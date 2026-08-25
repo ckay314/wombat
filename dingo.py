@@ -1292,9 +1292,12 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
             # Want to switch to M = area * (wid2 * n2 + ratio * wid1 * n1)
             scaleIt = deprojScale[1][overlap] * w2[overlap] / (w1[overlap] * densRatio*deprojScale[0][overlap] + w2[overlap]*deprojScale[1][overlap])
 
-        dens[overlap]  = scaleIt * densRatio * dens2[overlap]
+        dens[overlap]  = scaleIt * densRatio * np.copy(dens2[overlap])
         dens2[overlap] = scaleIt * dens2[overlap]
+        
         dens2 = dens2 / (6.957e10 **3 )
+        dens = dens / (6.957e10 **3 )
+    else:
         dens = dens / (6.957e10 **3 )
     
     densMap = [dens , dens2 ] # convert to g/cm^3
@@ -1302,9 +1305,11 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
     
     # 2d plotting example (for testing)
     if False:
-       fig = plt.figure()
-       vval = 1e12
-       plt.imshow(dens, vmin=-vval, vmax=vval, origin='lower')
+       fig,ax = plt.subplots(1,3)
+       vval = 1e13
+       ax[0].imshow(dens*6.957e10 **3,  vmin=0, vmax = vval, origin='lower')
+       ax[1].imshow(dens2*6.957e10 **3,  vmin=0, vmax = vval, origin='lower')
+       ax[2].imshow(deprojScale[0], origin='lower')
        plt.show()
     
     #|---------------------|
@@ -1583,7 +1588,11 @@ def dingo3d(widMap, xcMap, densMap, maskMap, outFoV, pix2St, satCoord, shell=Tru
 def dingo23d(densMap, maskMap, outFoV, pix2St, fullImSize, showLog=False, showSun=False, obsSat=None):
     ''' 
     2D contour plot(s) of the width of the wireframe(s) perpendicular to the plane
-    of the sky but shown in 3D on the Thomson surface/plane of the sky
+    of the sky but shown in 3D on the Thomson surface/plane of the sky. Note that it
+    uses the interpolators to get the 3d location of the full FoV. These are based on
+    only the region containing the CME so if it is a small subset of a large, very curved
+    FOV (e.g. HI2 with a CME < 150 Rs) the outer unused points will look wonky. This is
+    fixable, but not a priority for CK.
     
     Inputs:    
         densMap:    a single density array. In g/cm^3
@@ -1632,6 +1641,7 @@ def dingo23d(densMap, maskMap, outFoV, pix2St, fullImSize, showLog=False, showSu
     fovy = pix2St[1]((pxx, pyy))
     fovz = pix2St[2]((pxx, pyy))
     fovs = np.array([fovx, fovy, fovz])
+    
     
     #|--- Make the *full* FoV grid in pix ---|
     # Technically downselect by factor of 32 for fitting
@@ -1707,6 +1717,7 @@ def dingo23d(densMap, maskMap, outFoV, pix2St, fullImSize, showLog=False, showSu
         xs = np.cos(tt)*np.cos(pp)
         ys = np.sin(tt)*np.cos(pp)
         zs = np.sin(pp)
+        sunS = 50
     
     #|--- Check if should show in AU ---|    
     units = ' (R$_s$)'
@@ -1715,6 +1726,10 @@ def dingo23d(densMap, maskMap, outFoV, pix2St, fullImSize, showLog=False, showSu
         showx = showx / 215
         showy = showy / 215
         showz = showz / 215
+        xs = xs / 215
+        ys = ys / 215
+        zs = zs / 215
+        sunS = 5
         units = ' (au)'
     
     #|--- Plot it ---|
@@ -1724,7 +1739,7 @@ def dingo23d(densMap, maskMap, outFoV, pix2St, fullImSize, showLog=False, showSu
     im = ax.scatter(showx, showy, showz, c=densF, cmap=cmap, vmin=vvals[0], vmax=vvals[1])
     
     if showSun:
-        ax.scatter(xs,ys,zs, c='y', s=50)
+        ax.scatter(xs,ys,zs, c='y', s=sunS)
     
     
     #|--- Colorbar friend ---|
@@ -2804,11 +2819,27 @@ def processArgs(args):
     
     if '-' in idstr:
         if '+' in idstr:
-            sys.exit('Cannot process ids with both + and -')
-        splitstr = idstr.split('-')
-        if len(splitstr) > 2:
-            sys.exit('Cannot process ids with multiple -')
-        ids = np.arange(int(splitstr[0]), int(splitstr[1])+1,1, dtype=int)
+            chunks = idstr.split('+')
+            ids = []
+            for chunk in chunks:
+                if '-' in chunk:
+                    splitstr = chunk.split('-')
+                    theseIds = np.arange(int(splitstr[0]), int(splitstr[1])+1,1, dtype=int)
+                    ids.extend(theseIds)
+                else:
+                    try:
+                        myId = int(chunk)
+                        ids.extend(chunk)
+                    except:
+                        sys.exit('Error processing id string')
+                    
+            #sys.exit('Cannot process ids with both + and -')
+        else:
+            splitstr = idstr.split('-')
+            if len(splitstr) > 2:
+                sys.exit('Cannot process ids with multiple -')
+            ids = np.arange(int(splitstr[0]), int(splitstr[1])+1,1, dtype=int)
+
     elif '+' in idstr:
         splitstr = idstr.split('+')
         ids = []
@@ -2858,6 +2889,7 @@ def processArgs(args):
             # multi wf here
             sortIdx = np.argsort(miniLog[:,2])
             miniLog = miniLog[sortIdx,:]
+            inOut = False
         else:
             singleWF  = False
             # Shock + CME
@@ -2914,6 +2946,7 @@ def processArgs(args):
         uniqTs = np.unique(miniLog[:, 2])
         uniqShapes = np.unique(miniLog[:, 3]) 
         nTimes = 1
+        inOut = False
 
     #|-------------------------------|
     #|--- Check the dimension tag ---|     

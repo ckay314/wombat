@@ -24,22 +24,22 @@ errors try uninstalling the pip version then using brew !!!
 global doClean, customOrder, ovw
 
 # Name of wombat log file
-logFilePath = 'wbOutputs/201207full.txt'
+logFilePath = 'wbOutputs/202303full.txt'
 
 # Movie save name. Should end with .mp4 (other formats untested)
-movieName = '2012_COR.mp4'
+movieName = '2023_full.mp4'
 
 # Lines to do, same string format as other wombat functions
-idstr = '8-75'
+idstr = '1-423'
 
 # Time Resolution (in minutes)
-tRes = 10
+tRes = 30
 
 # Number of columns in movie (max 5)
-nHoriz = 2
+nHoriz = 4
 
 # Include clean imgs without wf proj
-doClean = False
+doClean = True
 
 # Frames per second
 fps = 4
@@ -47,8 +47,8 @@ fps = 4
 # Flag to set the instrument order
 # (must include all the inst in the pickle)
 customOrder = True
-#instOrder = ['C2', 'COR2A', 'C3', 'WISPRI', 'SoloHI', 'HI1A_SR']
-instOrder = ['COR1B', 'COR1A','COR2B','COR2A']
+instOrder = ['C2', 'COR2A', 'C3', 'WISPRI', 'SoloHI', 'HI1A_SR']
+#instOrder = ['COR1B', 'COR1A','COR2B','COR2A']
     
 # Running (0) or base diff (1)
 didx = 0
@@ -58,13 +58,13 @@ sclidx = 0
 wfSize = 3
 
 # Option to include overview plot
-ovw = False
+ovw = True
 
 # Option to set custom colors, otherwise will use standard
 # wombat GUI colors based on WF type. Custom will cycle 
 # through the array in alphabetical order. Can use names 
 # or html tags 
-doCustomColors = False
+doCustomColors = True
 customColors = ['#9AE630', 'cyan', 'DeepPink', 'PeachPuff', 'Gold', 'BlueViolet', 'LimeGreen']
 
     
