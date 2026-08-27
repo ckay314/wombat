@@ -269,7 +269,7 @@ class ParamWindow(QMainWindow):
         
         # |------ WF Color Select Button ------|
         colBut = QPushButton('')
-        colBut.setStyleSheet("background-color : yellow")
+        colBut.setStyleSheet("background-color : #9AE630")
         colBut.released.connect(lambda: self.CBclicked(i))
         self.colButs.append(colBut)
         layout.addWidget(colBut, 2, 0, 1,1,alignment=QtCore.Qt.AlignCenter)
@@ -1398,9 +1398,9 @@ class ParamWindow(QMainWindow):
     def SBclicked(self, singleSat=None, doItAll=False):
         """
         Event for clicking the save button. If called by the parameter
-        window it will save the wf parameters/reload file and images 
-        for each of the plot panels. If called by the plot panel it will
-        only doing one figure. 
+        window it will save the wf parameters file and images for each
+        of the plot panels. If called by the plot panel it will only
+        do one figure. 
         
         This is a little bit of a hack where the function sorts out which
         tslider indices need to be saved and just sets the GUI to each one

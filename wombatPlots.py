@@ -124,6 +124,10 @@ import pickle
 #|----------------------|
 global errorStrings, labSwap,labErrs, labelMatch, inst2sat, labErrs, hErrs
 
+
+global wf2label
+wf2label = {'GCS1':'CME1', 'Torus1':'Fil1', 'GCSA':'CME1B',  'GCSB':'CME2',  'GCSC':'CME3',  'GCSD':'CME4A',  'GCSE':'CME4B', }
+
 #|--- Standard input error message ---|
 errorStrings = [' ', '  python3 wombatPlots.py logFile id(s) type otherParams', '          where:', '          - logFile is a wombat log file', '          - ids is an integer or int+int or int-int', '          - type sets the plot type from [ht, kin, en, linimg, logimg, sqimg]', '          - otherParams includes min#, max#, outName, logIt, GUIcolors, and picType']
 
@@ -1527,7 +1531,7 @@ def processBonusArgs(args, mode):
 # |-------------------------|
 # |--- Line profile plot ---|
 # |-------------------------|
-def profilePlot(mode, wombatRes, wfTypes, logH=False, wfColors=False, enRes=None, kinRes=None, versusH=False, errorbars=False, incDrag=False, outName='wombatProfile'):
+def profilePlot(mode, wombatRes, wfTypes, logH=False, wfColors=False, enRes=None, kinRes=None, versusH=False, errorbars=False, incDrag=False, outName='wombatProfile', figsize=None):
     ''' 
     Main plotting script for any form of profile/line plots. It will automatically
     adjust between the different mode options. None of the kinematic/energetic
@@ -1586,6 +1590,8 @@ def profilePlot(mode, wombatRes, wfTypes, logH=False, wfColors=False, enRes=None
                     folder as outName + picType (global var). If the name is set to showit 
                     then it will pop up a window instead of saving a figure
                     (defaults to wombatProfile.png)
+    
+        figsize:    a tuple for the size of the figure (inchHoriz, inchVert)
         
     Outputs: No direct outputs but saves a figure according to outName
     
@@ -1601,7 +1607,7 @@ def profilePlot(mode, wombatRes, wfTypes, logH=False, wfColors=False, enRes=None
     else:
         counter = 0
         #cols = ['#888888','#882255', '#332288', '#661100', '#6699CC']
-        cols = ['#9AE630', 'LimeGreen', 'cyan', 'DeepPink', 'PeachPuff', 'Gold', 'BlueViolet']
+        cols = ['#9AE630','LimeGreen',  'cyan', 'DeepPink', 'PeachPuff', 'Gold', 'BlueViolet']
         for wft in wfTypes:
             pltColors[wft] = cols[counter]
             counter += 1
@@ -1830,8 +1836,11 @@ def profilePlot(mode, wombatRes, wfTypes, logH=False, wfColors=False, enRes=None
             id2id[awf] = newids
 
     
-    np2sz = {1:3, 2:5, 3:6, 4:5, 5:6, 6:7, 7:8, 8:9, 9:10, 10:10, 11:10}
-    fig, ax = plt.subplots(nParams, 1, figsize=(7,np2sz[nParams]), layout='constrained', sharex=True)
+    if type(figsize) == type(None):
+        np2sz = {1:3, 2:5, 3:6, 4:5, 5:6, 6:7, 7:8, 8:9, 9:10, 10:10, 11:10}
+        fig, ax = plt.subplots(nParams, 1, figsize=(7,np2sz[nParams]), layout='constrained', sharex=True)
+    else:
+        fig, ax = plt.subplots(nParams, 1, figsize=figsize, layout='constrained', sharex=True)
     if versusH:
         ax[-1].set_xlabel(hlab)  
     if nParams == 1:
@@ -1890,7 +1899,8 @@ def profilePlot(mode, wombatRes, wfTypes, logH=False, wfColors=False, enRes=None
                         if id2idR[aType][i] > -1:
                             myax = axR[id2idR[aType][i]]
                             # Height should never be on right
-                            myErr = labErrs[yLabelsL[id2id[aType][i]]]
+                            if yLabelsL[id2id[aType][i]] in labErrs:
+                                myErr = labErrs[yLabelsL[id2id[aType][i]]]
                                               
                     if type(myax) != type(None):    
                         xdata = myTimes
@@ -1900,7 +1910,10 @@ def profilePlot(mode, wombatRes, wfTypes, logH=False, wfColors=False, enRes=None
                             #ydata = myRes['paramGrid'][i+1,:]
                                                                            
                         if aType not in hasLabel:
-                            myax.plot(xdata, ydata, 'o', c=myC, label=aType)
+                            myLabel = aType
+                            if aType in wf2label:
+                                myLabel = wf2label[aType]
+                            myax.plot(xdata, ydata, 'o', c=myC, label=myLabel)
                             hasLabel.append(aType)
                         else:
                             myax.plot(xdata, ydata, 'o', c=myC)
@@ -2216,10 +2229,12 @@ def wombatPlotWrapper(args):
     #|--------------------------|
     #|--- Run line plot mode ---|     
     #|--------------------------|
+    wfTypes = ['GCS1', 'Torus1', 'GCSA', 'GCSB', 'GCSC', 'GCSD', 'GCSE']
+    figsize = (10,5) # or set to None
     if mode in ['ht1', 'ht2','ht3', 'kin1', 'kin2', 'kin3', 'en1', 'en2', 'en3']:
         if type(outName) == type(None):
             outName = 'showit'
-        profilePlot(mode, wombatRes, wfTypes, logH=logIt, wfColors=wfColors, kinRes=kinRes, enRes=enRes, errorbars=errorbars, versusH=versusH, incDrag=incDrag, outName=outName)
+        profilePlot(mode, wombatRes, wfTypes, logH=logIt, wfColors=wfColors, kinRes=kinRes, enRes=enRes, errorbars=errorbars, versusH=versusH, incDrag=incDrag, outName=outName, figsize=figsize)
     
     #|--------------------------|
     #|--- Basic print points ---|     

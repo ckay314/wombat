@@ -855,6 +855,7 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
                     (e.g. FoVx((pixx,pixy)) )
     
     ''' 
+    
     # |--------------------------------------|
     # |--- Decide single or multi WF mode ---|
     # |--------------------------------------|
@@ -1038,13 +1039,16 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
     nzpys = np.arange(minpy, maxpy+1, downSize)
     nzpxx, nzpyy = np.meshgrid(nzpxs, nzpys)
     
-
+    
     #|-----------------------------------|
     #|--- Pull the mass data subfield ---|
     #|-----------------------------------|
     # Need to sum up the masses in all the pixels we are 
     # compressing into a single pix in the smaller FoV
     # Compress along pixel x direction
+    if 'MASK' in satDict:
+        massMap = massMap*(1-np.abs(satDict['MASK']))
+
     subMass = np.zeros([massMap.shape[0], nzpyy.shape[1]])
     for i in range(len(nzpxs)):
         mypx = nzpxs[i]
@@ -1189,6 +1193,7 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
         
         #fig = plt.figure()
         #plt.imshow(deprojScale[0]*maskMap[0], origin='lower')
+        #plt.imshow(subMass, origin='lower')
         #plt.show()
         #print (sd)
                 
@@ -1300,7 +1305,7 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
     else:
         dens = dens / (6.957e10 **3 )
     
-    densMap = [dens , dens2 ] # convert to g/cm^3
+    densMap = [dens * maskMap[0], dens2 ] # convert to g/cm^3
     
     
     # 2d plotting example (for testing)
@@ -1308,8 +1313,10 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
        fig,ax = plt.subplots(1,3)
        vval = 1e13
        ax[0].imshow(dens*6.957e10 **3,  vmin=0, vmax = vval, origin='lower')
-       ax[1].imshow(dens2*6.957e10 **3,  vmin=0, vmax = vval, origin='lower')
-       ax[2].imshow(deprojScale[0], origin='lower')
+       ax[1].imshow(dens*6.957e10 **3 * maskMap[0],  vmin=0, vmax = vval, origin='lower')
+       ax[2].imshow(maskMap[0],  origin='lower')
+       #ax[1].imshow(dens2*6.957e10 **3,  vmin=0, vmax = vval, origin='lower')
+       #ax[2].imshow(deprojScale[0], origin='lower')
        plt.show()
     
     #|---------------------|

@@ -21,13 +21,13 @@ errors try uninstalling the pip version then using brew !!!
 #|---------- Configure here!!! ----------|
 #|---------------------------------------|
 #|---------------------------------------|
-global doClean, customOrder, ovw
+global doClean, customOrder, ovw, doCutout, cutouts
 
 # Name of wombat log file
 logFilePath = 'wbOutputs/202303full.txt'
 
 # Movie save name. Should end with .mp4 (other formats untested)
-movieName = '2023_full.mp4'
+movieName = 'temp.mp4'
 
 # Lines to do, same string format as other wombat functions
 idstr = '1-423'
@@ -46,7 +46,7 @@ fps = 4
 
 # Flag to set the instrument order
 # (must include all the inst in the pickle)
-customOrder = True
+customOrder = True 
 instOrder = ['C2', 'COR2A', 'C3', 'WISPRI', 'SoloHI', 'HI1A_SR']
 #instOrder = ['COR1B', 'COR1A','COR2B','COR2A']
     
@@ -66,6 +66,15 @@ ovw = True
 # or html tags 
 doCustomColors = True
 customColors = ['#9AE630', 'cyan', 'DeepPink', 'PeachPuff', 'Gold', 'BlueViolet', 'LimeGreen']
+
+# Option to take cutouts of imgs. Must turn on doCutout
+# and provide the range for each instrument in the 
+# folowing dictionary in the form inst:[miny, maxy, minx, maxx]
+# where each value is a decimal fraction of where to start/stop
+# within the image. [0,0] is the bottom left corner and [1,1] top right
+# Things will fit nicer if the plot is close to square
+doCutout = False
+cutouts = {'EUI304':[ 0.5,0.65, 0.3, 0.45]}
 
     
 # Dictionary for min/max values based on inst/scale mode
@@ -427,6 +436,14 @@ def setUpCMaps(allInsts):
         fakeIt = {}
         fakeIt['OBS'] = wp.inst2sat[key.upper()]
         fakeIt['INST'] = key
+        # Make sure it has wavelength
+        if 'EUI' in key:
+            fakeIt['WAVE'] = key.replace('EUI','')
+        if 'EUVI' in key:
+            fakeIt['WAVE'] = key.replace('EUVI','')
+        if 'AIA' in key:
+            fakeIt['WAVE'] = key.replace('AIA','')
+        
         hasCT = check4CT(fakeIt)
         if type(hasCT) == type(None):
             hasCT = 'gray'
@@ -702,19 +719,40 @@ def setupImgObj():
         myInst = allInsts[i]
         instIdx = movie2inst[myInst][movt]
         mm = instMinMax[myInst]
+        
         mySclIm = sclIms[myInst][didx][instIdx][sclidx]
         # Force log scale if euv
         if (satStuff[myInst][0][0]['OBSTYPE'] == 'EUV'):
             mySclIm = sclIms[myInst][didx][instIdx][1]
+        
+        # Check if we have cutouts, covert values to pix
+        # if so, otherwise set idx to full range
+        myShape = mySclIm.shape
+        if doCutout and (myInst in cutouts):
+            myCut = cutouts[myInst]
+            pixY0 = int(myCut[0]*(myShape[0]-1))
+            pixY1 = int(myCut[1]*(myShape[0]-1))
+            pixX0 = int(myCut[2]*(myShape[1]-1))
+            pixX1 = int(myCut[3]*(myShape[1]-1))
+            myCut = [pixY0, pixY1, pixX0, pixX1] # ranges non inclusive so add to end  
+        else:
+            myCut = [0,myShape[0], 0, myShape[1]]
+        cutouts[myInst] = myCut
+        
+        mySclIm = mySclIm[myCut[0]:myCut[1]+1, myCut[2]:myCut[3]+1]
+        myExt = [myCut[2], myCut[3], myCut[0], myCut[1]]
+        
         #|--- Set up main image objects ---|
-        imObj = allAx[0][i].imshow(mySclIm, cmap=instCMaps[myInst], vmin=mm[0], vmax=mm[1], origin='lower')
+        imObj = allAx[0][i].imshow(mySclIm, cmap=instCMaps[myInst], vmin=mm[0], vmax=mm[1], origin='lower', extent=myExt)
+        allAx[0][i].set_autoscale_on(False)
         imObjs.append(imObj)
         mydate =  proIms[myInst][0][instIdx].date.datetime.strftime("%Y-%m-%dT%H:%M")
         panelLabel = myInst + ' ' + mydate
 
         #|--- Set up clean img objects and text label ---|
         if doClean:
-            imObjC = allAx[1][i].imshow(mySclIm, cmap=instCMaps[myInst], vmin=mm[0], vmax=mm[1], origin='lower')
+            imObjC = allAx[1][i].imshow(mySclIm, cmap=instCMaps[myInst], vmin=mm[0], vmax=mm[1], origin='lower', extent=myExt)
+            allAx[1][i].set_autoscale_on(False)
             imObjsC.append(imObjC)
             textObj = allAx[1][i].text(0.5, 0, panelLabel, c='w', bbox=dict(facecolor='black', alpha=0.5), horizontalalignment='center',verticalalignment='bottom', transform = allAx[1][i].transAxes)
         else:
@@ -913,6 +951,9 @@ def update(movt):
         mydate =  proIms[myInst][0][instIdx].date.datetime.strftime("%Y-%m-%dT%H:%M")
         panelLabel = myInst + ' ' + mydate
         
+        myCut = cutouts[myInst]
+        mySclIm = mySclIm[myCut[0]:myCut[1], myCut[2]:myCut[3]]
+        
         imObjs[i].set_data(mySclIm)
         textObjs[i].set_text(panelLabel)
         if doClean:
@@ -1087,10 +1128,15 @@ wfColorDict = setupWFcolors(theWFs, customColors=customColors)
 #|--- Object Setup ---|
 #|--------------------|
 global imObjs, imObjsC, textObjs, scatObjs
+# Make sure we have an empty cutout dict
+# if it was set to false
+if not doCutout: 
+    cutouts = {}
 imObjs, imObjsC, textObjs, scatObjs = setupImgObj()
 if ovw:
     global ovwScats, satScats, timeItem 
     ovwScats, satScats, timeItem = setupOVW()
+
                 
 #|------------------|
 #|--- Animate it ---|
