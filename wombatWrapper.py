@@ -356,6 +356,7 @@ def runWombat(args):
     logFile      = None
     doFigLabs = True
     tRes = 10
+    allowZoom = False
     
     #|-------------------------------|
     #|--- Check for output folder ---|     
@@ -403,8 +404,10 @@ def runWombat(args):
                 tRes = int(num)
             except:
                 sys.exit('Error in converting tRes into integer number of minutes')    
+        elif arg.lower() in ['zoom', 'allowzoom', 'pan', 'allowpan']:
+            allowZoom = True
             
-    releaseTheWombat(bkgData, reloadDict=reloadDict, overviewPlot=overviewPlot, nWFs=nWFs, logFile=logFile, tRes=tRes, doFigLabs=doFigLabs)   
+    releaseTheWombat(bkgData, reloadDict=reloadDict, overviewPlot=overviewPlot, nWFs=nWFs, logFile=logFile, tRes=tRes, doFigLabs=doFigLabs, allowZoom = allowZoom)   
         
         
 if __name__ == '__main__':

@@ -663,7 +663,7 @@ def pullSTEREO(times, insts, EUVtime=10, CORtime=20, HItime=30, outFolder='pullF
 # |------------------------------------------------------------|
 def pullWISPR(times, insts, HItime=30, outFolder='pullFolder/'):
     """
-    Function to pull level 2 WISPR observations using a combo of Fido search
+    Function to pull level 3 WISPR observations using a combo of Fido search
     and wget from the NRL site directly
     
     The NRL repo does have some V2 files where the L2 data has been reprocessed for 
@@ -695,10 +695,10 @@ def pullWISPR(times, insts, HItime=30, outFolder='pullFolder/'):
     goodIdx = []
     if len(result) > 0:
         for i in range(len(result[0]['fileid'])):
-            if '/L2/' in result[0]['fileid'][i]:
+            if '/L3/' in result[0]['fileid'][i]:
                 goodIdx.append(i)
     else:
-        print ('Cannot find any files for WISPR')
+        print ('Cannot find any L3 files for WISPR')
  
     
     # |-----------------------------|
@@ -707,8 +707,8 @@ def pullWISPR(times, insts, HItime=30, outFolder='pullFolder/'):
     # CK has given up on the vso downloading bc its almost always a 404 or 403 error
     # but we can wget these files
     # base path = 'https://wispr.nrl.navy.mil/data/rel/fits/L2/'
-    # followed by YYYYMMDD/samefilename.fits
-    basePath  = 'https://wispr.nrl.navy.mil/data/rel/fits/L2/'
+    # followed by orbit#/date/samefilename.fits
+    basePath  = 'https://wispr.nrl.navy.mil/data/rel/fits/L3/'
     if len(goodIdx) > 0:
         print('')
         print('Downloading PSP WISPR files...')
@@ -719,15 +719,14 @@ def pullWISPR(times, insts, HItime=30, outFolder='pullFolder/'):
         for i in goodIdx:
             # Full path name from Fido
             ogname = result[result.keys()[0]]['fileid'][i]
-            # Just the file name
-            fname = ogname[ogname.rfind('/')+1:]
-            # Just the date
-            ymd = fname[13:21]
+            # Want orbit/date/file name
+            fname = ogname.replace('data/psp/wispr/L3/','').replace('inner/','').replace('outer/','')
+            
             # Build the NRL paths
-            myPath = basePath + ymd + '/' + fname
+            myPath = basePath + '/' + fname
             # Local Paths
-            inPath = outFolder+'PSP/WISPR/Inner/'
-            outPath = outFolder+'PSP/WISPR/Outer/'
+            inPath = outFolder+'PSP/WISPR/L3_Inner/'
+            outPath = outFolder+'PSP/WISPR/L3_Outer/'
             
             # Inner cases
             if ('V1_1' in fname) & ('WISPRI' in insts):

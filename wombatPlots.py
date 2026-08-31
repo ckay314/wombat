@@ -1606,7 +1606,7 @@ def profilePlot(mode, wombatRes, wfTypes, logH=False, wfColors=False, enRes=None
             pltColors[wft] = wf.colorDict[wft]
     else:
         counter = 0
-        #cols = ['#888888','#882255', '#332288', '#661100', '#6699CC']
+        #cols = ['#888888','#882255', '#332288', '#661100', '#6699CC'] # colors2change
         cols = ['#9AE630','LimeGreen',  'cyan', 'DeepPink', 'PeachPuff', 'Gold', 'BlueViolet']
         for wft in wfTypes:
             pltColors[wft] = cols[counter]

@@ -43,6 +43,10 @@ Optional Inputs:
     doFigLabs:    flag to include labels when saving figs (instrument name + time) 
                   defaults to True
 
+    allowZoom:    flag to allow zooming and panning on the white light images. defaults to 
+                  false but the function is allowed on all EUV images regardless of this setting
+    
+
 Outputs:
     No outputs automatically generated. If the save button is hit then figures will be saved
     within wbOutputs/ as wombat_SAT+INST_YYYY-MM-DD-THHMMSS.png 
@@ -1665,6 +1669,8 @@ class FigWindow(QWidget):
          
         screenXY: size of the computer display in pixels [x,y]. used to help place windows
     
+        mouseEnabled: allow for scrolling and dragging of the plot data within a window.
+                      Defaults to disabled because tends to cause more harm than good.
      
     """
     def __init__(self, myObs, myScls, satStuff, massIms, myNum=0, tmap=[[0],{0:0}], screenXY=None, mouseEnabled=False):
@@ -1772,7 +1778,7 @@ class FigWindow(QWidget):
         self.pWindow.setMinimumSize(400, 400)
         self.pWindow.scene().sigMouseClicked.connect(self.mouse_clicked)
         # Turn off screwing with the plot range unless EUI
-        if not mouseEnabled and (self.satName != 'Solar Orbiter EUI'):
+        if not mouseEnabled and (self.satStuff[0][0]['OBSTYPE'] != 'EUV'):
             self.pWindow.getPlotItem().getViewBox().setMouseEnabled(x=False, y=False)
         
         layoutP.addWidget(self.pWindow,0,0,11,11,alignment=QtCore.Qt.AlignCenter)
@@ -2157,6 +2163,12 @@ class FigWindow(QWidget):
         
         pidx = self.t2p[self.tslIdx]
         didx = curSet[self.instTag][0][pidx]
+        # The non diff modes (LW, SR) have one fewer proIm/ogIm timestep
+        # than the scaled images bc those are tied to mass (L2/L3 calc)
+        # just shift the index here and make the missing time 0 match t1
+        # since it should be an insignificant change
+        if ('_LW' in self.satStuff[didx][pidx]['INST']) or ('_SR' in self.satStuff[didx][pidx]['INST']):
+            if pidx > 1: pidx -= 1  
             
         #|---- Print pix ----|
         prefA = self.satStuff[didx][pidx]['MYTAG'].replace('_',' ') + ' pix:'
@@ -3461,7 +3473,7 @@ def sortTimeIndices(satStuff, tRes=20):
 # |------------------------------------------------------------|
 # |------------------- Main Launch Function -------------------|
 # |------------------------------------------------------------|
-def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, reloadDict=None, logFile=None, tRes=20, doFigLabs=True):
+def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, reloadDict=None, logFile=None, tRes=20, doFigLabs=True, allowZoom=False):
     """
     Main wrapper function to build and run the WOMBAT GUI
 
@@ -3501,6 +3513,8 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, reloadDict=None, logF
         doFigLabs:    flag to include labels when saving figs (instrument name + time) 
                       defaults to True
         
+        allowZoom:    flag to allow zooming and panning on the white light images. defaults to 
+                      false but the function is allowed on all EUV images regardless of this setting
 
     Outputs:
         No outputs automatically generated. If the save button is hit then figures will be saved
@@ -3696,7 +3710,7 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, reloadDict=None, logF
             sing[0] = [0]
             myTmap = [[0], sing, sing] 
         
-        pw = FigWindow(obsFiles[i], sclIms[i], satStuff[i], massIms[i], myNum=i, tmap=myTmap, screenXY=screenXY)
+        pw = FigWindow(obsFiles[i], sclIms[i], satStuff[i], massIms[i], myNum=i, tmap=myTmap, screenXY=screenXY, mouseEnabled=allowZoom)
         pw.show()
         pws.append(pw) 
         
