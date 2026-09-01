@@ -1,5 +1,6 @@
 aiapy==0.10.2
 astropy==7.1.1
+ffmpeg==8.1.2
 matplotlib==3.11.1
 numpy==2.5.2
 PyQt5==5.15.11

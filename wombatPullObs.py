@@ -99,7 +99,7 @@ def setupFolderStructure(topName):
     # Satellite directory names 
     satDirs = ['PSP', 'SDO', 'SOHO', 'SolO', 'STEREO']
     # Instrument/wavelength directory names
-    instDirs = [['WISPR','WISPR/Inner', 'WISPR/Outer'], 
+    instDirs = [['WISPR','WISPR/L3_Inner', 'WISPR/L3_Outer', 'WISPR/L2_Inner', 'WISPR/L2_Outer', 'WISPR/LW_Inner', 'WISPR/LW_Outer'], 
                 ['AIA', 'AIA/94', 'AIA/131', 'AIA/171', 'AIA/193', 'AIA/211', 'AIA/304', 
                 'AIA/335', 'AIA/1600', 'AIA/1700'], 
                 ['LASCO', 'LASCO/C2', 'LASCO/C3'],
@@ -691,7 +691,7 @@ def pullWISPR(times, insts, HItime=30, outFolder='pullFolder/'):
     result = Fido.search(a.Time(times[0], times[1]), a.Instrument.wispr)
    
     
-    # Pull the L2 data
+    # Pull the L3 data
     goodIdx = []
     if len(result) > 0:
         for i in range(len(result[0]['fileid'])):
