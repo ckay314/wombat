@@ -195,14 +195,18 @@ def TB2mass(img, hdr, onlyNe=False, doPB=False, despike=False):
     # Despike mass image if flagged to do so
     if despike:
         medVal = np.median(np.abs(mass))
+        if medVal == 0:
+            medVal = 1
         sclMass  = mass / medVal
 
         despiked = ndimage.median_filter(sclMass, size=20)
-        diff = (despiked - sclMass) / np.median(despiked)
-        bigChange = np.where(np.abs(diff) >= 10)
-        pretty = np.copy(sclMass)
-        pretty[bigChange] = despiked[bigChange]
-        mass = pretty * medVal
+        if np.median(despiked) != 0:
+            
+            diff = (despiked - sclMass) / np.median(despiked)
+            bigChange = np.where(np.abs(diff) >= 10)
+            pretty = np.copy(sclMass)
+            pretty[bigChange] = despiked[bigChange]
+            mass = pretty * medVal
         
   
     # add a tag into header

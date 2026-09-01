@@ -1153,7 +1153,7 @@ def processWISPR(times, insts, wcalpath='prepFiles/psp/wispr/',  inFolder='pullF
     # Return if nothing found
     if nFound == 0:
         print ('No matching WISPR files found')
-        return None
+        return None, None
     
     # |----------------------------------|
     # |------- Process the files --------|
@@ -1379,17 +1379,7 @@ def processObs(times, insts, inFolder='pullFolder/', outFolder='wbFits/', outFil
             myRDHIs, rdHdrs = rdifhi_wrapper(myFs, side=side, tel=tel)
             allProIms[inst] = [myRDHIs, rdHdrs]
             allfnames[inst] = myFs
-            
-    #for key in allProIms:
-        #print (key, allProIms[key][0][0])
-        #proIms, outLines = processSTEREO(times, doSTEREO, doSR=True)
-            
-        #if type(outLines) != type(None):
-        #    for line in outLines:
-        #        f1.write(line)
-        #else:
-        #    print('Unable to process any STEREO images')        
-    
+                
 
     # |-------------------------------|
     # |------------ WISPR ------------|
@@ -1419,6 +1409,8 @@ def processObs(times, insts, inFolder='pullFolder/', outFolder='wbFits/', outFil
     if len(doWISPR) > 0:
         if doLW:
             proImsLW, outLinesLW = processWISPR(times, doWISPR, doLW=True)
+            if type(proImsLW) == type(None):
+                sys.exit('Found no WISPR LW files. Either remove keyword or provide files')
             for key in proImsLW:
                 if len(proImsLW[key]) > 0:
                     allProIms[key+'_LW'] = proImsLW[key]
@@ -1426,6 +1418,8 @@ def processObs(times, insts, inFolder='pullFolder/', outFolder='wbFits/', outFil
 
         if doL2:
             proImsL2, outLinesL2 = processWISPR(times, doWISPR, doL2=True)
+            if type(proImsLW) == type(None):
+                sys.exit('Found no WISPR L2 files. Either remove keyword or provide files')
             for key in proImsL2:
                 if len(proImsL2[key]) > 0:
                     allProIms[key+'_L2'] = proImsL2[key]
@@ -1492,7 +1486,7 @@ def processObs(times, insts, inFolder='pullFolder/', outFolder='wbFits/', outFil
 # |------------------------------------------------------------|
 # |-------------------- Command Line Wrapper ------------------|
 # |------------------------------------------------------------|
-def thePickler(proIms, fnames, insts0, pickleJar='wbPickles/', name='temp'):
+def thePickler(proIms, fnames, insts0, pickleJar='wbPickles/', name='temp', doMass=True):
     """
     Wrapper to make a pickle with all the info that the GUI will need
     for the background images. Everything will be fully processed pre
@@ -1520,6 +1514,10 @@ def thePickler(proIms, fnames, insts0, pickleJar='wbPickles/', name='temp'):
     
             pickleJar:  Where to save the pickles that are generated
                         Defaults to /wbPickles/       
+    
+            doMass:     flag to turn off mass calculation. cuts down run time and makes
+                        slightly smaller pickles
+                        Defaults to true
         
         
         Actions:
@@ -1535,6 +1533,8 @@ def thePickler(proIms, fnames, insts0, pickleJar='wbPickles/', name='temp'):
                         OrigFiles[inst]: a list of the fits files used for that inst
     
                         isEUV[inst]: whether or not an instrument is EUV type (i.e. don't mass)
+    
+                        Times[inst]: the times of each obs
     
                 proIms0[inst]: the processed based image (array) and header
                                 [arr0, hdr0]
@@ -1583,6 +1583,7 @@ def thePickler(proIms, fnames, insts0, pickleJar='wbPickles/', name='temp'):
     # |--- (sub) Dictionary with satStuff -> hdr-like with extra stuff ---|
     bigDill['satStuff'] = {}
     
+    
     # |----------------------------|
     # |---- Fill the info dict ----|
     # |----------------------------|
@@ -1590,6 +1591,7 @@ def thePickler(proIms, fnames, insts0, pickleJar='wbPickles/', name='temp'):
     insts = np.array([key for key in fnames])
     bigDill['WBinfo']['Insts'] = insts
     bigDill['WBinfo']['OrigFiles'] = {}
+    bigDill['WBinfo']['Times'] = {}
     bigDill['WBinfo']['isEUV'] = {}
     for key in insts:
         bigDill['WBinfo']['OrigFiles'][key] = fnames[key]
@@ -1610,7 +1612,11 @@ def thePickler(proIms, fnames, insts0, pickleJar='wbPickles/', name='temp'):
         else:
             redo.append(inst)
     insts0 = redo
-
+    
+    # Get all caps list of input insts (no bonuses added for masses)
+    instsUP = np.copy(insts0)
+    for i in range(len(instsUP)):
+        instsUP[i] = instsUP[i].upper()
 
     # |---------------------------------------|
     # |---- Fill the basic processed data ----|
@@ -1622,10 +1628,11 @@ def thePickler(proIms, fnames, insts0, pickleJar='wbPickles/', name='temp'):
         else:
             bigDill['proIms0'][key] = [proIms[key][0][0], proIms[key][1][0]]
         
-        bigDill['proIms'][key] = [[], []]    
+        bigDill['proIms'][key] = [[], []]  
         for i in range(len(proIms[key][0])):
             bigDill['proIms'][key][0].append(proIms[key][0][i])
             bigDill['proIms'][key][1].append(proIms[key][1][i])
+
         
         # |--------------------------------------|
         # |---- Make running difference maps ----|
@@ -1638,15 +1645,18 @@ def thePickler(proIms, fnames, insts0, pickleJar='wbPickles/', name='temp'):
             soloFix = True
         
         tempMaps[key] = arr2maps(bigDill['proIms'][key][0], bigDill['proIms'][key][1], doDiff=doDiff, soloFix=soloFix)  
-
+        
+        
         # |---------------------------------------|
         # |---- Process headers into satStuff ----|
         # |---------------------------------------|
         # Have to do at some point and next pieces of code were originally
         # written to use it so easier to do here and pass than rewrite it
         mySatStuff = []
+        bigDill['WBinfo']['Times'][key] = []  
         for j in range(len(tempMaps[key][0])):
             aMap = tempMaps[key][0][j]
+            bigDill['WBinfo']['Times'][key].append(aMap.date)
             aSStuff =  getSatStuff(aMap) # A Sat Stuff, don't be immature...
             if bigDill['WBinfo']['isEUV'][key]:
                 aSStuff['myFits'] = fnames[key][j]
@@ -1669,7 +1679,7 @@ def thePickler(proIms, fnames, insts0, pickleJar='wbPickles/', name='temp'):
         # |------------------------------------|
         # |---- Calculate masses and store ----|
         # |------------------------------------|
-        if bigDill['WBinfo']['isEUV'][key]:
+        if bigDill['WBinfo']['isEUV'][key] or not doMass:
             bigDill['massIms'][key] = [None, None]
         elif key in ['WISPRI_LW', 'WISPRO_LW', 'HI1A_SR', 'HI1B_SR', 'HI2A_SR', 'HI2B_SR']:
             bigDill['massIms'][key] = [None, None]
@@ -1699,18 +1709,23 @@ def thePickler(proIms, fnames, insts0, pickleJar='wbPickles/', name='temp'):
         # |-------------------------------------------|
         # |---- Calculate scaled images and store ----|
         # |-------------------------------------------|
-        sclIms, satstuff2 = scaleIt(tempMaps[key], mySatStuff)
-        bigDill['scaledIms'][key] = sclIms
-        bigDill['satStuff'][key] = satstuff2
+        # Slow so only calc if we're keeping it
+        if (key.upper() in instsUP):
+            sclIms, satstuff2 = scaleIt(tempMaps[key], mySatStuff)
+            bigDill['scaledIms'][key] = sclIms
+            bigDill['satStuff'][key] = satstuff2
 
         # |---------------------------------|
         # |---- Make min processed maps ----|
         # |---------------------------------|
         bigDill['proImMaps'][key] = [[], []]
         maxlen = len(bigDill['proIms'][key][0])-1
-        if bigDill['WBinfo']['isEUV'][key]: maxlen += 1
+        if not doDiff:
+            maxlen += 1
+        #if bigDill['WBinfo']['isEUV'][key]: maxlen += 1
         for j in range(maxlen):
-            if bigDill['WBinfo']['isEUV'][key]:
+            #if bigDill['WBinfo']['isEUV'][key]:
+            if not doDiff:
                 jj = j
             else:
                 jj = j+1
@@ -1721,37 +1736,27 @@ def thePickler(proIms, fnames, insts0, pickleJar='wbPickles/', name='temp'):
     # |----------------------------------|
     # |---- Replace masses as needed ----|
     # |----------------------------------|
-    if 'WISPRI_LW' in bigDill['WBinfo']['Insts']:
-        if 'WISPRI' in bigDill['massIms']:
-            bigDill['massIms']['WISPRI_LW'] = bigDill['massIms']['WISPRI']
-    if 'WISPRO_LW' in bigDill['WBinfo']['Insts']:
-        if 'WISPRO' in bigDill['massIms']:
-            bigDill['massIms']['WISPRO_LW'] = bigDill['massIms']['WISPRO']
-    if 'HI1A_SR' in bigDill['WBinfo']['Insts']:
-        if 'HI1A' in bigDill['massIms']:
-            bigDill['massIms']['HI1A_SR'] = bigDill['massIms']['HI1A']
-            bigDill['proImMaps']['HI1A_SR'] = bigDill['proImMaps']['HI1A']
-    if 'HI1B_SR' in bigDill['WBinfo']['Insts']:
-        if 'HI1B' in bigDill['massIms']:
-            bigDill['massIms']['HI1B_SR'] = bigDill['massIms']['HI1B']
-            bigDill['proImMaps']['HI1B_SR'] = bigDill['proImMaps']['HI1B']
-    if 'HI2A_SR' in bigDill['WBinfo']['Insts']:
-        if 'HI2A' in bigDill['massIms']:
-            bigDill['massIms']['HI2A_SR'] = bigDill['massIms']['HI2A']
-            bigDill['proImMaps']['HI2A_SR'] = bigDill['proImMaps']['HI2A']
-    if 'HI2B_SR' in bigDill['WBinfo']['Insts']:
-        if 'HI2B' in bigDill['massIms']:
-            bigDill['massIms']['HI2B_SR'] = bigDill['massIms']['HI2B']
-            bigDill['proImMaps']['HI2B_SR'] = bigDill['proImMaps']['HI2B']
-    
-        
-    # |-------------------------------|
-    # |---- Clean out bonus insts ----|
-    # |-------------------------------|
+    massFriends = {'WISPRI_LW':'WISPRI', 'WISPRO_LW':'WISPRO', 'HI1A_SR':'HI1A', 'HI1B_SR':'HI1B', 'HI2A_SR':'HI2A', 'HI2B_SR':'HI2B'}
+    if doMass:
+        for key in massFriends:
+            if key in bigDill['WBinfo']['Insts']:
+                myFriend = massFriends[key]
+                if myFriend in bigDill['massIms']:
+                    if len(bigDill['massIms'][myFriend]) > 0:
+                        replaceMs = []
+                        for aTime in bigDill['WBinfo']['Times'][key]:
+                            if aTime in bigDill['WBinfo']['Times'][myFriend]:
+                                midx = np.where(bigDill['WBinfo']['Times'][myFriend] == aTime)[0]
+                                replaceMs.append(bigDill['massIms'][myFriend][midx[0]])
+                            else:
+                                replaceMs.append(bigDill['massIms'][myFriend][0]*0)
+                        bigDill['massIms'][key] = replaceMs
+                        
+ 
+    # |--------------------------------------|
+    # |---- Clean out pickle/bonus insts ----|
+    # |--------------------------------------|
     # Might have insts used to calc mass that don't actually want pickled
-    instsUP = np.copy(insts0)
-    for i in range(len(instsUP)):
-        instsUP[i] = instsUP[i].upper()
     for aInst in insts:
         if aInst.upper() not in instsUP:
             print (aInst, 'removing')
@@ -1762,9 +1767,9 @@ def thePickler(proIms, fnames, insts0, pickleJar='wbPickles/', name='temp'):
             # |--- (sub) Dictionary with mass image data ---|
             temp = bigDill['massIms'].pop(aInst)
             # |--- (sub) Dictionary with difference images scaled for display ---|
-            temp = bigDill['scaledIms'].pop(aInst)
+            #temp = bigDill['scaledIms'].pop(aInst)
             # |--- (sub) Dictionary with satStuff -> hdr-like with extra stuff ---|
-            temp = bigDill['satStuff'].pop(aInst)
+            #temp = bigDill['satStuff'].pop(aInst)
     
             # |----------------------------|
             # |---- Fill the info dict ----|
@@ -1772,6 +1777,7 @@ def thePickler(proIms, fnames, insts0, pickleJar='wbPickles/', name='temp'):
             # List of instruments
             bigDill['WBinfo']['OrigFiles'].pop(aInst)
             bigDill['WBinfo']['isEUV'].pop(aInst)
+        
     bigDill['WBinfo']['Insts'] = insts0
         
             
@@ -2289,7 +2295,7 @@ def scaleIt(obsIn, satStuffs):
     # Pull the desired values for each instrument
     
     # mins/maxs on percentiles by instrument [[lower], [upper]] with [lin, log, sqrt]  #tagIt:dynrng
-    pMMs = {'AIA':[[0.001,10,1], [99,99,99]], 'SECCHI_EUVI':[[0.001,0.001,1], [99,99,99]], 'LASCO_C2':[[15,1,15], [97,99,97]], 'LASCO_C3':[[40,1,10], [99,99,90]], 'SECCHI_COR1':[[30,1,10], [99,99,90]], 'SECCHI_COR2':[[20,1,10], [92,99,93]], 'SECCHI_HI1':[[1,40,1], [99.5,80,99.9]], 'SECCHI_HI2':[[1,40,1],[99.9,80,99.9]], 'SECCHI_HI1_SR':[[1,40,1], [99.5,80,99.9]], 'SECCHI_HI2_SR':[[1,40,1],[99.9,80,99.9]], 'WISPR_HI1':[[5,40,1], [98.,80,99.9]], 'WISPR_HI2':[[1,40,1], [99.9,80,99.9]],'WISPR_HI1_LW':[[1,1,1.], [99.,99,99.]], 'WISPR_HI1_L2':[[10,40,1], [95.,80,99.9]], 'WISPR_HI2_L2':[[1,40,1], [99.9,80,99.9]], 'SoloHI':[[1,40,1], [99.5,80,99.5]],'WISPR_HI2_LW':[[1,1,1.], [99.,99,99.]], 'EUI': [[10,10,10], [99.9,99.9,99.9]]}
+    pMMs = {'AIA':[[0.001,10,1], [99,99,99]], 'SECCHI_EUVI':[[0.001,0.001,1], [99,99,99]], 'LASCO_C2':[[15,1,15], [97,99,97]], 'LASCO_C3':[[40,1,10], [99,99,90]], 'SECCHI_COR1':[[30,1,10], [99,99,90]], 'SECCHI_COR2':[[20,1,10], [92,99,93]], 'SECCHI_HI1':[[1,40,1], [99.5,80,99.9]], 'SECCHI_HI2':[[1,40,1],[99.9,80,99.9]], 'SECCHI_HI1_SR':[[1,40,1], [99.5,80,99.9]], 'SECCHI_HI2_SR':[[1,40,1],[99.9,80,99.9]], 'WISPR_HI1':[[5,40,1], [98.,80,99.9]], 'WISPR_HI2':[[1,40,1], [99.9,80,99.9]],'WISPR_HI1_LW':[[1,1,1.], [99.,95,99.]], 'WISPR_HI1_L2':[[10,40,1], [95.,80,99.9]], 'WISPR_HI2_L2':[[1,40,1], [99.9,80,99.9]], 'SoloHI':[[1,40,1], [99.5,95,99.5]],'WISPR_HI2_LW':[[1,1,1.], [99.,99,99.]], 'EUI': [[10,10,10], [99.9,99.9,99.9]]}
     
     # Where the background sliders start (between 0 and 255)
     sliVals = {'AIA':[[0,0,0], [191,191,191]], 'SECCHI_EUVI':[[0,0,0], [191,191,191]], 'LASCO_C2':[[0,0,21],[191,191,191]], 'LASCO_C3':[[37,0,37],[191,191,191]], 'SECCHI_COR1':[[63,0,21],[191,191,191]], 'SECCHI_COR2':[[63,0,21],[191,191,191]], 'SECCHI_HI1':[[63,0,21],[128,191,191]], 'SECCHI_HI2':[[63,0,21],[128,191,191]], 'SECCHI_HI1_SR':[[63,0,21],[128,191,191]], 'SECCHI_HI2_SR':[[63,0,21],[128,191,191]],  'WISPR_HI1':[[20,0,21],[128,191,191]], 'WISPR_HI2':[[0,0,21],[128,191,191]], 'WISPR_HI1_LW':[[10,0,21],[191,191,191]], 'WISPR_HI1_L2':[[20,0,21],[128,191,191]], 'WISPR_HI2_L2':[[0,0,21],[128,191,191]], 'WISPR_HI2_LW':[[10,0,21],[191,191,191]], 'SoloHI':[[10,0,21],[128,191,191]], 'EUI':[[0,0,0], [191,191,191]]}
@@ -2325,13 +2331,19 @@ def scaleIt(obsIn, satStuffs):
         someObs = np.zeros([int(len(satStuffs)/nSample), int(sz[0]/2), int(sz[1]/2)])
         for i in range(someObs.shape[0]):
             someObs[i,:,:] = obsIn[k][i*nSample].data[::2,::2]
-
+            
         #|---- Get median ----|
         #imNonNaN = allObs[~np.isnan(allObs)]   
         #medval  = np.median(np.abs(imNonNaN))
-
         imNonNaN = someObs[~np.isnan(someObs)]   
         medval  = np.median(np.abs(imNonNaN))
+        checkIt = []
+        for i in range(someObs.shape[0]):
+            me = someObs[i,:,:]
+            meNoNan = ~np.isnan(me)
+            checkIt.append(np.mean(me[meNoNan]))
+        checkIt = np.array(checkIt)
+        goodtidx = np.where(np.isfinite(checkIt))
         
         #|---- Check if diff image ----|
         # Get the median negative value to comp to the median abs
@@ -2345,8 +2357,10 @@ def scaleIt(obsIn, satStuffs):
         #|---- Clean out NaNs ----|
         if not diffImg:
             allObs[np.isnan(allObs)] = 0
+            someObs[np.isnan(someObs)] = 0
         else:
             allObs[np.isnan(allObs)] = -9999
+            someObs[np.isnan(someObs)] = -9999
     
         #|---- Clean out Infs ----| 
         if not diffImg:
@@ -2377,7 +2391,7 @@ def scaleIt(obsIn, satStuffs):
         # Calc range and scale to 0 - 255
         rng = linMax- linMin
         linIm = (allObs - linMin) * 255 / rng
-
+        
         #|---- Process log imgs ----|   
         print ('   Log scaling running... ')
         # Normalize to keep things in nice ranges
@@ -2405,14 +2419,16 @@ def scaleIt(obsIn, satStuffs):
         logIm[nidx] = -np.log(-tempIm[nidx] - minVal + 1)  
         logImF[nidxF] = -np.log(-tempImF[nidxF] - minVal + 1)  
         # Get max val from config dict and rescale
-        percX = np.percentile(logIm, myMM[1][1])
+        percX = np.percentile(logIm[goodtidx,:,:], myMM[1][1])
         logIm = 191 * logImF / percX
-
+        
         #|---- Process sqrt imgs ----|   
         print ('   SQRT scaling running... ')
         # Normalize to keep things in nice ranges
         tempIm = someObs / medval
         allIm  = allObs /medval
+        tempNonNan = imNonNaN / medval
+        
         # Get min val based on config dict
         minVal = np.percentile(tempNonNan[goodIdx],myMM[0][2])
         # Set min val to zero
@@ -2421,15 +2437,16 @@ def scaleIt(obsIn, satStuffs):
         # Set all neg to zero
         tempIm[np.where(tempIm < 0)] = 0
         allIm[np.where(allIm < 0)] = 0
+        
         # Sqrt now that everyone is positive
         sqrtIm = np.sqrt(tempIm)
         sqrtAllIm = np.sqrt(allIm)
-        # Get max val from config dict and rescale
-        percX = np.percentile(sqrtIm, myMM[1][2])
         
+        # Get max val from config dict and rescale
+        percX = np.percentile(sqrtIm[goodtidx,:,:], myMM[1][2])
         # Do for the full set
         sqrtIm = 191 * sqrtAllIm / percX
-    
+        
         #|-------------------------------------| 
         #|--------- Package Results -----------|
         #|-------------------------------------|
@@ -2438,7 +2455,7 @@ def scaleIt(obsIn, satStuffs):
             satStuffs[i]['SLIVALS'] = mySliVals
     
             #|---- Package this time step ----|
-            sclIms = [linIm[i], logIm[i],  sqrtIm[i]]
+            sclIms = np.array([linIm[i], logIm[i],  sqrtIm[i]]).astype(np.float32)
         
             #|---- Add a mask (if needed) ----|
             if 'MASK' in satStuffs[i]:
@@ -2557,12 +2574,15 @@ def commandLineWrapper():
     insts = []
     inFolder = 'pullFolder/'
     pklName = 'temp'
+    doMass = True
     # Processing options
     #doRdifHI = False
     for val in vals:
         if val.upper() not in tags:
             if '.pkl' in val:
                 pklName = val
+            elif val.lower() in ['nomass', 'no_mass', 'massoff', 'mass_off']:
+                doMass = False
             elif os.path.isdir(val):
                 inFolder = val
             #elif val.lower() in ['rdiffhi', 'rdifhi']:
@@ -2608,7 +2628,7 @@ def commandLineWrapper():
     #|---------------------------|
     #|---- Package in pickle ----|
     #|---------------------------|
-    thePickler(proIms, fnames, insts, name=pklName)
+    thePickler(proIms, fnames, insts, name=pklName, doMass=doMass)
            
 
 if __name__ == '__main__':

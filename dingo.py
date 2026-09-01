@@ -172,7 +172,7 @@ picType = '.png' # png or pdf, gets overwritten if set in input
 # |-------------------------|
 # |--- Rebase the masses ---|
 # |-------------------------|
-def rebaseIt(bkgData, obs, rebase, ogTidx):
+def rebaseIt(bkgData, obs, rebase, ogTidx, despike=False):
     """
     Function to reassign a new base time for the mass images.
     
@@ -181,7 +181,7 @@ def rebaseIt(bkgData, obs, rebase, ogTidx):
     
     """
     if obs in ['WISPRI_LW', 'WISPRO_LW', 'HI1A_SR', 'HI1B_SR', 'HI2A_SR', 'HI2B_SR']:
-        sys.exit('Cannot rebase'+obs)
+        sys.exit('Cannot rebase '+obs)
     # |--- Get rebase index ---|
     # Find the closest time to the time provided
     newIdx = 0
@@ -197,7 +197,7 @@ def rebaseIt(bkgData, obs, rebase, ogTidx):
     outMasses = []
     for i in ogTidx:
         newBD = bkgData['proImMaps'][obs][0][i].data - bkgData['proImMaps'][obs][0][newIdx].data
-        newMass = TB2mass(newBD, bkgData['proImMaps'][obs][1][i], despike=True)[0]
+        newMass = TB2mass(newBD, bkgData['proImMaps'][obs][1][i], despike=despike)[0]
         outMasses.append(newMass)
                
     return outMasses
@@ -884,7 +884,7 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
     # |------------------------------------------|
     # FoV Cart = the FoV in the yz plane at x = 0 
     # with the center pixel at the origin
-    downSize = 32
+    downSize = 16
     pixx, pixy = [], []
     mvals = []
     for j in range(myMap.data.shape[0]+1)[::downSize]:
@@ -1309,7 +1309,7 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
     
     
     # 2d plotting example (for testing)
-    if False:
+    if True:
        fig,ax = plt.subplots(1,3)
        vval = 1e13
        ax[0].imshow(dens*6.957e10 **3,  vmin=0, vmax = vval, origin='lower')
@@ -1318,7 +1318,7 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
        #ax[1].imshow(dens2*6.957e10 **3,  vmin=0, vmax = vval, origin='lower')
        #ax[2].imshow(deprojScale[0], origin='lower')
        plt.show()
-    
+    #print (sd)
     #|---------------------|
     #|--- Return things ---|
     #|---------------------|
@@ -3408,8 +3408,10 @@ def dingoWrapper(args, pullMass=False, silent=False):
         satDicts.append(bkgData['satStuff'][obs][0][tidx])
         imMaps.append(bkgData['proImMaps'][obs][0][tidx])
         showMaps.append(bkgData['scaledIms'][obs][0][tidx][0])
+        if type(bkgData['massIms'][obs][tidx]) == type(None):
+            sys.exit('Exiting DINGO, have None for mass at time '+ miniLog[i,2] +' for '+miniLog[i,1])
         massMaps.append(bkgData['massIms'][obs][tidx])
- 
+
     #|--- Make the wireframe(s) ---|
     wfsI, wfsO = [], []
     aboutMe = []
@@ -3453,8 +3455,11 @@ def dingoWrapper(args, pullMass=False, silent=False):
             else:
                 # Inner and outer at same tidx
                 ogTidx.append(int(miniLog[pairIds[i][0],14]))
-                
-        massMaps = rebaseIt(bkgData, obs, rebase, ogTidx)
+
+        despike = False
+        if satDicts[0]['OBSTYPE'] == 'HI':
+            despike = True
+        massMaps = rebaseIt(bkgData, obs, rebase, ogTidx, despike=despike)
 
     #|--------------|
     #|--------------|

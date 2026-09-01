@@ -1463,12 +1463,20 @@ class ParamWindow(QMainWindow):
         """
         # Check if wireframes are turned on
         for aPW in pws:
-            didx = curSet[aPW.instTag][0][self.Tsliders[0].value() - 2]
-            if not (aPW.satStuff[didx][0]['OBSTYPE'] == 'EUV'):
-                for j in range(len(aPW.scatters)):
+            try:
+                tidx = self.Tsliders[0].value() - 2
+                #didx = curSet[aPW.instTag][0][self.Tsliders[0].value() - 2]
+            # Single time
+            except:
+                tidx = 0
+            pidx = aPW.t2p[tidx]
+            didx = curSet[aPW.instTag][0][pidx]
+                
+            if not (aPW.satStuff[didx][0]['OBSTYPE'] == 'EUV') and (type(aPW.mIms[pidx]) != type(None)):
+                for j in range(len(aPW.scatters)): 
                     aScat = aPW.scatters[j]
                     xs, ys = aScat.getData()
-                    mask = wf.pts2mask(aPW.mIms[0].shape, [xs,ys])
+                    mask = wf.pts2mask(aPW.mIms[pidx].shape, [xs,ys])
                     aPW.WFmasks[j] = mask
                      
                 if aPW.nowMass:
@@ -1477,7 +1485,7 @@ class ParamWindow(QMainWindow):
                     aPW.nowMass = True                     
                 aPW.plotBackground()
             else:
-                print ('No mass calc for EUV images')
+                print ('No mass data provided for '+aPW.satStuff[didx][0]['INST'])
                         
     def CBclicked(self, i):
         color = QColorDialog.getColor()
@@ -1728,7 +1736,8 @@ class FigWindow(QWidget):
         self.p2t = tmap[1] # pickle index to slider time
         self.p2tBF = tmap[2] # pickle index to single closest slider time
         self.nowMass = False # show the region used to calc mass
-        self.WFmasks = [np.zeros(myObs[0][0].data.shape, dtype=int) for i in range(nwfs)]
+        
+        self.WFmasks = [np.zeros(myScls[0][0].shape, dtype=int) for i in range(nwfs)]
         
         #|---- Set up/name window ----|
         if type(screenXY) == type(None):
@@ -1798,7 +1807,7 @@ class FigWindow(QWidget):
         self.pWindow.addItem(self.image)
         self.pWindow.addItem(self.MCimage)
         # shape is [rows, columns] = [y,x]
-        self.pWindow.setRange(xRange=(0,myObs[0][0].data.shape[1]), yRange=(0,myObs[0][0].data.shape[0]), padding=0)
+        self.pWindow.setRange(xRange=(0,myScls[0][0].shape[1]), yRange=(0,myScls[0][0].shape[0]), padding=0)
         self.pWindow_circle = None
         self.pWindow_north  = None
         
@@ -2167,15 +2176,16 @@ class FigWindow(QWidget):
         # than the scaled images bc those are tied to mass (L2/L3 calc)
         # just shift the index here and make the missing time 0 match t1
         # since it should be an insignificant change
+        dpidx = 0
         if ('_LW' in self.satStuff[didx][pidx]['INST']) or ('_SR' in self.satStuff[didx][pidx]['INST']):
-            if pidx > 1: pidx -= 1  
+            if pidx >= 1: dpidx = 1
             
         #|---- Print pix ----|
         prefA = self.satStuff[didx][pidx]['MYTAG'].replace('_',' ') + ' pix:'
         print (prefA.rjust(25), str(int(pix[0])).rjust(8), str(int(pix[1])).rjust(8))
         
         #|---- Convert to ra/dec ----| 
-        skyres = self.OGims[pidx].pixel_to_world(pix[0]*u.pixel, pix[1]*u.pixel)
+        skyres = self.OGims[pidx-dpidx].pixel_to_world(pix[0]*u.pixel, pix[1]*u.pixel)
         Tx, Ty = skyres.Tx.to_value(), skyres.Ty.to_value()
         print ('Tx, Ty (arcsec):'.rjust(25), str(int(Tx)).rjust(8), str(int(Ty)).rjust(8))
         
@@ -2191,13 +2201,13 @@ class FigWindow(QWidget):
         print ('Proj R (Rs), PA (deg):'.rjust(25), '{:8.2f}'.format(RRSun), '{:8.1f}'.format(PA))
         
         # |---- Get mass per pixel  ----| 
-        if type(self.mIms[pidx]) != type(None):    
+        if type(self.mIms[0]) != type(None):    
             px = int(pix[0])
             py = int(pix[1])
             if self.satStuff[didx][0]['OBSTYPE'] == 'COR':
-                print('Mass in pixel (1e8 g):'.rjust(25), '{:8.1f}'.format(self.mIms[pidx][py,px]/1e8))
+                print('Mass in pixel (1e8 g):'.rjust(25), '{:8.2f}'.format(self.mIms[pidx][py,px]/1e8))
             elif self.satStuff[didx][0]['OBSTYPE'] == 'HI':
-                print('Mass in pixel (1e8 g):'.rjust(25), '{:8.1f}'.format(self.mIms[pidx][py,px]/1e8))
+                print('Mass in pixel (1e8 g):'.rjust(25), '{:8.2f}'.format(self.mIms[pidx][py,px]/1e8))
 
         print ('')
 
@@ -3259,7 +3269,7 @@ def buildMegaVars(rD, tlabs, tmaps, satNames):
             setLog[aInst][didx] = [[], [], []]
             for sclidx in [0,1,2]:
                 setLog[aInst][didx][sclidx] = np.copy([minVs[sclidx]*tOnes, maxVs[sclidx]*tOnes])    
-    
+
     #|---------------------------------------------|
     #|---- Set up curSet with rD/lin as default ---|
     #|---------------------------------------------|
@@ -3629,7 +3639,8 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, reloadDict=None, logF
     for i in range(nSats):
         key = WBinfo['Insts'][i]
         i2inst[i] = key
-        if len(proIms[i2inst[i]][0]) > 1:
+        #if len(proIms[i2inst[i]][0]) > 1:
+        if len(sclIms[i2inst[i]][0]) > 1:
             multiTime = True
         proIms0[i] = proIms0.pop(key)
         proIms[i]  = proIms.pop(key)
