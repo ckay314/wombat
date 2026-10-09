@@ -24,31 +24,32 @@ errors try uninstalling the pip version then using brew !!!
 global doClean, customOrder, ovw, doCutout, cutouts
 
 # Name of wombat log file
-logFilePath = 'wbOutputs/202303full.txt'
+logFilePath = 'wbOutputs/201207pretty.txt'
 
 # Movie save name. Should end with .mp4 (other formats untested)
 movieName = 'temp.mp4'
 
 # Lines to do, same string format as other wombat functions
-idstr = '1-423'
+idstr = '40-159'
 
 # Time Resolution (in minutes)
 tRes = 30
 
 # Number of columns in movie (max 5)
-nHoriz = 4
+nHoriz = 2
 
 # Include clean imgs without wf proj
-doClean = True
+doClean = False
 
 # Frames per second
-fps = 4
+fps = 6
 
 # Flag to set the instrument order
 # (must include all the inst in the pickle)
 customOrder = True 
-instOrder = ['C2', 'COR2A', 'C3', 'WISPRI', 'SoloHI', 'HI1A_SR']
+#instOrder = ['C2', 'COR2A', 'C3', 'WISPRI', 'SoloHI', 'HI1A_SR']
 #instOrder = ['COR1B', 'COR1A','COR2B','COR2A']
+instOrder = ['HI1B_SR', 'HI1A_SR', 'HI2B_SR', 'HI2A_SR']
     
 # Running (0) or base diff (1)
 didx = 0
@@ -64,7 +65,7 @@ ovw = True
 # wombat GUI colors based on WF type. Custom will cycle 
 # through the array in alphabetical order. Can use names 
 # or html tags 
-doCustomColors = True
+doCustomColors = False
 customColors = ['#9AE630', 'cyan', 'DeepPink', 'PeachPuff', 'Gold', 'BlueViolet', 'LimeGreen']
 
 # Option to take cutouts of imgs. Must turn on doCutout

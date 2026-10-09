@@ -210,7 +210,6 @@ def reloadLogLine(theFile, lineIds):
     else:
         miniLog = logFile.reshape([1,-1])
     
-     
     #|------------------------------|
     #|--- Process basic log data ---|     
     #|------------------------------|

@@ -76,9 +76,9 @@ External Calls:
 
 import sys, os
 import numpy as np
-from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QLabel, QGridLayout, QTabWidget, QSlider, QComboBox, QLineEdit, QDoubleSpinBox, QPushButton, QRadioButton, QColorDialog
+from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QLabel, QGridLayout, QTabWidget, QSlider, QComboBox, QLineEdit, QDoubleSpinBox, QPushButton, QRadioButton, QColorDialog 
 from PyQt5 import QtCore
-from PyQt5.QtGui import QPixmap, QPainter
+from PyQt5.QtGui import QPixmap, QPainter, QColor
 import pyqtgraph as pg
 import datetime
 from itertools import pairwise
@@ -1623,9 +1623,13 @@ class ParamWindow(QMainWindow):
             if showLabs:
                 painter = QPainter(figGrab)
                 painter.setPen(pg.mkPen('w', width=1.75)) 
+                painter.setBackgroundMode(QtCore.Qt.BGMode.OpaqueMode)
+                painter.setBackground(QColor("gray"))
+                
                 #painter.setFont(QFont("Arial", 20, QFont.Weight.Bold))
                 painter.drawText(5, 395, aPW.satStuff[0][pidx]['MYTAG'].replace('_',' ')) # X, Y coordinates
                 painter.drawText(285, 395, aPW.satStuff[0][pidx]['DATEOBS']) # X, Y coordinates
+                
                 painter.end()
                 QApplication.processEvents()
             
@@ -1742,7 +1746,11 @@ class FigWindow(QWidget):
         self.p2tBF = tmap[2] # pickle index to single closest slider time
         self.nowMass = False # show the region used to calc mass
         
-        self.WFmasks = [np.zeros(myScls[0][0].shape, dtype=int) for i in range(nwfs)]
+        if (type(myScls[0][0]) == type([])):
+            myShape = np.array(myScls[0][0]).shape
+        else:
+            myShape = myScls[0][0].shape
+        self.WFmasks = [np.zeros(myShape, dtype=int) for i in range(nwfs)]
         
         #|---- Set up/name window ----|
         if type(screenXY) == type(None):
@@ -1812,7 +1820,7 @@ class FigWindow(QWidget):
         self.pWindow.addItem(self.image)
         self.pWindow.addItem(self.MCimage)
         # shape is [rows, columns] = [y,x]
-        self.pWindow.setRange(xRange=(0,myScls[0][0].shape[1]), yRange=(0,myScls[0][0].shape[0]), padding=0)
+        self.pWindow.setRange(xRange=(0,myShape[1]), yRange=(0,myShape[0]), padding=0)
         self.pWindow_circle = None
         self.pWindow_north  = None
         
@@ -1824,8 +1832,9 @@ class FigWindow(QWidget):
         # Need to do this here so can adjust them
         # on the fly without clearing
         self.scatters = []
+        self.ssize = 2.5
         for i in range(nwfs):
-            aScat = pg.ScatterPlotItem(pen=pg.mkPen(width=1, color='g'), brush=pg.mkBrush(color='g'),symbol='o', size=2.5)
+            aScat = pg.ScatterPlotItem(pen=pg.mkPen(width=1, color='g'), brush=pg.mkBrush(color='g'),symbol='o', size=self.ssize)
             self.scatters.append(aScat)
             self.pWindow.addItem(aScat)
         
@@ -2148,9 +2157,7 @@ class FigWindow(QWidget):
     def MBclicked(self):
         """
         Event for clicking the mass button
-        
-        Does nothing yet but working on that
-        
+         
         """        
         if 'mainwindow' in globals():
             mainwindow.MBclicked()
@@ -2381,15 +2388,20 @@ class FigWindow(QWidget):
                 allxs = np.array(allxs)   
                 allys = np.array(allys)   
                 skipit = 1
+                ssize = self.ssize
                 if len(allxs) > 0:
                     if np.sqrt(np.std(allxs)**2 + np.std(allys)**2) < 40:
                         skipit = 2
-                        penwid = penwid/2
+                        ssize = ssize/2
+                    elif np.sqrt(np.std(allxs)**2 + np.std(allys)**2) > 150:
+                        ssize = 2 * ssize
                 for jj in range(len(allxs))[::skipit]:
-                    pos.append({'pos': [allxs[jj], allys[jj]], 'pen':{'color':myColor, 'width':penwid}, 'brush':pg.mkBrush(myColor)})
+                    pos.append({'pos': [allxs[jj], allys[jj]], 'pen':{'color':myColor}, 'brush':pg.mkBrush(myColor)})
                 
                 #|---- Reset the scatters to new positions ----|    
                 self.scatters[i].setData(pos)
+                
+                self.scatters[i].setSize(ssize)
  
     def plotBackground(self):
         """
@@ -2422,9 +2434,9 @@ class FigWindow(QWidget):
                     seps = np.abs(wfs[i].params[1]-self.satStuff[didx][self.pickIdx]['POSLON'])
                     seps[np.where(seps > 90)] = 180 - seps[np.where(seps > 90)]
                     mySep = np.min(np.abs(seps))
-                    if mySep > 80:
-                        print ('!!!--- Warning PoS separation large, capping at 80 deg ---!!!')
-                        mySep = 80                                            
+                    if mySep > 60:
+                        print ('!!!--- Warning PoS separation large, capping at 60 deg ---!!!')
+                        mySep = 60                                            
                     # Need to convert the h to projected for elTheory
                     rpos, Bpos = wM.elTheory([wfs[i].params[0]*np.cos(mySep*np.pi/180.)], 0)
                     rsep, Bsep = wM.elTheory([wfs[i].params[0]*np.cos(mySep*np.pi/180.)], mySep)

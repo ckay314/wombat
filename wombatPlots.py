@@ -83,7 +83,7 @@ Keys with numbers (# replaced by float or time)
         
 
     Other:
-        pickleName - the name of a pickle with the saved results of previous DINGO
+        pickleName - the name of a pickle with the saved results of previous wombatPlot
                      calculation. These are automatically saved by getEnergetics in
                      wbPlotPickles/ using saveName or defaulting to bigMassRes.pkl
                      It automatically searches this directory so it should just be
@@ -1606,8 +1606,9 @@ def profilePlot(mode, wombatRes, wfTypes, logH=False, wfColors=False, enRes=None
             pltColors[wft] = wf.colorDict[wft]
     else:
         counter = 0
-        #cols = ['#888888','#882255', '#332288', '#661100', '#6699CC'] # colors2change
-        cols = ['#9AE630','LimeGreen',  'cyan', 'DeepPink', 'PeachPuff', 'Gold', 'BlueViolet']
+        cols = ['#888888','#882255', '#332288', '#661100', '#6699CC'] # colors2change
+        # 2023 demo case colors
+        #cols = ['#9AE630','LimeGreen',  'cyan', 'DeepPink', 'PeachPuff', 'Gold', 'BlueViolet']
         for wft in wfTypes:
             pltColors[wft] = cols[counter]
             counter += 1
@@ -1911,6 +1912,7 @@ def profilePlot(mode, wombatRes, wfTypes, logH=False, wfColors=False, enRes=None
                                                                            
                         if aType not in hasLabel:
                             myLabel = aType
+                            # Used for renaming things in 2023 example case
                             if aType in wf2label:
                                 myLabel = wf2label[aType]
                             myax.plot(xdata, ydata, 'o', c=myC, label=myLabel)
@@ -2229,7 +2231,7 @@ def wombatPlotWrapper(args):
     #|--------------------------|
     #|--- Run line plot mode ---|     
     #|--------------------------|
-    wfTypes = ['GCS1', 'Torus1', 'GCSA', 'GCSB', 'GCSC', 'GCSD', 'GCSE']
+    #wfTypes = ['GCS1', 'Torus1', 'GCSA', 'GCSB', 'GCSC', 'GCSD', 'GCSE']
     figsize = (10,5) # or set to None
     if mode in ['ht1', 'ht2','ht3', 'kin1', 'kin2', 'kin3', 'en1', 'en2', 'en3']:
         if type(outName) == type(None):

@@ -465,6 +465,31 @@ class wireframe():
             ys = rp * np.sin(phiMEGA)
             zs = np.sin(thetaMEGA)*(Lp + rr * np.cos(phiMEGA))
             
+            # Add back if needed -> filled circles to cap ends
+            if doBack:
+                capThetas = np.linspace(0,2*pi, 100)
+                capRs = np.linspace(0, 1, 20)
+                cTmega = np.array([capThetas]*len(capRs)).reshape([-1])
+                cRmega = np.array([[capRs[i]]*len(capThetas) for i in range(len(capRs))]).reshape([-1])
+                
+                # End cap 1
+                cap1x = np.ones(len(cTmega)) * x0
+                cap1y = [rp * cRmega * np.sin(cTmega)]
+                cap1z = [Lp + rr * cRmega * np.cos(cTmega)]
+                
+                xs = np.append(xs,cap1x)
+                ys = np.append(ys,cap1y)
+                zs = np.append(zs,cap1z)
+                
+                # End cap 2
+                cap2x = np.ones(len(cTmega)) * x0
+                cap2y = [rp * cRmega * np.sin(cTmega)]
+                cap2z = [-Lp + rr * cRmega * np.cos(cTmega)]
+                
+                xs = np.append(xs,cap2x)
+                ys = np.append(ys,cap2y)
+                zs = np.append(zs,cap2z)
+            
             xyz = np.array([xs, ys, zs])
             
             # Convert from theoryland to StonyCart

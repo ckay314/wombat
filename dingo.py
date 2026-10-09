@@ -101,14 +101,6 @@ the arguments are
         newbase_#: a new time to switch to the base time for the mass calculation. the
                    # should be replaced by a time stamp that parse_time can process
 
-
-Alternatively, one can just pass a dingo_config text file. This is a simple text file 
-with two columns containing the nametag+':' (nametag from the above options) and the 
-corresponding values. For example, a file could contain:
-    logFile:	wbOutputs/WomBlog.txt
-    ids:		5+6
-    dim:		2d
-    logplot:	True
                 
 The code will either save a plot (if saveName is given) or pop up a window with the
 desired figure. In the case of a 1D figure, the a save name will also be used to save
@@ -199,7 +191,7 @@ def rebaseIt(bkgData, obs, rebase, ogTidx, despike=False):
         newBD = bkgData['proImMaps'][obs][0][i].data - bkgData['proImMaps'][obs][0][newIdx].data
         newMass = TB2mass(newBD, bkgData['proImMaps'][obs][1][i], despike=despike)[0]
         outMasses.append(newMass)
-               
+                       
     return outMasses
 
 
@@ -395,13 +387,13 @@ def getWidth(points, FoVfs, FoV, satFOVxyz, flatLim=5, nGridY=100, isHI=False, s
                 mask[j,i] = 1
                 wids[j,i] = mywid
                 xcs[j,i]  = myxc - temp2[0][j,i]
-            
+       
     #FoVlon[j,i] = -999       
             
-    '''fig = plt.figure()
-    plt.imshow(mask, origin='lower')
-    plt.show() 
-    print (sd)  ''' 
+    #fig = plt.figure()
+    #plt.imshow(xcs, origin='lower')
+    #plt.show()
+    #print (sd)
     '''fig = plt.figure(figsize=(8, 5), layout='constrained')
     ax = fig.add_subplot(111, projection='3d')
     im = ax.scatter(temp2[0], temp2[1], temp2[2], c=FoVlon)
@@ -411,8 +403,8 @@ def getWidth(points, FoVfs, FoV, satFOVxyz, flatLim=5, nGridY=100, isHI=False, s
     ax.set_xlabel('x')
     ax.set_ylabel('y')
     ax.set_zlabel('z')
-    plt.show()
-    print (sd)'''
+    plt.show()'''
+    #print (sd)
     
     # |------------------------------------------|
     # |--- Clean up grid cells with no points ---|
@@ -868,7 +860,6 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
             multiMode = True
             awf2 = awf[1]
             awf  = awf[0]            
-
    
     # Save downselect input to use as the final downselect
     # (will use same var name for interp downselects in middle)
@@ -928,7 +919,7 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
     dy, ygs, zgs = createGrid(OGfov, nGridY)
     
     # |--- Do the inner/main WF ---|
-    awf.gPoints = [i * 10 for i in awf.gPoints]
+    awf.gPoints = [i * 15 for i in awf.gPoints]
     awf.getPoints()
     wfPts = wf2CartFoV(myMap, awf.points)
     wfPtsT = np.transpose(np.array(wfPts))
@@ -944,7 +935,7 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
         
     # |--- Do the outer WF ---|
     if multiMode:
-        awf2.gPoints = [i * 10 for i in awf2.gPoints]
+        awf2.gPoints = [i * 15 for i in awf2.gPoints]
         awf2.getPoints()
         wfPts2 = wf2CartFoV(myMap, awf2.points)
         wfPts2T = np.transpose(np.array(wfPts2))
@@ -954,8 +945,7 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
         # indexing of func is y,z    
         widFunc2  = RegularGridInterpolator((ygs, zgs), np.transpose(wid_smooth2), method='linear', bounds_error=False, fill_value=0)
         xcFunc2   = RegularGridInterpolator((ygs, zgs), np.transpose(midx2), method='linear', bounds_error=False, fill_value=0)
-        maskFunc2 = RegularGridInterpolator((ygs, zgs), np.transpose(mask2), method='linear', bounds_error=False, fill_value=0)
-        
+        maskFunc2 = RegularGridInterpolator((ygs, zgs), np.transpose(mask2), method='linear', bounds_error=False, fill_value=0)  
           
     # |--- Repeat process for the inside (if doing) ---|
     if doInner and (awf.WFtype in ['GCS', 'Torus']):
@@ -972,13 +962,18 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
     
     # Plot of widths    
     '''fig = plt.figure()
-    ax = fig.add_subplot(111)
-    #im = plt.imshow(wids, origin='lower', extent=[FoV[0][0], FoV[0][1], FoV[1][0], FoV[1][1]])
-    im = plt.imshow(wids, origin='lower')
-    cbar = fig.colorbar(im, ax=ax, orientation='vertical', fraction=.05, pad=0.02, shrink=0.5) 
+    ax = fig.add_subplot(121)
+    im = plt.imshow(wids, origin='lower', extent=[FoV[0][0], FoV[0][1], FoV[1][0], FoV[1][1]])
+    im = plt.imshow(wids2/wids, origin='lower', vmin=0, vmax=3)
+    cbar = fig.colorbar(im, ax=ax, orientation='vertical', fraction=.05, pad=0.02, shrink=0.5)
+    #cbar = fig.colorbar(im, ax=ax, orientation='vertical', fraction=.05, pad=0.02, shrink=0.5) 
     ax.set_xlabel('Proj dist (R$_S$)')
     ax.set_ylabel('Proj dist (R$_S$)')
-    cbar.set_label('Width (R$_S$)')
+    plt.show() '''
+    '''fig,ax = plt.subplots(1,3)
+    ax[0].imshow(wids, origin='lower')
+    #ax[1].imshow(wids2, origin='lower')
+    #ax[2].imshow(mask-mask2, origin='lower', vmin=-1, vmax=1)
     plt.show()
     print (sd)'''
     
@@ -1071,7 +1066,7 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
     # Rename for funsies
     subMass = subsubMass
     
-    
+        
     #|--------------------------------------|
     #|--- Get grid cell area on subfield ---|
     #|--------------------------------------|
@@ -1155,7 +1150,6 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
         projR = np.sqrt(f_fovxS**2 + f_fovyS**2 + f_fovzS**2) # r dist to pixels
         PoSang = np.arctan(xcMap[0] / projR) * 180 / 3.14159 * maskMap[0]
 
-        
         # |--- Billings electron party ---|
         rdp, Bfact = elTheory(projR, PoSang)
         rdp0, Bfact0 = elTheory(projR, 0)
@@ -1164,7 +1158,9 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
         # |--- Look/warn for large conversion factors ---|
         bigProj = np.where((deprojScale[0] < 0.1) & (deprojScale[0] != 0.))  
         allProj = np.where(deprojScale[0] != 0.)
-        myPerc = 100*len(bigProj[0])/len(allProj[0])
+        myPerc = 0
+        if len(allProj[0]) != 0:
+            myPerc = 100*len(bigProj[0])/len(allProj[0])
         if len(bigProj[0]) > 0:
             deprojScale[0][bigProj] = 0.1
             if (not silent) or (myPerc > 10):
@@ -1191,11 +1187,12 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
                 print( 'Capping these points at 10x')
             
         
-        #fig = plt.figure()
+        '''fig = plt.figure()
         #plt.imshow(deprojScale[0]*maskMap[0], origin='lower')
-        #plt.imshow(subMass, origin='lower')
-        #plt.show()
-        #print (sd)
+        vval = 1e11
+        plt.imshow(subMass, origin='lower', vmin=-vval, vmax=vval)
+        plt.show()
+        print (sd)'''
                 
     #|--------------------------|
     #|--- Get simple density ---|
@@ -1284,6 +1281,11 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
     #|-------------------------|
     #|--- Correct densities ---|
     #|-------------------------|
+    # Clean up the masks a bit first
+    for i in range(3):
+        if type(maskMap[i]) != type(None):
+            maskMap[i][np.where(maskMap[i] < 0.99)] = 0
+    
     if multiMode:
         # Assume constant ratio between WF1 and WF2
         if inOut:
@@ -1309,11 +1311,12 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
     
     
     # 2d plotting example (for testing)
-    if True:
+    if False:
+       maskMap[0][np.where(maskMap[0] < 0.99)] = 0
        fig,ax = plt.subplots(1,3)
-       vval = 1e13
-       ax[0].imshow(dens*6.957e10 **3,  vmin=0, vmax = vval, origin='lower')
-       ax[1].imshow(dens*6.957e10 **3 * maskMap[0],  vmin=0, vmax = vval, origin='lower')
+       vval = 1e14
+       ax[0].imshow(dens*6.957e10 **3,  vmin=-vval, vmax = vval, origin='lower')
+       #ax[1].imshow(dens*6.957e10 **3 * maskMap[0],  vmin=0, vmax = vval, origin='lower')
        ax[2].imshow(maskMap[0],  origin='lower')
        #ax[1].imshow(dens2*6.957e10 **3,  vmin=0, vmax = vval, origin='lower')
        #ax[2].imshow(deprojScale[0], origin='lower')
@@ -1335,7 +1338,7 @@ def mass2dens(myMap, satDict, awf, massMap, doInner=False, densRatio=1, downSele
 # |-----------------------------|
 # |--- 3D Density Cloud plot ---|
 # |-----------------------------|
-def dingo3d(widMap, xcMap, densMap, maskMap, outFoV, pix2St, satCoord, shell=True, plotIt=True, showLog=False):
+def dingo3d(widMap, xcMap, densMap, maskMap, outFoV, pix2St, satCoord, shell=True, plotIt=True, showLog=False, user_min=None, user_max=None):
     ''' 
     3D scatter plot of the wireframe points colored by density. This launches 
     an interactive plot window that one can rotate to see the cloud from 
@@ -1376,6 +1379,11 @@ def dingo3d(widMap, xcMap, densMap, maskMap, outFoV, pix2St, satCoord, shell=Tru
         
         showLog:    flag to show the contours on a log scale instead of linear 
                     (defaults to false)
+    
+        user_vmin:  custom contour min passed from command line input
+    
+        user_vmax:  custom contour max passed from command line input
+        
     
     '''
     #|------------------|
@@ -1545,7 +1553,9 @@ def dingo3d(widMap, xcMap, densMap, maskMap, outFoV, pix2St, satCoord, shell=Tru
             WFpts2[i] = np.array(WFpts2[i])
      
     # |--- Logify densities ---|
+    fmin, fmax = 10, 90
     if showLog:
+        fmin, fmax = 1, 95
         negPts = np.where(WFpts[3] <= 0)
         if len(negPts[0]) > 0:
             WFpts[3][negPts] = np.min(np.abs(WFpts[3]))
@@ -1556,20 +1566,44 @@ def dingo3d(widMap, xcMap, densMap, maskMap, outFoV, pix2St, satCoord, shell=Tru
             if len(negPts[0]) > 0:
                 WFpts2[3][negPts] = np.min(np.abs(WFpts2[3]))
             WFpts2[3] = np.log10(WFpts2[3])
+    
+    #|--- Replace vmin/vmax if given as input ---|
+    vmms = [[np.percentile(WFpts[3], fmin), np.percentile(WFpts[3], fmin)], [0,0]]
+    if multiMode:
+        vmms[1][0] = np.percentile(WFpts2[3], fmin)
+        vmms[1][1] = np.percentile(WFpts2[3], fmin)
+        
+    if type(user_max) != type(None):
+        if showLog:
+            vmms[1][1] = np.log10(float(user_max))
+            vmms[0][1] = np.log10(float(user_max))
+        else:
+            vmms[1][1] = float(user_max)
+            vmms[0][1] = float(user_max)
+    if type(user_min) != type(None):
+        if showLog:
+            if float(user_min) > 0:
+                vmms[1][0] = np.log10(float(user_min))
+                vmms[0][0] = np.log10(float(user_min))
+            else:
+                print ('Cannot set log contour min at negative value')
+        else:
+            vmms[1][0] = float(user_min)
+            vmms[0][0] = float(user_min)
         
         
     fig = plt.figure(figsize=(8, 5), layout='constrained')
     ax = fig.add_subplot(111, projection='3d')
-    im = ax.scatter(WFpts[0], WFpts[1], WFpts[2], c=WFpts[3], cmap='Reds')
+    im = ax.scatter(WFpts[0], WFpts[1], WFpts[2], c=WFpts[3], cmap='Reds', vmin=vmms[0][0], vmax=vmms[0][1])
     if multiMode:
-        im2 = ax.scatter(WFpts2[0], WFpts2[1], WFpts2[2], c=WFpts2[3], cmap='Blues', alpha=0.2)
+        im2 = ax.scatter(WFpts2[0], WFpts2[1], WFpts2[2], c=WFpts2[3], cmap='Blues', alpha=0.2, vmin=vmms[1][0], vmax=vmms[1][1])
         if not shell:
-            im2 = ax.scatter(WFpts2[0][::4], WFpts2[1][::4], WFpts2[2][::4], c=WFpts2[3][::4], cmap='Blues', alpha=0.1)
+            im2 = ax.scatter(WFpts2[0][::4], WFpts2[1][::4], WFpts2[2][::4], c=WFpts2[3][::4], cmap='Blues', alpha=0.1, vmin=vmms[1][0], vmax=vmms[1][1])
     # Prettify
     ax.set_aspect('equal') 
-    ax.set_xlabel('x')
-    ax.set_ylabel('y')
-    ax.set_zlabel('z')
+    ax.set_xlabel('x (R$_S$)')
+    ax.set_ylabel('y (R$_S$)')
+    ax.set_zlabel('z (R$_S$)')
     
     # Add contour bar
     cbar = fig.colorbar(im, ax=ax, orientation='vertical', fraction=.05, pad=0.02, shrink=0.5) 
@@ -1592,7 +1626,7 @@ def dingo3d(widMap, xcMap, densMap, maskMap, outFoV, pix2St, satCoord, shell=Tru
 # |----------------------------------|
 # |--- Density 2D Contour (in 3d) ---|
 # |----------------------------------|
-def dingo23d(densMap, maskMap, outFoV, pix2St, fullImSize, showLog=False, showSun=False, obsSat=None):
+def dingo23d(densMap, maskMap, outFoV, pix2St, fullImSize, showLog=False, showSun=False, obsSat=None, user_min=None, user_max=None):
     ''' 
     2D contour plot(s) of the width of the wireframe(s) perpendicular to the plane
     of the sky but shown in 3D on the Thomson surface/plane of the sky. Note that it
@@ -1632,7 +1666,10 @@ def dingo23d(densMap, maskMap, outFoV, pix2St, fullImSize, showLog=False, showSu
         obsSat:     a coordinate object for the remote observing sat 
                     (e.g. imMap.observer_coordinate)
         
+        user_vmin:  custom contour min passed from command line input
     
+        user_vmax:  custom contour max passed from command line input
+        
     '''
     #|--- Unpackage FoV things ---|
     minpx, maxpx, minpy, maxpy, downSize = outFoV
@@ -1683,7 +1720,22 @@ def dingo23d(densMap, maskMap, outFoV, pix2St, fullImSize, showLog=False, showSu
         dens = np.log10(dens)
         vmax = int(np.percentile(dens[posPts], 90))
         vvals = [vmax-3, vmax]
-
+        
+    #|--- Replace vmin/vmax if given as input ---|
+    if type(user_max) != type(None):
+        if showLog:
+            vvals[1] = np.log10(float(user_max))
+        else:
+            vvals[1] = float(user_max)
+    if type(user_min) != type(None):
+        if showLog:
+            if float(user_min) > 0:
+                vvals[0] = np.log10(float(user_min))
+            else:
+                print ('Cannot set log contour min at negative value')
+        else:
+            vvals[0] = float(user_min) 
+    
     
     #|--- Set up full FoV density ---|
     # Dump into arrays (instead of 2d) so can have outside
@@ -1798,7 +1850,7 @@ def dingo23d(densMap, maskMap, outFoV, pix2St, fullImSize, showLog=False, showSu
 # |----------------------------|
 # |--- Density Contour plot ---|
 # |----------------------------|
-def dingo2d(widMaps, densMaps, maskMaps, outFoVs, pix2Sts, showLog=False, figName=None, times=None, showRs=False):
+def dingo2d(widMaps, densMaps, maskMaps, outFoVs, pix2Sts, showLog=False, figName=None, times=None, showRs=False, user_min=None, user_max=None, user_fsize=None):
     ''' 
     2D contour plot(s) of the width of the wireframe(s) perpendicular to the plane
     of the sky. If there are two wireframes the outer will be shown on the left and
@@ -1839,6 +1891,12 @@ def dingo2d(widMaps, densMaps, maskMaps, outFoVs, pix2Sts, showLog=False, figNam
                     (defaults to None and just displays the fig instead of saving)
     
         times:      a list of observation times (strings) to use as titles for the panels
+    
+        user_vmin:  custom contour min passed from command line input
+    
+        user_vmax:  custom contour max passed from command line input
+    
+        user_fsize: custom size passed from command line input
     
     '''
     # The first four params need to be packaged as lists, even if passing a single time    
@@ -1926,7 +1984,7 @@ def dingo2d(widMaps, densMaps, maskMaps, outFoVs, pix2Sts, showLog=False, figNam
     if aspR > 0.9:
         nsq = np.max([npx, npy])
         if npx < nsq:
-            limxs[1] += nsq - npx 
+            limxs[1] += (nsq - npx)
         elif npy < nsq:
             limys[1] += nsq - npy 
         picx, picy = nsq, nsq
@@ -1939,8 +1997,12 @@ def dingo2d(widMaps, densMaps, maskMaps, outFoVs, pix2Sts, showLog=False, figNam
     #|----------------------------|    
     #|--- Actually make figure ---|
     #|----------------------------|
-    fsize = fSizes[myStyle]
-    fig = plt.figure(figsize=(fsize[0]*figmod, fsize[1]))
+    if type(user_fsize) == type(None):
+        fsize = fSizes[myStyle]
+        fig = plt.figure(figsize=(fsize[0]*figmod, fsize[1]))
+    else:
+        fig = plt.figure(figsize=(user_fsize[0], user_fsize[1]))
+                
     gs = gridspec.GridSpec(gny, gnx, width_ratios=widRats)
     gs.update(wspace=0.05)
     gs.update(hspace=0.15)
@@ -2039,7 +2101,7 @@ def dingo2d(widMaps, densMaps, maskMaps, outFoVs, pix2Sts, showLog=False, figNam
     #|--- Fill in figure ---|
     #|----------------------|
     # |--- Get density range to set contours ---|
-    vval = np.median(np.abs(allDens1[allDens1 !=0])) * 3 
+    vval = np.median(np.abs(allDens1[allDens1 !=0]))  * 2
     cmap = plt.get_cmap('RdYlBu_r')
     cmap.set_under('k')
     
@@ -2052,12 +2114,46 @@ def dingo2d(widMaps, densMaps, maskMaps, outFoVs, pix2Sts, showLog=False, figNam
         scaleIt = 1
         vmax = int(np.percentile(nz, 90))
         vvals = [vmax-3, vmax]
-        
+    
+    
+    # Option to replace the calculate size/min/max with user
+    # values. Lives here bc this is where CK had been hardcoding
+    # things before there were command line tags
+    # Lin mode -> will run vval[0]*10^power to vval[1]*10^power
+    # Log mode -> will run 10^vval[0] to 10^vval[1]
+
+    # Check for max first, will set power/scaleIt
+    if type(user_max) != type(None):
+        if showLog:
+            vvals[1] = np.log10(float(user_max))
+        else:
+            if 'e' in user_max:
+                splitIt = user_max.split('e')  
+                vvals[1] = float(splitIt[0])  
+                power = int(splitIt[1])
+            else:
+                user_max = float(user_max)
+                power = int(np.log10(user_max))
+                vvals[1] = user_max / (10**power)
+            scaleIt = 10 ** power
+            
+    # Check min. It cant set power
+    if type(user_min) != type(None):
+        if showLog:
+            vvals[0] = np.log10(float(user_min))
+        else:
+            vvals[0] = float(user_min) / (10**power)
+    
+                
+                
+                
     
     for i in range(nTimes):
         thisdens1 = allDens1[i,:,:]
         mask1 = allMask1[i]
+        thisdens1 = mask1 * thisdens1
         thisdens1[np.where(thisdens1 == 0)] = -9999
+        #cmap.set_over("k")
         # Grab the first for the cbar
         if i == 0:
             im = axes[0][i].imshow(thisdens1/scaleIt, origin='lower', vmin=vvals[0], vmax=vvals[1], cmap=cmap, extent=[limxs[0], limxs[1], limys[0], limys[1]])
@@ -2069,6 +2165,7 @@ def dingo2d(widMaps, densMaps, maskMaps, outFoVs, pix2Sts, showLog=False, figNam
         if multiMode:
             thisdens2 = allDens2[i,:,:]
             mask2 = allMask2[i]
+            thisdens2 = mask2 * thisdens2
             thisdens2[np.where(thisdens2 == 0)] = -9999
             axes[1][i].imshow(thisdens2/scaleIt, origin='lower', vmin=vvals[0], vmax=vvals[1], cmap=cmap, extent=[limxs[0], limxs[1], limys[0], limys[1]])
             xs = np.linspace(limxs[0], limxs[1], mask2.shape[1])
@@ -2076,14 +2173,14 @@ def dingo2d(widMaps, densMaps, maskMaps, outFoVs, pix2Sts, showLog=False, figNam
             xxxs, yyys = np.meshgrid(xs, ys)
             axes[0][i].contour(xxxs, yyys, mask2, levels=[0], linestyles='--', colors='w')
             axes[1][i].contour(xxxs, yyys, mask1, levels=[0], linestyles='--', colors='k')
-            
+
     # Add the color bar
+    fig.subplots_adjust(right=rval, left=lval, top=0.95,bottom=0.1)
     cbar = plt.colorbar(im, cax=cax, orientation='vertical')   
     if showLog:
         cbar.set_label('Log$_{10}$ Density (g cm$^{-3}$)', rotation=270, labelpad=15)
     else:  
         cbar.set_label('Density (1e'+str(power)+' g cm$^{-3}$)', rotation=270, labelpad=15)
-    fig.subplots_adjust(right=rval, left=lval, top=0.95,bottom=0.1)
     
     # Hack for Rs tick labels - can only imshow on 
     # fixed grid so plot it in pixel and just relabel after
@@ -2122,7 +2219,8 @@ def dingo2d(widMaps, densMaps, maskMaps, outFoVs, pix2Sts, showLog=False, figNam
             axes[1][0].set_yticks(yticks)
             axes[1][0].set_xticklabels(xlabs)
             axes[1][0].set_yticklabels(ylabs)
-            
+    
+    #plt.tight_layout()        
     
     if figName:
         if not os.path.exists('dingoOutputs/'):
@@ -2137,7 +2235,7 @@ def dingo2d(widMaps, densMaps, maskMaps, outFoVs, pix2Sts, showLog=False, figNam
 # |--------------------|
 # |--- In Situ plot ---|
 # |--------------------|
-def dingo1d(myMaps, widMapIns, xcMapIns, densMapIns, outFoVs, pix2Sts, obsSats, vCME=400, scaleFactors=[1, 0.2], figName=None, timeMode='hr', writeIt=True):
+def dingo1d(myMaps, widMapIns, xcMapIns, densMapIns, outFoVs, pix2Sts, obsSats, vCME=400, scaleFactors=[1, 0.2], figName=None, timeMode='hr', writeIt=True, user_fsize=None):
     ''' 
     1D line plots of the density both in place at the time of observation (left panel)
     and shifted to an observing satellite using a very simple propagation model (right).
@@ -2214,13 +2312,18 @@ def dingo1d(myMaps, widMapIns, xcMapIns, densMapIns, outFoVs, pix2Sts, obsSats, 
                     times will be dumped in the same file.
                     (defaults to True)
     
+        user_fsize: custom size passed from command line input
+    
     '''
     # The first four params need to be packaged as lists, even if passing a single time    
     
     # |---------------------|
     # |--- Set up figure ---|
     # |---------------------|
-    fig, ax = plt.subplots(1, 2, figsize=(8,5), layout='constrained')
+    if type(user_fsize) != type(None):
+        fig, ax = plt.subplots(1,2,figsize=(user_fsize[0], user_fsize[1]), layout='constrained')    
+    else:
+        fig, ax = plt.subplots(1, 2, figsize=(8,5), layout='constrained')
     ax[0].set_xlabel('R (R$_S$)')
     ax[0].set_ylabel('$\\rho$ (g cm$^{-3}$)')
     ax[0].set_title('In Place')
@@ -2591,7 +2694,7 @@ def dingo1d(myMaps, widMapIns, xcMapIns, densMapIns, outFoVs, pix2Sts, obsSats, 
 # |------------------------------|
 # |--- Calculate total masses ---|
 # |------------------------------|
-def getMasses(widMap, densMap, outFoV, pix2FOV, printIt=True):
+def getMasses(widMap, densMap, outFoV, pix2FOV, maskMap, printIt=True):
     ''' 
     0D dingo aka just the total mass in the wireframe region. For a single WF
     case this will differ slightly from the wombat mass calculation because we
@@ -2615,6 +2718,10 @@ def getMasses(widMap, densMap, outFoV, pix2FOV, printIt=True):
                     that convert from from a pixel in the original image ((pixx, pixy)) 
                     (direct output from mass2dens)
     
+        maskMap:   same format as widMaps but for a binary mask showing the extent of the
+                    wireframe shape(s) in the FoV (1 inside wf, 0 outside)
+                    (direct output from mass2dens)
+    
     Optional Inputs:
         printIt:    flag to print the results to screen
                     (defaults to true)
@@ -2630,15 +2737,16 @@ def getMasses(widMap, densMap, outFoV, pix2FOV, printIt=True):
     #|--- Unpackage FoV things ---|
     minpx, maxpx, minpy, maxpy, downSize = outFoV
     
-    dens1 = densMap[0]
-    gidx1 = np.where(dens1 != -10)
+    dens1 = densMap[0] * maskMap[0]
+    
+    gidx1 = np.where(dens1 != 0)
     
     #|--- Check for second WF ---|
     multiMode = False
     if type(widMap[2]) != type(None):
         multiMode = True
-        dens2 = densMap[1]
-        gidx2 = np.where(dens2 != -10)
+        dens2 = densMap[1] * maskMap[2]
+        gidx2 = np.where(dens2 != 0)
 
     #|--- Make the mini FoV grid in pix ---|
     pxs = np.arange(minpx, maxpx+1, downSize)
@@ -2658,7 +2766,6 @@ def getMasses(widMap, densMap, outFoV, pix2FOV, printIt=True):
     dzs[1:,:] = fovz[1:,:] - fovz[:-1,:]
     dzs[0,:] = dzs[1,:]
     cellArea = dys * dzs
-
     #widRs = [wid  for wid in widMap]
     vol1 = widMap[0] * cellArea * (6.96e10 **3)
     mass1 = np.sum(dens1[gidx1]*vol1[gidx1]) / 1e15
@@ -3056,6 +3163,12 @@ def processBonusArgs(allBonus, mode):
         newbase_#: a new time to switch to the base time for the mass calculation. the
                    # should be replaced by a time stamp that parse_time can process
     
+        user_vmin: a custom contour min setting. either set by the user or defaults to none
+    
+        user_vmax: a custom contour max setting. either set by the user or defaults to none
+    
+        user_figsize: a custom figure size. either set by the user or defaults to none
+    
     '''
     # Set the defaults
     expf1 = 1
@@ -3072,6 +3185,11 @@ def processBonusArgs(allBonus, mode):
     target = None
     saveName = None
     rebase  = False
+    # Non binary options without defaults
+    # The things CK got tired of hardcoding 
+    user_min = None
+    user_max = None
+    user_figsize = None
     
     #|------------------------|
     #|--- Check for target ---|     
@@ -3164,20 +3282,41 @@ def processBonusArgs(allBonus, mode):
                 ds = int(aTag.lower().replace('ds_',''))
             except:
                 sys.exit('Error in converting '+aTag+' to ds int')
-        elif 'newbase_' in aTag.lower():
+        elif ('newbase_' in aTag.lower()) or ('rebase_' in aTag.lower()) or ('newtime_' in aTag.lower()):
             strtime = aTag.lower().replace('newbase_', '').replace('t','T')
+            strtime = aTag.lower().replace('rebase_', '').replace('t','T')
+            strtime = aTag.lower().replace('newtime_', '').replace('t','T')
             try:
                 rebase = parse_time(strtime).datetime
             except:
-                sys.exit('Error processing newbase time into time via parse_time ' + strtime)
-                
+                sys.exit('Error processing newbase time into time via parse_time ' + strtime)             
+        
+        elif 'min_' in aTag.lower():
+            try:
+                user_min = aTag.lower().replace('min_', '')
+                tempp = float(user_min)
+            except:
+                sys.exit('Error in converting '+aTag+' to min float')
+        elif 'max_' in aTag.lower():
+            try:
+                user_max = aTag.lower().replace('max_', '')
+                tempp = float(user_max)
+            except:
+                sys.exit('Error in converting '+aTag+' to vmax float')
+        elif 'figsize_' in aTag.lower():
+            dims = aTag.lower().replace('figsize_', '').split('x')
+            if len(dims) != 2:
+                sys.exit('Error in converting '+aTag+' to dimensions. Should be two floats separated by x')
+            try:
+                user_figsize = np.array(dims).astype(float)
+            except:
+                sys.exit('Error in converting '+aTag+' to dimensions. Should be two floats separated by x')
         elif aTag.lower() == 'doinner':
             dI = True
-        elif aTag.lower() == 'projoff':
+        elif aTag.lower() in ['projoff', 'noproj']:
             deproj = False
-        elif aTag.lower() == 'logplot':
+        elif aTag.lower() in ['logplot', 'logit', 'logon', 'itslog']:
             logPlot = True    
-        
         else:
             temp.append(aTag)
     allBonus = np.array(temp)
@@ -3208,7 +3347,7 @@ def processBonusArgs(allBonus, mode):
         sys.exit()
             
             
-    return target, saveName, expf1, expf2, densratio, vcme, ds, dI, logPlot, deproj, rebase
+    return target, saveName, expf1, expf2, densratio, vcme, ds, dI, logPlot, deproj, rebase, user_min, user_max, user_figsize
     
 
 
@@ -3376,10 +3515,13 @@ def dingoWrapper(args, pullMass=False, silent=False):
     deproj  = True
     saveName = None
     rebase = False
+    user_min = None
+    user_max = None
+    user_fsize = None
       
     if len(args) >= 4:
         allBonus = args[3:]
-        target, saveName, expf1, expf2, densratio, vcme, ds, dI, logPlot, deproj, rebase = processBonusArgs(allBonus, mode)
+        target, saveName, expf1, expf2, densratio, vcme, ds, dI, logPlot, deproj, rebase, user_min, user_max, user_fsize = processBonusArgs(allBonus, mode)
                         
                
     #|--------------------------|
@@ -3443,6 +3585,20 @@ def dingoWrapper(args, pullMass=False, silent=False):
             aWFo.params = ps
             aWFo.getPoints()
             wfsO.append(aWFo)
+            
+    '''fig = plt.figure(figsize=(8, 5), layout='constrained')
+    ax = fig.add_subplot(111, projection='3d')
+    pts0 = np.transpose(wfsO[0].points)
+    im = ax.scatter(pts0[0], pts0[1], pts0[2],c='b')
+    pts1 = np.transpose(wfsI[0].points)
+    im = ax.scatter(pts1[0], pts1[1], pts1[2], c='r')
+    ax.set_aspect('equal') 
+    ax.set_xlabel('x')
+    ax.set_ylabel('y')
+    ax.set_zlabel('z')
+    plt.show()
+    print (sd)'''
+            
             
     #|-----------------------------|
     #|--- Rebase it (if needed) ---|        
@@ -3525,13 +3681,13 @@ def dingoWrapper(args, pullMass=False, silent=False):
         
         massOuts = []
         for i in range(nTimes):
-            masses = getMasses(widMaps[i], densMaps[i], outFoVs[i], pix2FOVs[i], printIt=False)
+            masses = getMasses(widMaps[i], densMaps[i], outFoVs[i], pix2FOVs[i], maskMaps[i], printIt=False)
             
             massOuts.append(masses)
             moreOut = ''
             out = aboutMe[i] + ' '
             for mass in masses:
-                moreOut += '{:.2f}'.format(mass) + ' '
+                moreOut += '{:.3f}'.format(mass) + ' '
             print (out+moreOut)
         if pullMass:
             return massOuts, aboutMe
@@ -3543,13 +3699,13 @@ def dingoWrapper(args, pullMass=False, silent=False):
         obsSats = []
         for i in range(nTimes):
             obsSats.append(get_horizons_coord(target, time=satDicts[i]['DATEOBS']))
-        dingo1d(imMaps, widMaps, xcMaps, densMaps, outFoVs, pix2Sts, obsSats, vCME=vcme, scaleFactors=[expf1, expf2], figName=saveName)
+        dingo1d(imMaps, widMaps, xcMaps, densMaps, outFoVs, pix2Sts, obsSats, vCME=vcme, scaleFactors=[expf1, expf2], figName=saveName, user_fsize=user_fsize)
         
     #|--------------------------|
     #|--- 2d - contour plots ---|
     #|--------------------------|
     elif mode == 2:
-        dingo2d(widMaps, densMaps, maskMaps, outFoVs, pix2Sts, figName=saveName, times=uniqTs, showLog=logPlot, showRs=False)
+        dingo2d(widMaps, densMaps, maskMaps, outFoVs, pix2Sts, figName=saveName, times=uniqTs, showLog=logPlot, showRs=False, user_min=user_min, user_max=user_max, user_fsize=user_fsize)
 
     #|------------------------------|
     #|--- 23d - 3D contour plots ---|
@@ -3559,7 +3715,7 @@ def dingoWrapper(args, pullMass=False, silent=False):
         showSun = False
         if satDicts[0]['OBSTYPE'] == 'HI':
             showSun = True
-        dingo23d(densMaps[0][0], maskMaps[0][0], outFoVs[0], pix2Sts[0], fullImSize, showLog=logPlot, obsSat=imMaps[0].observer_coordinate, showSun=showSun)
+        dingo23d(densMaps[0][0], maskMaps[0][0], outFoVs[0], pix2Sts[0], fullImSize, showLog=logPlot, obsSat=imMaps[0].observer_coordinate, showSun=showSun, user_min=user_min, user_max=user_max)
             
     
     #|--------------------------------|
@@ -3567,7 +3723,7 @@ def dingoWrapper(args, pullMass=False, silent=False):
     #|--------------------------------|
     elif mode == 3:
         # Already forced to be single time so can use single versions of these vars
-        allPts = dingo3d(widMap, xcMap, densMap, maskMap, outFoV, pix2St, imMaps[0].observer_coordinate, shell=True, plotIt=True, showLog=logPlot)
+        allPts = dingo3d(widMap, xcMap, densMap, maskMap, outFoV, pix2St, imMaps[0].observer_coordinate, shell=True, plotIt=True, showLog=logPlot, user_min=user_min, user_max=user_max)
 
 # |-----------------------|
 # |--- Text line input ---|
