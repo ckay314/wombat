@@ -33,10 +33,10 @@ movieName = 'temp.mp4'
 idstr = '40-159'
 
 # Time Resolution (in minutes)
-tRes = 30
+tRes = 120
 
 # Number of columns in movie (max 5)
-nHoriz = 2
+nHoriz = 1
 
 # Include clean imgs without wf proj
 doClean = False
@@ -89,7 +89,6 @@ c3mm  = [[37,0,37], [191,191,191]]    # [[37,0,37], [191,191,191]]
 himm  = [[63,0,21], [128,191,191]]    # [[63,0,21], [128,191,191]]
 solomm = [[0,0,21], [128,191,191]]    # [[0,0,21], [128,191,191]]
 wispmm = [[0,0,21], [128,191,191]]    # [[0,0,21], [128,191,191]]
-
 
 
 
@@ -943,8 +942,6 @@ def update(movt):
     for i in range(nInsts):
         myInst = allInsts[i]
         instIdx = movie2inst[myInst][movt]    
-        didx = 0
-        sclidx = 0
         mySclIm = sclIms[myInst][didx][instIdx][sclidx]
         # Force log scale if euv
         if (satStuff[myInst][0][0]['OBSTYPE'] == 'EUV'):
