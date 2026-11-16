@@ -1296,7 +1296,9 @@ class ParamWindow(QMainWindow):
         nameIt = self.saveName
         if nameIt == '':
             nameIt = 'WomBlog'
-        logFile = open('wbOutputs/'+nameIt+'.txt', 'a')
+        if 'wbOutputs' not in nameIt: # attenpt to fix windows issue
+            nameIt = 'wbOutputs/'+nameIt
+        logFile = open(nameIt+'.txt', 'a')
 
         # Check if doing one or all fits
         if type(singleSat) != type(None):
@@ -3719,6 +3721,9 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, reloadDict=None, logF
     for i in range(nSats):
         stuff = satStuff[i][0]
         if stuff[0]['FOV'] > maxFoV: maxFoV = stuff[0]['FOV']
+    # Want this as a number, not array    
+    if type(maxFoV) == type(np.array([])):
+        maxFoV = maxFoV[0]
     # pad it a bit then round to a nice number
     maxFoV = int((1.25 * maxFoV) / 5) * 5
     # EUV only will pull 0 for this^, just set higher if < 1
@@ -3730,6 +3735,9 @@ def releaseTheWombat(obsFiles, nWFs=1, overviewPlot=False, reloadDict=None, logF
         wf.defDict['Height (Rs)'] = 25
     elif maxFoV < 5:
         wf.defDict['Height (Rs)'] = 1.5
+    # Can hardcode higher height here if needed
+    #wf.rngDict['Height (Rs)'] = [0,80]
+    
             
     #|-----------------------------| 
     #|---- Launch Application -----|

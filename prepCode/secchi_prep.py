@@ -21,7 +21,7 @@ from cor_prep import cor_prep, cor_polarize
 from hi_prep import hi_prep
 from astropy.io import fits
 import os
-from sunspyce import load_common_kernels, load_psp_kernels
+from sunspyce import load_common_kernels, load_stereo_kernels
 import spiceypy as spiceypy
 
 #|----------------------------|
@@ -40,7 +40,7 @@ np.seterr(divide='ignore')
 #|----------------------------|
 #|--- Main Wrapper Function ---|
 #|-----------------------------|
-def secchi_prep(filesIn, outSize=None, silent=False, polarizeOn=False, prepDir=None):
+def secchi_prep(filesIn, outSize=None, silent=False, polarizeOn=False, prepDir=None,sebip_off=False, exptime_off=False, bias_off=False, calfac_off=False, calimg_off=False, bkgimg_off=False):
     """
     Main wrapper script for preparing SECCHI images from any instrument.
     This script does limited processing itself but passes the files to  
@@ -60,6 +60,18 @@ def secchi_prep(filesIn, outSize=None, silent=False, polarizeOn=False, prepDir=N
         polarizeOn: flag to indicate we are processing triplets of polarized images
     
         prepDir: the path where the extra files needed for prep are stored
+    
+        sebip_off: flag to turn off the seb ip correction (defaults false)
+        
+        exptime_off: flag to turn off the exposure time correction (defaults false)
+    
+        bias_off: flag to turn off the bias correction (defaults false)
+    
+        calfac_off: flag to turn off the calibration factor correction (defaults false)
+        
+        calimg_off: flag to turn of calibration image
+        
+        bkgimg_off: flag to turn off background image (COR1 only)
     
 
     Output:
@@ -136,7 +148,7 @@ def secchi_prep(filesIn, outSize=None, silent=False, polarizeOn=False, prepDir=N
         # Skipping error catching in 344-359
         if not silent:
             print ('Processing image '+ str(i+1) +' out of ' + str(num))
-            
+            print (filesIn[i])
         #|-------------------|
         #|--- Open a File ---|
         #|-------------------|
@@ -189,13 +201,13 @@ def secchi_prep(filesIn, outSize=None, silent=False, polarizeOn=False, prepDir=N
         #|--- COR1 ---|
         #|------------|
         elif det == 'COR1':
-            im, hdr = cor_prep(im, hdr, prepDir, outSize)        
+            im, hdr = cor_prep(im, hdr, prepDir, outSize, sebip_off=sebip_off, exptime_off=exptime_off, bias_off=bias_off, calfac_off=calfac_off, calimg_off=calimg_off)        
             # Do polarization below after looped
         #|------------|
         #|--- COR2 ---|
         #|------------|    
         elif det == 'COR2':
-            im, hdr = cor_prep(im, hdr, prepDir, outSize)
+            im, hdr = cor_prep(im, hdr, prepDir, outSize, sebip_off=sebip_off, exptime_off=exptime_off, bias_off=bias_off, calfac_off=calfac_off, calimg_off=calimg_off)
         #|-----------|
         #|--- HI1 ---|
         #|-----------|

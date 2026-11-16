@@ -1400,7 +1400,7 @@ def scc_getbkgimg(hdr, secchi_bkg ='STEREObackgrounds/', doRot=False, match=Fals
             if hasP and hasM:
                 dday = 9999
                 delP = (plusDT - avgDT).total_seconds()
-                delM = (avgDT - minusDT).total_seconds
+                delM = (avgDT - minusDT).total_seconds()
                 if delM <= delP:
                     bkgFile = mPath
                 else:

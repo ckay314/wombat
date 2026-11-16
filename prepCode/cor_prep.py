@@ -459,6 +459,8 @@ def cor_calibrate(img, hdr,prepDir, outSize=None, sebip_off=False, exptime_off=F
         bias_off: flag to turn off the bias correction (defaults false)
     
         calfac_off: flag to turn off the calibration factor correction (defaults false)
+        
+        calimg_off: flag to turn of calibration image
 
     Output:
         img: the calibrated image 
@@ -469,6 +471,7 @@ def cor_calibrate(img, hdr,prepDir, outSize=None, sebip_off=False, exptime_off=F
     #|--- Update hdr with processing info ---|
     newStuff = 'Applied python port of cor_calibrate.pro CK 2025'
     hdr['history'] = newStuff
+    
     
     #|-------------------------|
     #|--- SEB IP correction ---|
@@ -481,6 +484,7 @@ def cor_calibrate(img, hdr,prepDir, outSize=None, sebip_off=False, exptime_off=F
     #|--------------------------------|
     # Get the exposure time, needed to converts to DN/S
     # Actual exptime adjustment done below
+    exptime = 1.
     if not exptime_off:
         exptime = float(hdr['exptime'])
         if exptime != 1.:
@@ -510,7 +514,7 @@ def cor_calibrate(img, hdr,prepDir, outSize=None, sebip_off=False, exptime_off=F
     else:
         calimg, hdr = get_calimg(hdr, prepDir+'calimg/', outSize=outSize)
         hdr['history'] = 'Applied vignetting '
-        
+ 
     if calfac_off:
         calfac = 1.
     else:    
@@ -521,7 +525,8 @@ def cor_calibrate(img, hdr,prepDir, outSize=None, sebip_off=False, exptime_off=F
     #|-----------------------------|
     # This will give div 0 issues. Just zero out the infs for now
     img = ((img - biasmean) * calfac / exptime) / calimg
-    img[np.where(calimg == 0)] = 0.
+    if not calimg_off:
+        img[np.where(calimg == 0)] = np.median(img[np.where(calimg != 0)])
         
     return img, hdr
 
@@ -734,7 +739,7 @@ def cor2_warp(im,hdr):
 #|-------------------------|
 #|--- Main Prep Routine ---|
 #|-------------------------|
-def cor_prep(im, hdr, prepDir, outSize=None, calibrate_off=False, warp_off=False):
+def cor_prep(im, hdr, prepDir, outSize=None, calibrate_off=False, warp_off=False, sebip_off=False, exptime_off=False, bias_off=False, calfac_off=False, calimg_off=False):
     """
     Main processing wrapper for all COR1/COR2 images
 
@@ -751,6 +756,18 @@ def cor_prep(im, hdr, prepDir, outSize=None, calibrate_off=False, warp_off=False
         calibrate_off: flag to turn off the calibration (defaults false)
         
         warp_off: flag to turn off the COR2 warping correction (defaults false)
+    
+        Flags to pass to calibrate
+    
+        sebip_off: flag to turn off the seb ip correction (defaults false)
+        
+        exptime_off: flag to turn off the exposure time correction (defaults false)
+    
+        bias_off: flag to turn off the bias correction (defaults false)
+    
+        calfac_off: flag to turn off the calibration factor correction (defaults false)
+        
+        calimg_off: flag to turn of calibration image
     
     Output:
         img: the calibrated image 
@@ -771,9 +788,9 @@ def cor_prep(im, hdr, prepDir, outSize=None, calibrate_off=False, warp_off=False
     #|--------------------------------|
     if not calibrate_off:
         if hdr['detector'] == 'COR1':
-            im, hdr = cor1_calibrate(im, hdr, prepDir, outSize=outSize)
+            im, hdr = cor1_calibrate(im, hdr, prepDir, outSize=outSize, sebip_off=sebip_off, exptime_off=exptime_off, bias_off=bias_off, calfac_off=calfac_off, calimg_off=calimg_off, bkgimg_off=bkgimg_off)
         else:
-            im, hdr = cor_calibrate(im, hdr, prepDir, outSize=outSize)
+            im, hdr = cor_calibrate(im, hdr, prepDir, outSize=outSize, sebip_off=sebip_off, exptime_off=exptime_off, bias_off=bias_off, calfac_off=calfac_off, calimg_off=calimg_off)
     # Not hitting Missing block mask (193-199)
     missing = 0
     

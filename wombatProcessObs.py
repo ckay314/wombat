@@ -89,6 +89,7 @@ import sunpy
 import pickle
 import matplotlib.pyplot as plt
 from astropy.visualization import ImageNormalize, SqrtStretch, PowerStretch
+import datetime
 
 sys.path.append('prepCode/') 
 sys.path.append('wombatCode/') 
@@ -1184,7 +1185,7 @@ def processWISPR(times, insts, wcalpath='prepFiles/psp/wispr/',  inFolder='pullF
             #    outLines.append('WISPR_'+ insts[i] + '\n')
             for j in range(len(ims)):
                 proIms[keySwitch[insts[i]]][0].append(ims[j])
-                proIms[keySwitch[insts[i]]][1].append(hdrs[j])
+                proIms[keySwitch[insts[i]]][1].append(hdrs[j])                
                 outLines[keySwitch[insts[i]]].append(goodFiles[i][j])
                 if saveFits:
                     ymd = hdrs[j]['DATE-OBS'].replace('-','').replace(':','')[:15]  
@@ -1418,7 +1419,7 @@ def processObs(times, insts, inFolder='pullFolder/', outFolder='wbFits/', outFil
 
         if doL2:
             proImsL2, outLinesL2 = processWISPR(times, doWISPR, doL2=True)
-            if type(proImsLW) == type(None):
+            if type(proImsL2) == type(None):
                 sys.exit('Found no WISPR L2 files. Either remove keyword or provide files')
             for key in proImsL2:
                 if len(proImsL2[key]) > 0:
@@ -1486,7 +1487,7 @@ def processObs(times, insts, inFolder='pullFolder/', outFolder='wbFits/', outFil
 # |------------------------------------------------------------|
 # |-------------------- Command Line Wrapper ------------------|
 # |------------------------------------------------------------|
-def thePickler(proIms, fnames, insts0, pickleJar='wbPickles/', name='temp', doMass=True):
+def thePickler(proIms, fnames, insts0, pickleJar='wbPickles/', name='temp', doMass=True, commandLine=None, genTime=None):
     """
     Wrapper to make a pickle with all the info that the GUI will need
     for the background images. Everything will be fully processed pre
@@ -1518,6 +1519,10 @@ def thePickler(proIms, fnames, insts0, pickleJar='wbPickles/', name='temp', doMa
             doMass:     flag to turn off mass calculation. cuts down run time and makes
                         slightly smaller pickles
                         Defaults to true
+    
+            commandLine: a record of what what written in the command line to generate the pickle
+    
+            genTime:    the time the pickle was createdd
         
         
         Actions:
@@ -1583,6 +1588,10 @@ def thePickler(proIms, fnames, insts0, pickleJar='wbPickles/', name='temp', doMa
     # |--- (sub) Dictionary with satStuff -> hdr-like with extra stuff ---|
     bigDill['satStuff'] = {}
     
+    if type(commandLine) != type(None):
+        bigDill['commandLine'] = commandLine
+    if type(genTime) != type(None):
+        bigDill['genTime'] = genTime
     
     # |----------------------------|
     # |---- Fill the info dict ----|
@@ -1736,7 +1745,7 @@ def thePickler(proIms, fnames, insts0, pickleJar='wbPickles/', name='temp', doMa
     # |----------------------------------|
     # |---- Replace masses as needed ----|
     # |----------------------------------|
-    massFriends = {'WISPRI_LW':'WISPRI', 'WISPRO_LW':'WISPRO', 'HI1A_SR':'HI1A', 'HI1B_SR':'HI1B', 'HI2A_SR':'HI2A', 'HI2B_SR':'HI2B'}
+    massFriends = {'WISPRI_LW':'WISPRI_L2', 'WISPRO_LW':'WISPRO_L2', 'HI1A_SR':'HI1A', 'HI1B_SR':'HI1B', 'HI2A_SR':'HI2A', 'HI2B_SR':'HI2B'}
     if doMass:
         for key in massFriends:
             if key in bigDill['WBinfo']['Insts']:
@@ -1849,16 +1858,21 @@ def arr2maps(dataIn, hdrIn, doDiff=True, soloFix=False):
                 print ('Roll at beginning of time series, adjusting base image to', hdrIn[idx0]['DATE-OBS'])
                 
         # |--- Loop through doing diffs ---|
-        for j in range(len(dataIn)-1 - idx0):
+        for j in range(len(dataIn)-1):
+            # Enable diff bases before/after roll if needed
+            shiftId = 0
+            if j > idx0:
+                shiftId = idx0
+        #for j in range(len(dataIn)-1 - idx0):
             # Get the data for a time step
-            myData = dataIn[j+1+idx0]
-            myHdr  = hdrIn[j+1+idx0]
+            myData = dataIn[j+1]
+            myHdr  = hdrIn[j+1]
             
             # Get the bases
-            runBase  = dataIn[j+idx0]
-            runFile  = hdrIn[j+idx0]
-            baseBase = dataIn[idx0]
-            baseFile = hdrIn[idx0]
+            runBase  = dataIn[j]
+            runFile  = hdrIn[j]
+            baseBase = dataIn[shiftId]
+            baseFile = hdrIn[shiftId]
             
             # Make sure files are same shape and diff    
             if (myData.shape == runBase.shape) & (myData.shape == baseBase.shape):
@@ -1870,6 +1884,11 @@ def arr2maps(dataIn, hdrIn, doDiff=True, soloFix=False):
                 rds.append(diffMap)
                 # Base diff
                 diffData = myData - baseBase
+                if ('psp_L3_wispr' in myHdr['FILENAME']):
+                    diffData = myData
+                    print ('Not taking base diff for L3 WISPR')
+                else:
+                    diffData = myData - baseBase
                 diffData[np.isnan(diffData)] = 0
                 #myHdr['diffFile'] = baseFile
                 diffMap = sunpy.map.Map(diffData, myHdr)
@@ -2514,6 +2533,8 @@ def commandLineWrapper():
             pklName -       a string name for the output pickle. It is recognized by including
                             '.pkl' in the string. It will be saved as wbPickles/pklName.pkl
     
+            nomass -        a flag to turn off the mass calculation if it is not needed
+    
         
         Available Instrument Tags:
             AIAnum  = SDO AIA where num represents a wavelength from [94, 131, 171*, 
@@ -2551,6 +2572,11 @@ def commandLineWrapper():
     vals = sys.argv[1:]
     if vals[1] < vals[0]:
         sys.exit('Exiting processObs, start time is after end time...')
+    
+    commandLine = ''
+    for item in sys.argv:
+        commandLine += item + ' '
+    genTime = datetime.datetime.now()
     
     #|-------------------------------------|
     #|---- Pull times and check format ----|
@@ -2628,7 +2654,7 @@ def commandLineWrapper():
     #|---------------------------|
     #|---- Package in pickle ----|
     #|---------------------------|
-    thePickler(proIms, fnames, insts, name=pklName, doMass=doMass)
+    thePickler(proIms, fnames, insts, name=pklName, doMass=doMass, commandLine=commandLine, genTime=genTime)
            
 
 if __name__ == '__main__':

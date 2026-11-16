@@ -752,6 +752,7 @@ def wispr_prep(filesIn, wcalpath, outSize=None, silent=False, biasOff=False, bia
         #|---------------------|
         #|--- Read in files ---|
         #|---------------------|
+        print (i, filesIn[i])
         im, hdr = wispr_readfits(filesIn[i])
 
         #|-----------------------|
@@ -799,7 +800,7 @@ def wispr_prep(filesIn, wcalpath, outSize=None, silent=False, biasOff=False, bia
         #|-----------------------------|
         #|--- Pointing Information  ---|
         #|-----------------------------|
-        if not pointingOff:
+        if (not pointingOff) and (hdr['OBS_MODE'] =='SYNOPTIC'):
             try:
                 hdr = get_wispr_pointing(hdr, wcalpath, doCoords=True)
             except:

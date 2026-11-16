@@ -691,16 +691,32 @@ def pullWISPR(times, insts, HItime=30, outFolder='pullFolder/'):
     result = Fido.search(a.Time(times[0], times[1]), a.Instrument.wispr)
    
     
-    # Pull the L3 data
-    goodIdx = []
+
+    # Sort the L2/L3 data
+    goodIdxL3 = []
+    goodIdxL2 = []
     if len(result) > 0:
         for i in range(len(result[0]['fileid'])):
             if '/L3/' in result[0]['fileid'][i]:
-                goodIdx.append(i)
+                goodIdxL3.append(i)
+            elif '/L2/' in result[0]['fileid'][i]:
+                goodIdxL2.append(i)
     else:
-        print ('Cannot find any L3 files for WISPR')
- 
+        print ('Cannot find any files for WISPR')
+    bothGoods = [goodIdxL2, goodIdxL3]    
+
+    #|--- Figure out which insts/levels to DL ---|
+    getIt = [[0,0],[0,0]]# [[L2I, L2O], [L3I, L3O]] binary yes/no
+    if 'WISPRI_L2' in insts:
+        getIt[0][0] = 1
+    if 'WISPRO_L2' in insts:
+        getIt[0][1] = 1
+    if 'WISPRI_L3' in insts:
+        getIt[1][0] = 1
+    if 'WISPRO_L3' in insts:
+        getIt[1][1] = 1
     
+
     # |-----------------------------|
     # |---------- Sort/DL ----------|
     # |-----------------------------|
@@ -708,60 +724,62 @@ def pullWISPR(times, insts, HItime=30, outFolder='pullFolder/'):
     # but we can wget these files
     # base path = 'https://wispr.nrl.navy.mil/data/rel/fits/L2/'
     # followed by orbit#/date/samefilename.fits
-    basePath  = 'https://wispr.nrl.navy.mil/data/rel/fits/L3/'
-    if len(goodIdx) > 0:
+    basePaths  = ['https://wispr.nrl.navy.mil/data/rel/fits/L2/', 'https://wispr.nrl.navy.mil/data/rel/fits/L3/']
+    
+    lstrs = ['L2','L3']
+    if (len(bothGoods[0])+len(bothGoods[1])) > 0:
         print('')
         print('Downloading PSP WISPR files...')
-           
-        # Track the last time we pulled so we can get the res we want
-        lastTime = [[],[]]
-    
-        for i in goodIdx:
-            # Full path name from Fido
-            ogname = result[result.keys()[0]]['fileid'][i]
-            # Want orbit/date/file name
-            fname = ogname.replace('data/psp/wispr/L3/','').replace('inner/','').replace('outer/','')
-            
-            # Build the NRL paths
-            myPath = basePath + '/' + fname
-            # Local Paths
-            inPath = outFolder+'PSP/WISPR/L3_Inner/'
-            outPath = outFolder+'PSP/WISPR/L3_Outer/'
-            
-            # Inner cases
-            if ('V1_1' in fname) & ('WISPRI' in insts):
-                # Save the first one, always
-                if len(lastTime[0]) == 0:
-                    # Make sure we don't already have it
-                    print('')
-                    print ('Downloading ', fname)
-                    if not os.path.exists(inPath+fname):
-                        temp = wget.download(myPath, out=inPath)
-                    lastTime[0].append(i)
-                # Otherwise check how long its been since last
-                else:
-                    if (result[0]['Start Time'][i] - result[0]['Start Time'][lastTime[0][-1]]).to(u.min).to_value() >= HItime:
-                        print('')
-                        print ('Downloading ', fname)
-                        if not os.path.exists(inPath+fname):
-                           temp = wget.download(myPath, out=inPath)
-                        lastTime[0].append(i)
+          
+        for l in range(2):
+            if 1 in getIt[l]:
+                
+                # Track the last time we pulled so we can get the res we want
+                lastTime = [[],[]]
+                for i in bothGoods[l]:
+                    # Full path name from Fido
+                    ogname = result[result.keys()[0]]['fileid'][i]
+                    # Want orbit/date/file name
+                    fname = ogname.replace('data/psp/wispr/'+lstrs[l],'').replace('inner/','').replace('outer/','')
+                    # Build the NRL paths
+                    myPath = basePaths[l] + '/' + fname
+                    # Local Paths
+                    inPath = outFolder+'PSP/WISPR/'+lstrs[l]+'_Inner/'
+                    outPath = outFolder+'PSP/WISPR/'+lstrs[l]+'_Outer/'
+                    # Inner cases
+                    if ('V1_1' in fname) & (getIt[l][0]):
+                        # Save the first one, always
+                        if len(lastTime[0]) == 0:
+                            # Make sure we don't already have it
+                            print('')
+                            print ('Downloading ', fname)
+                            if not os.path.exists(inPath+fname):
+                                temp = wget.download(myPath, out=inPath)
+                            lastTime[0].append(i)
+                        # Otherwise check how long its been since last
+                        else:
+                            if (result[0]['Start Time'][i] - result[0]['Start Time'][lastTime[0][-1]]).to(u.min).to_value() >= HItime:
+                                print('')
+                                print ('Downloading ', fname)
+                                if not os.path.exists(inPath+fname):
+                                   temp = wget.download(myPath, out=inPath)
+                                lastTime[0].append(i)
                    
-            # Outer cases
-            elif ('V1_2' in fname) & ('WISPRO' in insts):
-                if len(lastTime[1]) == 0:
-                    print('')
-                    print ('Downloading ', fname)
-                    if not os.path.exists(outPath+fname):
-                        temp = wget.download(myPath, out=outPath)
-                    lastTime[1].append(i)
-                else:
-                    if (result[0]['Start Time'][i] - result[0]['Start Time'][lastTime[1][-1]]).to(u.min).to_value() >= HItime:
-                        print('')
-                        print ('Downloading ', fname)
-                        if not os.path.exists(outPath+fname):
-                            temp = wget.download(myPath, out=outPath)
-                        lastTime[1].append(i)
+                    # Outer cases
+                    elif ('V1_2' in fname) & (getIt[l][1]):
+                        if len(lastTime[1]) == 0:
+                            print('')
+                            print ('Downloading ', fname)
+                            if not os.path.exists(outPath+fname):
+                                temp = wget.download(myPath, out=outPath)
+                            lastTime[1].append(i)
+                        else:
+                            if (result[0]['Start Time'][i] - result[0]['Start Time'][lastTime[1][-1]]).to(u.min).to_value() >= HItime:
+                                print('')
+                                print ('Downloading ', fname)
+                                if not os.path.exists(outPath+fname):
+                                    temp = wget.download(myPath, out=outPath)
+                                lastTime[1].append(i)
     
 
 
@@ -794,9 +812,12 @@ def pullObs(times, insts, outFolder='pullFolder/', EUVtime=10, CORtime=20, HItim
                 SoloHI2 = Quadrant 2 from Solar Orbiter HI
                 SoloHI3 = Quadrant 3 from Solar Orbiter HI
                 SoloHI4 = Quadrant 4 from Solar Orbiter HI
-                WISPR   = Both inner and outer from PSP WISPR
-                WISPRI  = Inner only from PSP WISPR
-                WISRPO  = Outer only from PSP WISPR
+                WISPR_L3  = Both inner and outer from PSP WISPR (or just WISPR w/o L3)
+                WISPRI_L3 = Inner only from PSP WISPR
+                WISRPO_L3 = Outer only from PSP WISPR
+                WISPR_L2  = Both inner and outer L2 from PSP WISPR 
+                WISPRI_L2 = Inner L2 only from PSP WISPR 
+                WISRPO_L2 = Outer L2 only from PSP WISPR
                 * all STEREO values will pull A and B (as available)
     
     Optional Inputs:
@@ -826,7 +847,7 @@ def pullObs(times, insts, outFolder='pullFolder/', EUVtime=10, CORtime=20, HItim
     # |---------------------------------------| 
     # |---- Check all inst keys are valid ----|
     # |---------------------------------------| 
-    goods = ['AIA94', 'AIA131', 'AIA171','AIA193','AIA211','AIA304','AIA335','AIA1600','AIA1700', 'C2', 'C3', 'COR1', 'COR2', 'COR1A', 'COR2A', 'COR1B', 'COR2B', 'EUI174', 'EUI304', 'EUVI171', 'EUVI195', 'EUVI284', 'EUVI304', 'EUVI171A', 'EUVI195A', 'EUVI284A', 'EUVI304A', 'EUVI171B', 'EUVI195B', 'EUVI284B', 'EUVI304B', 'HI1', 'HI2', 'HI1A', 'HI2A', 'HI1B', 'HI2B','SoloHI', 'SoloHI1', 'SoloHI2', 'SoloHI3', 'SoloHI4', 'WISPR', 'WISPRI', 'WISPRO']
+    goods = ['AIA94', 'AIA131', 'AIA171','AIA193','AIA211','AIA304','AIA335','AIA1600','AIA1700', 'C2', 'C3', 'COR1', 'COR2', 'COR1A', 'COR2A', 'COR1B', 'COR2B', 'EUI174', 'EUI304', 'EUVI171', 'EUVI195', 'EUVI284', 'EUVI304', 'EUVI171A', 'EUVI195A', 'EUVI284A', 'EUVI304A', 'EUVI171B', 'EUVI195B', 'EUVI284B', 'EUVI304B', 'HI1', 'HI2', 'HI1A', 'HI2A', 'HI1B', 'HI2B','SoloHI', 'SoloHI1', 'SoloHI2', 'SoloHI3', 'SoloHI4', 'WISPR', 'WISPRI', 'WISPRO', 'WISPR_L2', 'WISPRI_L2', 'WISPRO_L2', 'WISPR_L3', 'WISPRI_L3', 'WISPRO_L3']
     quitIt = False
     for inst in insts:
         if inst not in goods:
@@ -883,9 +904,20 @@ def pullObs(times, insts, outFolder='pullFolder/', EUVtime=10, CORtime=20, HItim
     # |------------ WISPR ------------|
     # |-------------------------------|
     doWISPR = []
-    if 'WISPR' in insts: doWISPR = ['WISPRI', 'WISPRO']
-    elif 'WISPRI' in insts: doWISPR.append('WISPRI')
-    elif 'WISPRO' in insts: doWISPR.append('WISPRO')
+    WISPRkeys = ['WISPR', 'WISPRI', 'WISPRO', 'WISPR_L2', 'WISPRI_L2', 'WISPRO_L2', 'WISPR_L3', 'WISPRI_L3', 'WISPRO_L3']
+    for inst in insts:
+        if inst in WISPRkeys:
+            if inst in ['WISPR', 'WISPRI', 'WISPRO']: # switch unnamed to L3
+                inst = inst+'_L3'
+            if inst in ['WISPR_L3', 'WISPR_L2']:
+                # Switch the single tag to both inner/otter (keeping that typo bc I like it)
+                doWISPR.append(inst.replace('SPR', 'SPRI'))
+                doWISPR.append(inst.replace('SPR', 'SPRO'))
+            else:
+                doWISPR.append(inst)
+    #if 'WISPR' in insts: doWISPR = ['WISPRI', 'WISPRO']
+    #elif 'WISPRI' in insts: doWISPR.append('WISPRI')
+    #elif 'WISPRO' in insts: doWISPR.append('WISPRO')
     if len(doWISPR) > 0:
         pullWISPR(times, doWISPR, HItime=HItime, outFolder=outFolder)
     
@@ -975,8 +1007,15 @@ def commandLineWrapper():
             SoloHI3 = Quadrant 3 from Solar Orbiter HI
             SoloHI4 = Quadrant 4 from Solar Orbiter HI
             WISPR   = Both inner and outer from PSP WISPR
-            WISPRI  = Inner only from PSP WISPR
-            WISRPO  = Outer only from PSP WISPR
+            WISPRI  = Inner only from PSP WISPR (L3)
+            WISRPO  = Outer only from PSP WISPR (L3)
+            WISPR_L2  = Both inner and outer L2 from PSP WISPR 
+            WISPRI_L2 = Inner L2 only from PSP WISPR 
+            WISRPO_L2 = Outer L2 only from PSP WISPR
+            WISPR_LW  = Both inner and outer LW from PSP WISPR
+            WISPRI_LW = Inner LW only from PSP WISPR
+            WISRPO_LW = Outer LW only from PSP WISPR
+    
             * all STEREO values will both pull A and B (as available) if written as 
             above but one can add the A/B tag on the end (e.g. COR2A) to select a
             single STEREO
@@ -986,7 +1025,7 @@ def commandLineWrapper():
         
     """
     #|---- All the instrument tags ----|
-    tags = ['AIA94', 'AIA131', 'AIA171','AIA193','AIA211','AIA304','AIA335','AIA1600','AIA1700', 'C2', 'C3', 'COR1', 'COR2', 'COR1A', 'COR2A', 'COR1B', 'COR2B', 'EUI174', 'EUI304', 'EUVI171', 'EUVI195', 'EUVI284', 'EUVI304', 'EUVI171A', 'EUVI195A', 'EUVI284A', 'EUVI304A', 'EUVI171B', 'EUVI195B', 'EUVI284B', 'EUVI304B', 'HI1', 'HI2', 'HI1A', 'HI2A', 'HI1B', 'HI2B', 'SOLOHI', 'SOLOHI1', 'SOLOHI2', 'SOLOHI3', 'SOLOHI4', 'WISPR', 'WISPRI', 'WISPRO']
+    tags = ['AIA94', 'AIA131', 'AIA171','AIA193','AIA211','AIA304','AIA335','AIA1600','AIA1700', 'C2', 'C3', 'COR1', 'COR2', 'COR1A', 'COR2A', 'COR1B', 'COR2B', 'EUI174', 'EUI304', 'EUVI171', 'EUVI195', 'EUVI284', 'EUVI304', 'EUVI171A', 'EUVI195A', 'EUVI284A', 'EUVI304A', 'EUVI171B', 'EUVI195B', 'EUVI284B', 'EUVI304B', 'HI1', 'HI2', 'HI1A', 'HI2A', 'HI1B', 'HI2B', 'SOLOHI', 'SOLOHI1', 'SOLOHI2', 'SOLOHI3', 'SOLOHI4', 'WISPR', 'WISPRI', 'WISPRO', 'WISPR_L2', 'WISPRI_L2', 'WISPRO_L2', 'WISPR_L3', 'WISPRI_L3', 'WISPRO_L3']
     
     #|---- Pull the command line args ----|
     vals = sys.argv[1:]

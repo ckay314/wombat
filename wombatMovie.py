@@ -24,22 +24,24 @@ errors try uninstalling the pip version then using brew !!!
 global doClean, customOrder, ovw, doCutout, cutouts
 
 # Name of wombat log file
-logFilePath = 'wbOutputs/201207pretty.txt'
+#logFilePath = 'wbOutputs/201207pretty.txt'
+logFilePath = 'wbOutputs/202303full.txt'
 
 # Movie save name. Should end with .mp4 (other formats untested)
 movieName = 'temp.mp4'
 
 # Lines to do, same string format as other wombat functions
-idstr = '40-159'
+#idstr = '40-159'
+idstr = '1-449'
 
 # Time Resolution (in minutes)
-tRes = 120
+tRes = 30
 
 # Number of columns in movie (max 5)
-nHoriz = 1
+nHoriz = 4
 
 # Include clean imgs without wf proj
-doClean = False
+doClean = True
 
 # Frames per second
 fps = 6
@@ -47,9 +49,9 @@ fps = 6
 # Flag to set the instrument order
 # (must include all the inst in the pickle)
 customOrder = True 
-#instOrder = ['C2', 'COR2A', 'C3', 'WISPRI', 'SoloHI', 'HI1A_SR']
+instOrder = ['C2', 'COR2A', 'C3', 'WISPRI', 'SoloHI', 'HI1A_SR']
 #instOrder = ['COR1B', 'COR1A','COR2B','COR2A']
-instOrder = ['HI1B_SR', 'HI1A_SR', 'HI2B_SR', 'HI2A_SR']
+#instOrder = ['HI1B_SR', 'HI1A_SR', 'HI2B_SR', 'HI2A_SR']
     
 # Running (0) or base diff (1)
 didx = 0
@@ -578,9 +580,8 @@ def setupTimes(lines, logFile, proIms):
         shiftDiff = np.array(allPdts[key]) + my0diff
         for i in range(nTimes):
             tdiff = np.abs(shiftDiff - dtMovie[i])         
-            idx = np.where(tdiff == np.min(tdiff))[0][0]
+            idx = np.where(tdiff == np.min(tdiff))[0][0]            
             movie2inst[key].append(idx)
-    
     return timesByInst, pidx2params, tMovie, movie2inst
     
 #|---------------------|
@@ -1135,7 +1136,6 @@ if ovw:
     global ovwScats, satScats, timeItem 
     ovwScats, satScats, timeItem = setupOVW()
 
-                
 #|------------------|
 #|--- Animate it ---|
 #|------------------|
