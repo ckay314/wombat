@@ -16,7 +16,9 @@ WOMBAT is a full package for retreiving and preparing observations for use in th
 1. Pull the observations using wombatPull. This step is optional if you already have data so long as it is the correct format and located in the correct spot.
 2. Process the observations into a binary save file/pickle using wombatProcess. This step is required.
 3. Launch the GUI using wombatWrapper and a pickle from the processing script
+
 Within the GUI reconstructions can be logged into a text file. This information, along with the pickle, can be used with the three other scripts to create post-processing images and movies. The available options are
+
 - wombatPlots: basic height-time profiles and evolution of other wireframe parameters and kinematics/energetics
 - wombatMovie: movies showing the wireframe reconstructions projected onto background observations
 - dingo: figures showing the density within the wireframe structure in various manners
